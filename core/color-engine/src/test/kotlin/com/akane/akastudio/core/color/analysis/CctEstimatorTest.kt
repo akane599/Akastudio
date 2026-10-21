@@ -106,13 +106,57 @@ class CctEstimatorTest {
     }
 
     @Test
-    fun mcCamy_isClampedToValidRange() {
-        // xy (0.5, 0.317) sits near McCamy's cubic minimum (n = -1.28, about 1620 K): clamped up.
+    fun offLocusExtremes_areClampedToValidRange() {
+        // xy (0.5, 0.317) lies beyond the 1667 K end of the locus: clamped up.
         val low = xyToLinearRgb(0.5, 0.317)
         assertEquals(1667f, CctEstimator.cctFromLinearSrgb(low[0], low[1], low[2]), 0f)
-        // xy (0.24, 0.24): n = 1.70, about 29400 K: clamped down.
+        // xy (0.24, 0.24) lies beyond the 25000 K end of the locus: clamped down.
         val high = xyToLinearRgb(0.24, 0.24)
         assertEquals(25_000f, CctEstimator.cctFromLinearSrgb(high[0], high[1], high[2]), 0f)
         assertEquals(6504f, CctEstimator.cctFromLinearSrgb(0.0, 0.0, 0.0), 0f)
+    }
+
+    @Test
+    fun planckianIlluminants_roundTripThroughTheLocus() {
+        for (kelvin in listOf(2000.0, 2700.0, 4000.0, 5500.0, 10_000.0, 20_000.0)) {
+            val (x, y) = planckianXy(kelvin)
+            val rgb = xyToLinearRgb(x, y)
+            assertEquals("$kelvin K", kelvin.toFloat(), CctEstimator.cctFromLinearSrgb(rgb[0], rgb[1], rgb[2]), 2f)
+        }
+    }
+
+    @Test
+    fun deepBlueIlluminant_readsAsVeryCold() {
+        // xy y = 0.135 is below McCamy's epicentre (0.1858), where the cubic wrapped round to the warm end.
+        val linear = CctEstimator.cctFromLinearSrgb(0.045, 0.187, 0.79)
+        assertTrue("read as $linear K", linear >= 10_000f)
+        // sRGB (60, 120, 230) and (80, 80, 255) used to read as 1667 K and 2337 K.
+        for (code in listOf(Triple(60, 120, 230), Triple(80, 80, 255))) {
+            val cct = CctEstimator.cctFromLinearSrgb(
+                ColorMath.srgbToLinear(code.first / 255f).toDouble(),
+                ColorMath.srgbToLinear(code.second / 255f).toDouble(),
+                ColorMath.srgbToLinear(code.third / 255f).toDouble(),
+            )
+            assertTrue("$code read as $cct K", cct >= 10_000f)
+        }
+    }
+
+    @Test
+    fun orangeToGreyToDeepBlueSweep_isMonotone() {
+        val orange = doubleArrayOf(1.0, 0.45, 0.1)
+        val grey = doubleArrayOf(0.5, 0.5, 0.5)
+        val blue = doubleArrayOf(0.045, 0.187, 0.79)
+        val estimates = (0..80).map { step ->
+            val t = step / 80.0
+            val (from, to, s) = if (t <= 0.5) Triple(orange, grey, t / 0.5) else Triple(grey, blue, (t - 0.5) / 0.5)
+            val c = DoubleArray(3) { from[it] + (to[it] - from[it]) * s }
+            CctEstimator.cctFromLinearSrgb(c[0], c[1], c[2])
+        }
+        for (i in 1 until estimates.size) {
+            assertTrue("step $i: ${estimates[i - 1]} -> ${estimates[i]}", estimates[i] >= estimates[i - 1])
+        }
+        assertTrue("orange end ${estimates.first()} K is warm", estimates.first() < 3500f)
+        assertEquals(6504f, estimates[40], 10f)
+        assertTrue("deep-blue end ${estimates.last()} K is cold", estimates.last() >= 10_000f)
     }
 }

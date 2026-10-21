@@ -115,7 +115,7 @@ object ColorAnalysis {
 
     /**
      * Correlated colour temperature, in kelvin, of the Shades-of-Gray (p = 6) illuminant estimate
-     * via McCamy's approximation, clamped to [1667, 25000]. An image with no usable pixels (black or
+     * as the nearest point on the Planckian locus (CIE 1960 uv), in [1667, 25000]. An image with no usable pixels (black or
      * fully clipped) returns 6504.
      */
     fun estimateCctKelvin(pixels: ImagePixels): Float = CctEstimator.estimate(pixels)

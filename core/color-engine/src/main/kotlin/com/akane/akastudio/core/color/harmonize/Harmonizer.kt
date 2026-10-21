@@ -10,9 +10,11 @@ import com.akane.akastudio.core.color.api.OkLab
  *
  * Per channel, with source mean/std μs, σs and reference μr, σr:
  * `k = clamp(σr / max(σs, 1e-4), 0.5, 2)`, `w = λ · clamp(strength, 0, 1)` (λ = [LAMBDA_L] for L,
- * [LAMBDA_C] for a and b), `scale = 1 + w(k − 1)` and `offset = w(μr − k·μs)`. The offset alone is
- * then capped to |ΔL| ≤ 0.15 and |Δa|, |Δb| ≤ 0.06. When both σs and σr are below 1e-4 the channel
- * carries no contrast information and k is 1, so identical flat stats still give the identity.
+ * [LAMBDA_C] for a and b), `scale = 1 + w(k − 1)` and `offset = μs(1 − scale) + clamp(w(μr − μs), ±cap)`,
+ * which equals `w(μr − k·μs)` below the cap. The scale pivots on the source mean, so only the mean
+ * shift is capped: the source mean moves by at most |ΔL| ≤ 0.15 and |Δa|, |Δb| ≤ 0.06 toward the
+ * reference, whatever k is. When both σs and σr are below 1e-4 the channel carries no contrast
+ * information and k is 1, so identical flat stats still give the identity.
  */
 object Harmonizer {
     /** Fraction of the full lightness transfer applied at strength 1. */
@@ -74,6 +76,9 @@ object Harmonizer {
 
     private fun scale(w: Float, k: Float): Float = 1f + w * (k - 1f)
 
-    private fun offset(w: Float, k: Float, sourceMean: Float, referenceMean: Float, cap: Float): Float =
-        (w * (referenceMean - k * sourceMean)).coerceIn(-cap, cap)
+    /** Re-centres [scale] on [sourceMean], then adds the capped mean shift toward [referenceMean]. */
+    private fun offset(w: Float, k: Float, sourceMean: Float, referenceMean: Float, cap: Float): Float {
+        val shift = (w * (referenceMean - sourceMean)).coerceIn(-cap, cap)
+        return sourceMean * (1f - scale(w, k)) + shift
+    }
 }

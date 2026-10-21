@@ -57,6 +57,16 @@ class ShaderSourcesTest {
     }
 
     @Test
+    fun everyShaderUsesOnlyGlslEs300Features() {
+        assertTrue("no shaders found in $shaderDir", shaders.isNotEmpty())
+        val failures = shaders.mapNotNull { file ->
+            val stage = stageOf(file) ?: return@mapNotNull "${file.name}: unknown stage"
+            GlslEs300Check.violations(file.readText(), stage).takeIf { it.isNotEmpty() }?.let { "${file.name}: $it" }
+        }
+        if (failures.isNotEmpty()) fail(failures.joinToString("\n"))
+    }
+
+    @Test
     fun everyShaderCompilesWithGlslc() {
         val glslc = findGlslc()
         if (glslc == null) {
@@ -76,8 +86,9 @@ class ShaderSourcesTest {
 
     /**
      * glslc only targets SPIR-V, and its ES front end refuses `#version 300 es` ("ES shaders for SPIR-V
-     * require version 310 or higher"). The sources use nothing beyond GLSL ES 3.00, so rewriting the version
-     * line to `310 es` compiles the same code under a superset grammar; the device driver still sees 300 es.
+     * require version 310 or higher"), and no glslc option relaxes that. Rewriting the version line to `310 es`
+     * compiles the same code under a superset grammar; the device driver still sees 300 es.
+     * [everyShaderUsesOnlyGlslEs300Features] rejects the 3.10-only constructs this superset would let through.
      */
     private fun compile(glslc: File, file: File, workDir: File): String? {
         val stage = stageOf(file) ?: return "${file.name}: unknown stage"
