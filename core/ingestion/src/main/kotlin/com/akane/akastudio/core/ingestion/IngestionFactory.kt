@@ -73,7 +73,7 @@ private fun allocatableBytes(storage: StorageManager, dir: File): Long = try {
 
 fun createAnalysisDecoder(context: Context): AnalysisDecoder {
     val resolver = context.applicationContext.contentResolver
-    return SampledAnalysisDecoder(ContentSourceOpener(resolver), resolver)
+    return SampledAnalysisDecoder(resolver)
 }
 
 /** Deletes crash-leftover session dirs under cacheDir/ingest older than [olderThanMillis]. */
