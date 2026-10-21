@@ -690,5 +690,37 @@ class StudioViewModelTest {
         assertEquals("the container owns the renderer", 0, h.deps.renderer.closeCount)
     }
 
+    @Test
+    fun a_failed_release_during_reset_still_closes_the_session() = runTest {
+        val h = harness()
+        ready(h)
+        h.deps.preparer.releaseFailWith = IllegalStateException("EGL lost")
+
+        h.vm.onIntent(StudioIntent.Reset)
+        advanceUntilIdle()
+
+        assertEquals(1, h.deps.sessions.single().closeCount)
+        assertEquals(StudioPhase.Empty, h.state.phase)
+        assertEquals(StudioError.Unknown("EGL lost"), h.state.error)
+    }
+
+    @Test
+    fun a_failed_release_from_an_earlier_reset_does_not_leak_into_the_next_import() = runTest {
+        val h = harness()
+        ready(h)
+        h.deps.preparer.releaseDelayMs = 1_000
+        h.deps.preparer.releaseFailWith = IllegalStateException("EGL lost")
+
+        h.vm.onIntent(StudioIntent.Reset)
+        runCurrent()
+        h.deps.ingestScripts += TestData.ingestion(listOf(a, b))
+        h.vm.onIntent(StudioIntent.ImportPhotos(listOf("u9")))
+        advanceUntilIdle()
+
+        assertEquals(StudioPhase.Ready, h.state.phase)
+        assertNull(h.state.error)
+        assertEquals(1, h.deps.sessions[0].closeCount)
+    }
+
     // endregion
 }

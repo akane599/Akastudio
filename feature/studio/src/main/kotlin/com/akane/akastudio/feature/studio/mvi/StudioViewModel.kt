@@ -1,5 +1,6 @@
 package com.akane.akastudio.feature.studio.mvi
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import com.akane.akastudio.core.color.api.ImagePixels
 import com.akane.akastudio.core.curator.api.CurationProgress
@@ -90,6 +91,9 @@ class StudioViewModel(
 
     /** True while re-preparing [stable] after a cancelled or failed re-preparation. */
     private var restoring = false
+
+    /** Counts [resetToEmpty] calls, so a reset's late cleanup failure can tell whether a newer reset followed. */
+    private var resets = 0L
 
     init {
         scope.launch { runScopePipeline() }
@@ -544,17 +548,27 @@ class StudioViewModel(
         session = null
         val dropped = store.detachAll()
         _state.value = StudioState(error = error)
+        val reset = ++resets
         cleanupScope.launch {
             cancelled.forEach { it.join() }
             try {
                 withContext(deps.dispatchers.io) {
-                    if (dropped.isNotEmpty()) deps.preparer.release(dropped)
-                    oldSession?.close()
+                    try {
+                        if (dropped.isNotEmpty()) deps.preparer.release(dropped)
+                    } finally {
+                        oldSession?.close()
+                    }
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _state.update { if (it.error == null) it.copy(error = deps.errors.map(e)) else it }
+                Log.w(TAG, "Cleanup after reset failed", e)
+                // Only the empty studio this reset left may show it; a session started since must not inherit it.
+                if (reset == resets) {
+                    _state.update {
+                        if (it.phase == StudioPhase.Empty && it.error == null) it.copy(error = deps.errors.map(e)) else it
+                    }
+                }
             }
         }
     }
@@ -586,6 +600,7 @@ class StudioViewModel(
         const val SCOPE_DEBOUNCE_MS = 120L
         const val SCOPE_WIDTH = 270
         const val SCOPE_HEIGHT = 480
+        private const val TAG = "StudioViewModel"
 
         private operator fun IngestionTelemetry.plus(other: IngestionTelemetry) = IngestionTelemetry(
             sourcesTotal = sourcesTotal + other.sourcesTotal,
