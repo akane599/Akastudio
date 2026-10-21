@@ -1,15 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Android 12+ backup and device-transfer rules. Ingestion work dirs (cache/ingest/<session>: extracted zip entries
-     and session temp files) are disposable and can be gigabytes; never back them up or transfer them. Exports are
-     written to MediaStore (shared storage), so no exported file lives in app data. code_cache holds nothing worth
-     restoring either. -->
+<!-- Android 12+ backup and device-transfer rules. Ingestion work dirs (no_backup/ingest/<session>: extracted zip
+     entries and session temp files) are disposable and can be gigabytes; never back them up or transfer them. The
+     platform already skips no_backup/; the explicit exclude states it for device transfer too. Older builds staged in
+     cache/ingest, which the cache/ exclude covers. Exports are written to MediaStore (shared storage), so no exported
+     file lives in app data. code_cache holds nothing worth restoring either. -->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="root" path="cache/" />
+        <exclude domain="root" path="no_backup/" />
         <exclude domain="root" path="code_cache/" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="root" path="cache/" />
+        <exclude domain="root" path="no_backup/" />
         <exclude domain="root" path="code_cache/" />
     </device-transfer>
 </data-extraction-rules>

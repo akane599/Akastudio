@@ -47,7 +47,7 @@ fun createIngestionSession(context: Context, limits: ZipLimits = ZipLimits()): I
     val app = context.applicationContext
     val resolver = app.contentResolver
     val opener = ContentSourceOpener(resolver)
-    val workDir = File(app.cacheDir, "$INGEST_DIR/${UUID.randomUUID()}").apply { mkdirs() }
+    val workDir = File(ingestRoot(app), UUID.randomUUID().toString()).apply { mkdirs() }
     return DefaultIngestionSession(
         workDir = workDir,
         extractor = StreamingZipExtractor(limits, freeSpaceProvider = ::usableBytes),
@@ -58,11 +58,22 @@ fun createIngestionSession(context: Context, limits: ZipLimits = ZipLimits()): I
 }
 
 /**
- * Bytes actually free on [dir]'s volume. `StorageManager.getAllocatableBytes` would also count other apps' cache,
- * which only `allocateBytes` frees. That call clears app caches by how far over quota they are, and mid-import our
- * own staging folder (in cacheDir, possibly gigabytes) is a likely victim. So the extractor checks the real free
- * space and reports a shortfall up front; the user can free space and retry. [ZipLimits.freeSpaceReserveBytes] is
- * still subtracted from this figure.
+ * Staging root for session work dirs: `noBackupFilesDir/ingest`. Extracted zip entries are read again long after
+ * extraction (decoders, the preparer, full-res export), so they must not live in cacheDir, where the system may
+ * delete them under storage pressure mid-session. noBackupFilesDir is app-private, never evicted and never backed up;
+ * sessions delete their own dir on close and [purgeStaleIngestionDirs] sweeps what a killed process left behind.
+ */
+private fun ingestRoot(app: Context): File = File(app.noBackupFilesDir, INGEST_DIR)
+
+/** Where builds before N-06 staged sessions; nothing uses it any more, so the startup purge removes it whole. */
+private fun legacyIngestRoot(app: Context): File = File(app.cacheDir, INGEST_DIR)
+
+/**
+ * Bytes actually free on [dir]'s volume, i.e. the internal app storage holding the work dir.
+ * `StorageManager.getAllocatableBytes` would also count other apps' cache, which only `allocateBytes` frees, and the
+ * extractor never calls that, so the figure could promise space a write cannot get. The extractor checks the real
+ * free space and reports a shortfall up front; the user can free space and retry. [ZipLimits.freeSpaceReserveBytes]
+ * is still subtracted from this figure.
  */
 private fun usableBytes(dir: File): Long = dir.usableSpace
 
@@ -71,11 +82,20 @@ fun createAnalysisDecoder(context: Context): AnalysisDecoder {
     return SampledAnalysisDecoder(resolver)
 }
 
-/** Deletes crash-leftover session dirs under cacheDir/ingest older than [olderThanMillis]. */
+/**
+ * Deletes crash-leftover session dirs under noBackupFilesDir/ingest older than [olderThanMillis], and the whole legacy
+ * cacheDir/ingest root that builds before N-06 staged into, so an upgrade leaves no orphaned photos behind.
+ */
 fun purgeStaleIngestionDirs(context: Context, olderThanMillis: Long = DEFAULT_STALE_MILLIS) {
-    val root = File(context.applicationContext.cacheDir, INGEST_DIR)
+    val app = context.applicationContext
+    purgeIngestionRoots(ingestRoot(app), legacyIngestRoot(app), System.currentTimeMillis(), olderThanMillis)
+}
+
+/** Pure part of [purgeStaleIngestionDirs]: stale session dirs under [root] go, and [legacyRoot] goes entirely. */
+internal fun purgeIngestionRoots(root: File, legacyRoot: File, now: Long, olderThan: Long) {
+    if (legacyRoot.exists()) legacyRoot.deleteRecursively()
     val dirs = root.listFiles { f -> f.isDirectory }?.toList() ?: return
-    staleDirs(dirs, System.currentTimeMillis(), olderThanMillis).forEach { it.deleteRecursively() }
+    staleDirs(dirs, now, olderThan).forEach { it.deleteRecursively() }
 }
 
 internal fun staleDirs(dirs: List<File>, now: Long, olderThan: Long): List<File> =
