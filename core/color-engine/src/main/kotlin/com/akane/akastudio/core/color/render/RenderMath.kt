@@ -298,16 +298,19 @@ internal object RenderMath {
         val out = ShortArray(rgba.size)
         var i = 0
         while (i + 3 < rgba.size) {
-            val a = (rgba[i + 3].toInt() and 0xFF) / 255f
-            for (c in 0 until 3) {
-                val stored = (rgba[i + c].toInt() and 0xFF) / 255f
-                val linear = if (a > 0f) logDecode(stored / a) * a else 0f
-                out[i + c] = floatToHalf(linear)
-            }
-            out[i + 3] = floatToHalf(a)
+            val alpha = rgba[i + 3].toInt() and 0xFF
+            for (c in 0 until 3) out[i + c] = logChannelToHalf(rgba[i + c].toInt() and 0xFF, alpha)
+            out[i + 3] = floatToHalf(alpha / 255f)
             i += 4
         }
         return out
+    }
+
+    /** One log-encoded premultiplied colour code ([stored], with its pixel's [alpha] code) -> linear premultiplied half bits. */
+    fun logChannelToHalf(stored: Int, alpha: Int): Short {
+        val a = alpha / 255f
+        val linear = if (a > 0f) logDecode((stored / 255f) / a) * a else 0f
+        return floatToHalf(linear)
     }
 
     /** Copies a top-first [tileWidth]x[tileHeight] block of [channels]-wide pixels into [dest] at ([x], [y]). */

@@ -3,7 +3,6 @@ package com.akane.akastudio.core.color.render
 import android.content.res.AssetManager
 import android.graphics.Bitmap
 import android.opengl.GLES20
-import android.opengl.GLES30
 import android.util.Log
 import android.view.Surface
 import com.akane.akastudio.core.color.api.HalfFloatImage
@@ -195,16 +194,23 @@ internal class GlStoryRenderer(
         }
     }
 
+    /** Device-test seam (see [OffscreenReadbackOverrides]); always null in production. */
+    @Volatile
+    internal var offscreenReadbackOverrides: OffscreenReadbackOverrides? = null
+
     private fun renderOffscreenOn(rt: Runtime, scene: RenderScene): HalfFloatImage {
         val canvasWidth = scene.canvasWidth
         val canvasHeight = scene.canvasHeight
         require(canvasWidth > 0 && canvasHeight > 0) { "scene canvas must be positive: ${canvasWidth}x$canvasHeight" }
         require(canvasWidth.toLong() * canvasHeight * 4 <= Int.MAX_VALUE) { "canvas ${canvasWidth}x$canvasHeight too large for one HalfFloatImage" }
         val caps = rt.capabilities
-        val tiles = RenderMath.planTiles(canvasWidth, canvasHeight, caps.maxTargetWidth, caps.maxTargetHeight)
+        val overrides = offscreenReadbackOverrides
+        val tileLimit = overrides?.maxTileSize ?: Int.MAX_VALUE
+        val tiles = RenderMath.planTiles(canvasWidth, canvasHeight, min(tileLimit, caps.maxTargetWidth), min(tileLimit, caps.maxTargetHeight))
         val tileWidth = tiles.maxOf { it.width }
         val tileHeight = tiles.maxOf { it.height }
         val output = ShortArray(canvasWidth * canvasHeight * 4)
+        val readback = WorkingReadback(caps.logDomain, overrides?.stripRows ?: WorkingReadback.STRIP_ROWS, overrides?.encoding)
         val prepared = rt.compositor.prepare(scene, 1f, 1f, withNeutral = false)
         try {
             val target = rt.pool.acquire(tileWidth, tileHeight, caps.workingFormat)
@@ -218,8 +224,7 @@ internal class GlStoryRenderer(
                         ViewTransform(1f, 1f, -tile.x.toFloat(), -tile.y.toFloat()), 1f,
                         scissor = region, splitX = null,
                     )
-                    val pixels = readWorkingPixels(caps, region)
-                    RenderMath.blitTile(pixels, tile.width, tile.height, output, canvasWidth, tile.x, tile.y, CHANNELS)
+                    readback.read(region, output, canvasWidth, tile.x, tile.y)
                 }
             } finally {
                 rt.pool.recycle(target)
@@ -265,46 +270,6 @@ internal class GlStoryRenderer(
         } finally {
             prepared.release(rt.pool)
         }
-    }
-
-    /**
-     * Reads [region] of the bound working target as linear premultiplied half floats, top row first.
-     * Uses (RGBA, HALF_FLOAT) when the implementation offers it, else the always-legal (RGBA, FLOAT) for
-     * float targets; log-domain RGBA8 targets are read as bytes and decoded.
-     */
-    private fun readWorkingPixels(caps: GlCapabilities, region: PixelRect): ShortArray {
-        val count = region.width * region.height * CHANNELS
-        GLES20.glPixelStorei(GLES20.GL_PACK_ALIGNMENT, 1)
-        val halves = if (caps.logDomain) {
-            val buffer = ByteBuffer.allocateDirect(count).order(ByteOrder.nativeOrder())
-            GLES20.glReadPixels(region.x, region.y, region.width, region.height, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, buffer)
-            checkGlError("log-domain glReadPixels")
-            val raw = ByteArray(count)
-            buffer.get(raw)
-            RenderMath.logBytesToHalf(raw)
-        } else if (implementationReadsHalfFloat()) {
-            val buffer = ByteBuffer.allocateDirect(count * Short.SIZE_BYTES).order(ByteOrder.nativeOrder())
-            GLES20.glReadPixels(region.x, region.y, region.width, region.height, GLES20.GL_RGBA, GLES30.GL_HALF_FLOAT, buffer)
-            checkGlError("half-float glReadPixels")
-            ShortArray(count).also { buffer.asShortBuffer().get(it) }
-        } else {
-            val buffer = ByteBuffer.allocateDirect(count * Float.SIZE_BYTES).order(ByteOrder.nativeOrder())
-            GLES20.glReadPixels(region.x, region.y, region.width, region.height, GLES20.GL_RGBA, GLES20.GL_FLOAT, buffer)
-            checkGlError("float glReadPixels")
-            val floats = FloatArray(count)
-            buffer.asFloatBuffer().get(floats)
-            RenderMath.floatsToHalf(floats)
-        }
-        RenderMath.flipRows(halves, region.width * CHANNELS, region.height)
-        return halves
-    }
-
-    private fun implementationReadsHalfFloat(): Boolean {
-        val format = IntArray(1)
-        val type = IntArray(1)
-        GLES20.glGetIntegerv(GLES20.GL_IMPLEMENTATION_COLOR_READ_FORMAT, format, 0)
-        GLES20.glGetIntegerv(GLES20.GL_IMPLEMENTATION_COLOR_READ_TYPE, type, 0)
-        return format[0] == GLES20.GL_RGBA && type[0] == GLES30.GL_HALF_FLOAT
     }
 
     private fun ensureRuntime(): Runtime {
