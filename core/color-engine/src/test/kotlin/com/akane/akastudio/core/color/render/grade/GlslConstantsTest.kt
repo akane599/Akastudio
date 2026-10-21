@@ -6,6 +6,7 @@ import com.akane.akastudio.core.color.grade.FilmGrain
 import com.akane.akastudio.core.color.grade.Halation
 import com.akane.akastudio.core.color.grade.Mat3
 import com.akane.akastudio.core.color.math.ColorMath
+import com.akane.akastudio.core.color.render.GlslEs300Check
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -146,6 +147,16 @@ class GlslConstantsTest {
     }
 
     @Test
+    fun everyGradeShaderUsesOnlyGlslEs300FeaturesWithThePrelude() {
+        assertTrue("no grade shaders found in $gradeDir", gradeShaders.isNotEmpty())
+        val failures = gradeShaders.mapNotNull { file ->
+            val source = GlslConstants.prelude + "\n" + file.readText()
+            GlslEs300Check.violations(source, "frag").takeIf { it.isNotEmpty() }?.let { "${file.name}: $it" }
+        }
+        if (failures.isNotEmpty()) fail(failures.joinToString("\n"))
+    }
+
+    @Test
     fun everyGradeShaderCompilesWithGlslcAfterThePrelude() {
         assertTrue("no grade shaders found in $gradeDir", gradeShaders.isNotEmpty())
         val glslc = findGlslc()
@@ -176,6 +187,7 @@ class GlslConstantsTest {
     /**
      * Same approach as ShaderSourcesTest: glslc's ES front end needs `310 es`, a superset of the 3.00 grammar the
      * sources use. The prelude goes after the version line exactly as ShaderProgram inserts it on the device.
+     * [everyGradeShaderUsesOnlyGlslEs300FeaturesWithThePrelude] rejects the 3.10-only constructs this would let through.
      */
     private fun compile(glslc: File, file: File, workDir: File): String? {
         val lines = file.readLines().toMutableList()
