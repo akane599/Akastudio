@@ -1,12 +1,6 @@
 package com.akane.akastudio.feature.studio.ui.dropzone
 
-import android.content.ActivityNotFoundException
-import android.content.ContentResolver
-import android.net.Uri
-import android.provider.OpenableColumns
 import android.text.format.Formatter
-import android.util.Log
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -44,9 +38,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,8 +60,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import com.akane.akastudio.core.ingestion.model.IngestionError
-import com.akane.akastudio.core.ingestion.picker.PickerContracts
-import com.akane.akastudio.core.ingestion.picker.PickerItems
 import com.akane.akastudio.feature.studio.R
 import com.akane.akastudio.feature.studio.domain.StudioError
 import com.akane.akastudio.feature.studio.mvi.StudioIntent
@@ -81,11 +70,7 @@ import com.akane.akastudio.feature.studio.ui.note.ResourceNoteStrings
 import com.akane.akastudio.feature.studio.ui.theme.DarkroomTextStyles
 import com.akane.akastudio.feature.studio.ui.theme.DarkroomTheme
 import kotlin.math.roundToInt
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
-private const val TAG = "Dropzone"
 private const val PERCENT = 100
 
 /** Component dimensions fixed by the Dropzone brief. */
@@ -100,82 +85,29 @@ private val WordmarkTracking = 0.12.em
  * The Dropzone: the welcome screen with the two import cards, then the live curation readout while photos are
  * read, analyzed and decided.
  *
- * Stateless over [state]: every action is sent to [onIntent]. It owns only the two system pickers, whose results
- * become [StudioIntent.ImportPhotos] and [StudioIntent.ImportZip]; repeated imports accumulate until curation
- * starts.
+ * Stateless over [state]: every action is sent to [onIntent]. The two system pickers are [pickers], owned by the
+ * studio screen so a result is never dropped when the Dropzone leaves composition while a picker is open; their
+ * results become [StudioIntent.ImportPhotos] and [StudioIntent.ImportZip], and repeated imports accumulate until
+ * curation starts.
  */
 @Composable
-fun DropzoneScreen(state: StudioState, onIntent: (StudioIntent) -> Unit, modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val currentOnIntent by rememberUpdatedState(onIntent)
-    var lastSource by rememberSaveable { mutableStateOf(ImportSource.PHOTOS) }
-
-    val photoContract = remember { PickerContracts.pickPhotos() }
-    val photoLauncher = rememberLauncherForActivityResult(photoContract) { uris ->
-        if (uris.isNotEmpty()) currentOnIntent(StudioIntent.ImportPhotos(uris.map(Uri::toString)))
-    }
-    val zipContract = remember { PickerContracts.openZip() }
-    val zipLauncher = rememberLauncherForActivityResult(zipContract) { uri ->
-        if (uri != null) {
-            val resolver = context.contentResolver
-            scope.launch {
-                val name = withContext(Dispatchers.IO) { displayNameOf(resolver, uri) }
-                currentOnIntent(StudioIntent.ImportZip(uri.toString(), name))
-            }
-        }
-    }
-
-    val pickPhotos: () -> Unit = {
-        lastSource = ImportSource.PHOTOS
-        launchPicker { photoLauncher.launch(PickerContracts.pickPhotosRequest()) }
-    }
-    val pickZip: () -> Unit = {
-        lastSource = ImportSource.ZIP
-        launchPicker { zipLauncher.launch(PickerContracts.ZIP_MIME_TYPES) }
-    }
+fun DropzoneScreen(
+    state: StudioState,
+    onIntent: (StudioIntent) -> Unit,
+    pickers: ImportPickers,
+    modifier: Modifier = Modifier,
+) {
     DropzoneContent(
         state = state,
         onIntent = onIntent,
-        onPickPhotos = pickPhotos,
-        onPickZip = pickZip,
+        onPickPhotos = pickers::pickPhotos,
+        onPickZip = pickers::pickZip,
         onRetry = {
             onIntent(StudioIntent.DismissError)
-            if (DropzoneModel.retryReopensPicker(state.phase)) {
-                when (lastSource) {
-                    ImportSource.PHOTOS -> pickPhotos()
-                    ImportSource.ZIP -> pickZip()
-                }
-            }
+            if (DropzoneModel.retryReopensPicker(state.phase)) pickers.reopenLast()
         },
         modifier = modifier,
     )
-}
-
-/** Launches a system picker; a device without one (no documents UI) leaves the screen as it was. */
-private inline fun launchPicker(launch: () -> Unit) {
-    try {
-        launch()
-    } catch (e: ActivityNotFoundException) {
-        Log.w(TAG, "No activity can handle the picker request", e)
-    }
-}
-
-/** The document's display name, or the last uri segment when the provider has none or refuses the query. */
-private fun displayNameOf(resolver: ContentResolver, uri: Uri): String {
-    val queried = try {
-        resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-            val column = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-            if (column >= 0 && cursor.moveToFirst()) cursor.getString(column) else null
-        }
-    } catch (e: SecurityException) {
-        Log.w(TAG, "Display name query refused", e)
-        null
-    } catch (e: IllegalArgumentException) {
-        Log.w(TAG, "Display name query rejected", e)
-        null
-    }
-    return queried?.takeIf { it.isNotBlank() } ?: PickerItems.displayNameFallback(uri.toString())
 }
 
 /** The Dropzone layout with the pickers hoisted out; previews and screenshots render it through [DropzoneScreen]. */

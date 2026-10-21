@@ -25,7 +25,9 @@ import com.akane.akastudio.feature.studio.di.CanvasHitTest
 import com.akane.akastudio.feature.studio.domain.StudioDependencies
 import com.akane.akastudio.feature.studio.mvi.StudioEffect
 import com.akane.akastudio.feature.studio.mvi.StudioViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * The studio entry point: obtains the [StudioViewModel] for [container], renders [StudioScreen] from its state and
@@ -45,12 +47,16 @@ fun StudioRoute(container: StudioDependencies, modifier: Modifier = Modifier) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(viewModel, lifecycle) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            viewModel.effects.collect { effect ->
-                when (effect) {
-                    is StudioEffect.ShareExport -> context.startActivity(shareChooser(context, effect))
-                    // Each message queues in the host; showing one must not hold back the next effect.
-                    is StudioEffect.ShowMessage -> launch {
-                        snackbarHostState.showSnackbar(studioMessageText(context, effect.message))
+            // Main.immediate: an effect sent on the main thread is handled in place. With a dispatched resume,
+            // ON_STOP could cancel the collector after the channel gave up the effect but before it ran, losing it.
+            withContext(Dispatchers.Main.immediate) {
+                viewModel.effects.collect { effect ->
+                    when (effect) {
+                        is StudioEffect.ShareExport -> context.startActivity(shareChooser(context, effect))
+                        // Each message queues in the host; showing one must not hold back the next effect.
+                        is StudioEffect.ShowMessage -> launch {
+                            snackbarHostState.showSnackbar(studioMessageText(context, effect.message))
+                        }
                     }
                 }
             }

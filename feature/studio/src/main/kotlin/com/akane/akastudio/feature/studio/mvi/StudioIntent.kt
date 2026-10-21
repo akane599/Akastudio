@@ -16,6 +16,15 @@ sealed interface StudioIntent {
     /** Import a zip archive; [displayName] is the user-visible file name (used in messages and errors). */
     data class ImportZip(val uri: String, val displayName: String) : StudioIntent
 
+    /**
+     * A system picker opened. Auto-curation waits until [PickerClosed], so the picked photos join the batch being
+     * read; when opened while photos are being read ("+ Add more"), its result never starts a new story.
+     */
+    data object PickerOpened : StudioIntent
+
+    /** The picker closed: sent after its import intent, if any, or on cancellation. Re-arms auto-curation. */
+    data object PickerClosed : StudioIntent
+
     /** Start curation now instead of waiting for the post-import debounce. */
     data object StartCuration : StudioIntent
 

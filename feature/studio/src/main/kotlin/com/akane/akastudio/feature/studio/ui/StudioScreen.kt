@@ -74,6 +74,8 @@ import com.akane.akastudio.feature.studio.ui.controls.ExportModalSheet
 import com.akane.akastudio.feature.studio.ui.controls.ModeDrawer
 import com.akane.akastudio.feature.studio.ui.controls.StudioTopBar
 import com.akane.akastudio.feature.studio.ui.dropzone.DropzoneScreen
+import com.akane.akastudio.feature.studio.ui.dropzone.ImportPickers
+import com.akane.akastudio.feature.studio.ui.dropzone.rememberImportPickers
 import com.akane.akastudio.feature.studio.ui.theme.DarkroomTheme
 
 private const val SHIMMER_PERIOD_MS = 1400
@@ -98,9 +100,17 @@ fun StudioScreen(
     hitTest: (Float, Float) -> Int?,
     modifier: Modifier = Modifier,
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
-) = StudioScreenContent(state, onIntent, renderer, hitTest, modifier, snackbarHostState)
+) {
+    // The pickers live here, composed in every phase: a result arriving after the Dropzone has left composition
+    // (curation started behind the picker, or the activity was recreated) still reaches the view model.
+    val pickers = rememberImportPickers(onIntent)
+    StudioScreenContent(state, onIntent, renderer, hitTest, modifier, snackbarHostState, pickers = pickers)
+}
 
-/** [StudioScreen] with the control panel's initial expansion exposed for screenshots (it starts collapsed). */
+/**
+ * [StudioScreen] with the control panel's initial expansion exposed for screenshots (it starts collapsed); its
+ * [pickers] default to inert ones, so screenshots need no activity-result registry.
+ */
 @Composable
 internal fun StudioScreenContent(
     state: StudioState,
@@ -110,6 +120,7 @@ internal fun StudioScreenContent(
     modifier: Modifier = Modifier,
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     panelInitiallyExpanded: Boolean = false,
+    pickers: ImportPickers = ImportPickers.Inert,
 ) {
     val workspace = showsWorkspace(state.phase)
     // Both reset whenever the studio leaves or enters the workspace.
@@ -155,7 +166,7 @@ internal fun StudioScreenContent(
                 )
             }
         } else {
-            DropzoneScreen(state = state, onIntent = onIntent)
+            DropzoneScreen(state = state, onIntent = onIntent, pickers = pickers)
             SnackbarHost(
                 hostState = snackbarHostState,
                 modifier = Modifier

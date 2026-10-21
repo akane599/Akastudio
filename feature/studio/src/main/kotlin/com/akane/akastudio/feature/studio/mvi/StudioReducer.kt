@@ -60,6 +60,7 @@ internal object StudioReducer {
         is StudioIntent.SwapSlots -> swapSlots(state, intent.from, intent.to)
         is StudioIntent.ImportPhotos, is StudioIntent.ImportZip, StudioIntent.StartCuration, StudioIntent.CancelWork,
         is StudioIntent.ForceMode, is StudioIntent.SwapCandidate, is StudioIntent.Export, StudioIntent.Reset,
+        StudioIntent.PickerOpened, StudioIntent.PickerClosed,
         -> state
     }
 

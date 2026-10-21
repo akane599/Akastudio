@@ -128,7 +128,7 @@ private object PreviewResultRegistryOwner : ActivityResultRegistryOwner {
 @Composable
 internal fun DropzonePreviewHost(state: StudioState) = DarkroomTheme {
     CompositionLocalProvider(LocalActivityResultRegistryOwner provides PreviewResultRegistryOwner) {
-        DropzoneScreen(state = state, onIntent = {})
+        DropzoneScreen(state = state, onIntent = {}, pickers = rememberImportPickers(onIntent = {}))
     }
 }
 
