@@ -351,7 +351,8 @@ private fun ProgressLine(progress: Float) {
         animationSpec = DarkroomTheme.motion.standard(),
         label = "dropzone-progress",
     )
-    val description = stringResource(R.string.dropzone_progress_description, (progress * PERCENT).roundToInt())
+    val percent = (progress * PERCENT).roundToInt()
+    val description = pluralStringResource(R.plurals.dropzone_progress_description, percent, percent)
     LinearProgressIndicator(
         progress = { animated },
         modifier = Modifier

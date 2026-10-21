@@ -1,5 +1,6 @@
 package com.akane.akastudio.core.export.store
 
+import android.annotation.SuppressLint
 import android.annotation.TargetApi
 import android.graphics.Bitmap
 import android.graphics.Gainmap
@@ -26,19 +27,13 @@ import kotlin.math.max
  * Chroma subsampling is the platform default (4:2:0): `Bitmap.compress` exposes no way to change it, unlike the
  * 4:4:4 [com.akane.akastudio.core.export.encode.JpegEncoder] used for SOCIAL_STORY_JPEG.
  *
- * Requires API 34 (`androidx.annotation` is not on this module's classpath, so the requirement is declared with
- * [TargetApi] and enforced at construction).
- *
- * @throws IllegalStateException from the constructor below API 34.
+ * Requires API 34. The requirement is declared with [TargetApi], so lint does not propagate it: construct this only
+ * behind an `SDK_INT >= UPSIDE_DOWN_CAKE` check, as [createStoryExporter] does.
  */
+// androidx.annotation (for @RequiresApi) is not on this module's classpath; adding it needs user approval.
+@SuppressLint("UseRequiresApi")
 @TargetApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
 class PlatformUltraHdrEncoder : UltraHdrEncoder {
-
-    init {
-        check(Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            "Ultra HDR encoding needs API ${Build.VERSION_CODES.UPSIDE_DOWN_CAKE}, device is ${Build.VERSION.SDK_INT}"
-        }
-    }
 
     override fun encode(sdr: HalfFloatImage, gain: GainMapResult, out: OutputStream, quality: Int, exifTiff: ByteArray?) {
         require(quality in 0..100) { "JPEG quality must be in 0..100: $quality" }

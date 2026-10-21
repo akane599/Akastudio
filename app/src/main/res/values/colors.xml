@@ -1,4 +1,7 @@
 <resources>
     <!-- Matches DarkroomPalette.Background. -->
     <color name="darkroom_background">#FF0B0C0E</color>
+    <!-- Launcher mark: DarkroomPalette.PaperWhite and OnSurfaceVariant. -->
+    <color name="ic_launcher_mark">#FFE8E6E1</color>
+    <color name="ic_launcher_horizon">#FF9C9A94</color>
 </resources>

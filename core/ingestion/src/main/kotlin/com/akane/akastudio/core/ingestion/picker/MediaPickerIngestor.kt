@@ -4,6 +4,7 @@ import android.content.ContentResolver
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
+import androidx.core.net.toUri
 import com.akane.akastudio.core.ingestion.model.ImageFormat
 import com.akane.akastudio.core.ingestion.model.PhotoSource
 import kotlinx.coroutines.CoroutineDispatcher
@@ -25,7 +26,7 @@ class MediaPickerIngestor(
     }
 
     private fun resolveOne(uriString: String): PickedItem {
-        val uri = Uri.parse(uriString)
+        val uri = uriString.toUri()
         persistReadPermission(uri)
         val openable = queryOpenable(uri)
         val displayName = openable?.displayName?.takeUnless { it.isBlank() }

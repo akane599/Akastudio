@@ -3,7 +3,6 @@ package com.akane.akastudio.feature.studio.ui
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -12,6 +11,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -73,7 +73,7 @@ fun studioViewModelFactory(container: StudioDependencies): ViewModelProvider.Fac
 
 /** The system share sheet for an exported image, with read access to its content uri granted to the target. */
 private fun shareChooser(context: Context, effect: StudioEffect.ShareExport): Intent {
-    val uri = Uri.parse(effect.uri)
+    val uri = effect.uri.toUri()
     val send = Intent(Intent.ACTION_SEND).apply {
         type = effect.mime
         putExtra(Intent.EXTRA_STREAM, uri)

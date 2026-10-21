@@ -2,8 +2,9 @@ package com.akane.akastudio.core.ingestion
 
 import android.content.ContentResolver
 import android.content.Context
-import android.net.Uri
+import android.os.storage.StorageManager
 import android.provider.OpenableColumns
+import androidx.core.net.toUri
 import com.akane.akastudio.core.ingestion.api.AnalysisDecoder
 import com.akane.akastudio.core.ingestion.api.IngestionSession
 import com.akane.akastudio.core.ingestion.api.SourceOpener
@@ -26,7 +27,7 @@ private const val INGEST_DIR = "ingest"
 internal class ContentSourceOpener(private val resolver: ContentResolver) : SourceOpener {
     override fun open(source: PhotoSource): InputStream = when (source) {
         is PhotoSource.ContentUri ->
-            resolver.openInputStream(Uri.parse(source.uri)) ?: throw IOException("cannot open ${source.uri}")
+            resolver.openInputStream(source.uri.toUri()) ?: throw IOException("cannot open ${source.uri}")
         is PhotoSource.ExtractedFile -> FileInputStream(source.path)
     }
 }
@@ -34,7 +35,7 @@ internal class ContentSourceOpener(private val resolver: ContentResolver) : Sour
 internal fun sourceSize(resolver: ContentResolver, source: PhotoSource): Long? = when (source) {
     is PhotoSource.ExtractedFile -> File(source.path).length()
     is PhotoSource.ContentUri -> try {
-        resolver.query(Uri.parse(source.uri), arrayOf(OpenableColumns.SIZE), null, null, null)?.use { c ->
+        resolver.query(source.uri.toUri(), arrayOf(OpenableColumns.SIZE), null, null, null)?.use { c ->
             val idx = c.getColumnIndex(OpenableColumns.SIZE)
             if (idx >= 0 && c.moveToFirst() && !c.isNull(idx)) c.getLong(idx) else null
         }
@@ -48,13 +49,26 @@ fun createIngestionSession(context: Context, limits: ZipLimits = ZipLimits()): I
     val resolver = app.contentResolver
     val opener = ContentSourceOpener(resolver)
     val workDir = File(app.cacheDir, "$INGEST_DIR/${UUID.randomUUID()}").apply { mkdirs() }
+    val storage = app.getSystemService(StorageManager::class.java)
     return DefaultIngestionSession(
         workDir = workDir,
-        extractor = StreamingZipExtractor(limits),
+        extractor = StreamingZipExtractor(limits, freeSpaceProvider = { allocatableBytes(storage, it) }),
         parser = ExifAndGainMapParser(opener, { sourceSize(resolver, it) }, contentResolver = resolver),
         picker = MediaPickerIngestor(resolver)::resolve,
         zipOpener = { uri -> opener.open(PhotoSource.ContentUri(uri, "")) },
     )
+}
+
+/**
+ * Bytes the app can still claim on [dir]'s volume. Unlike [File.getUsableSpace], [StorageManager.getAllocatableBytes]
+ * also counts cached data the system will clear on the app's behalf, so a nearly full device whose space is mostly
+ * other apps' caches is not refused outright. The extractor still subtracts [ZipLimits.freeSpaceReserveBytes] from
+ * this figure. A path on no known volume falls back to the plain usable space.
+ */
+private fun allocatableBytes(storage: StorageManager, dir: File): Long = try {
+    storage.getAllocatableBytes(storage.getUuidForPath(dir))
+} catch (_: IOException) {
+    dir.usableSpace
 }
 
 fun createAnalysisDecoder(context: Context): AnalysisDecoder {

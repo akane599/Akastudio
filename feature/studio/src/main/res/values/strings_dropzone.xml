@@ -23,7 +23,10 @@
     <string name="dropzone_add_more_zip">.ZIP archive</string>
     <string name="dropzone_curate_now">Curate now</string>
     <!-- %1$d is the whole percentage of the pipeline that is complete -->
-    <string name="dropzone_progress_description">Pipeline progress %1$d percent</string>
+    <plurals name="dropzone_progress_description">
+        <item quantity="one">Pipeline progress %1$d percent</item>
+        <item quantity="other">Pipeline progress %1$d percent</item>
+    </plurals>
 
     <!-- Dropzone: telemetry steps -->
     <!-- No-break spaces on both sides, so the "·" never starts or ends a line on its own -->
@@ -41,8 +44,11 @@
         <item quantity="one">%1$d burst clustered</item>
         <item quantity="other">%1$d bursts clustered</item>
     </plurals>
-    <!-- %1$d analyzed so far, %2$d to analyze -->
-    <string name="dropzone_analyzed">%1$d of %2$d analyzed</string>
+    <!-- %1$d analyzed so far, %2$d to analyze; quantity is %2$d -->
+    <plurals name="dropzone_analyzed">
+        <item quantity="one">%1$d of %2$d analyzed</item>
+        <item quantity="other">%1$d of %2$d analyzed</item>
+    </plurals>
     <string name="dropzone_step_focus">Eye / focus check</string>
     <string name="dropzone_step_focus_done">Eye / focus check complete</string>
     <plurals name="dropzone_rejected">

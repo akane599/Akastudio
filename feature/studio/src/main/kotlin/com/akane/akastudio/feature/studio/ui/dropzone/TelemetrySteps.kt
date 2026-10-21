@@ -217,7 +217,7 @@ private fun stepText(item: PipelineStepUi, telemetry: TelemetryUi): Pair<String,
             StepStatus.DONE -> pluralStringResource(R.plurals.dropzone_bursts_clustered, clusters, clusters) to null
             StepStatus.ACTIVE -> stringResource(R.string.dropzone_step_cluster) to
                 telemetry.analyzeTotal.takeIf { it > 0 }?.let {
-                    stringResource(R.string.dropzone_analyzed, analyzed, it)
+                    pluralStringResource(R.plurals.dropzone_analyzed, it, analyzed, it)
                 }
             StepStatus.PENDING -> stringResource(R.string.dropzone_step_cluster) to null
         }
