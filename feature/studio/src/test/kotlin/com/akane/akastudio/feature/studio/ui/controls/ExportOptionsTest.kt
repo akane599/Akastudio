@@ -39,6 +39,36 @@ class ExportOptionsTest {
     }
 
     @Test
+    fun `from API 34 the HDR boost switch is on and enabled only under Ultra HDR`() {
+        val a = ExportOptions.availability(34)
+        ExportFormat.entries.forEach { format ->
+            val sw = ExportOptions.hdrBoostSwitch(a, format, hdrBoost = true, editable = true)
+            val ultraHdr = format == ExportFormat.ULTRA_HDR_JPEG
+            assertEquals("$format", ultraHdr, sw.checked)
+            assertEquals("$format", ultraHdr, sw.enabled)
+            assertEquals("$format", if (ultraHdr) HdrBoostNote.APPLIES else HdrBoostNote.ULTRA_HDR_ONLY, sw.note)
+        }
+    }
+
+    @Test
+    fun `below API 34 the HDR boost switch is off and disabled for every format`() {
+        val a = ExportOptions.availability(33)
+        ExportFormat.entries.forEach { format ->
+            val sw = ExportOptions.hdrBoostSwitch(a, format, hdrBoost = true, editable = true)
+            assertEquals("$format", HdrBoostSwitchState(false, false, HdrBoostNote.NEEDS_ANDROID_14), sw)
+        }
+    }
+
+    @Test
+    fun `under Ultra HDR the switch follows the flag and locks while exporting`() {
+        val a = ExportOptions.availability(34)
+        val off = ExportOptions.hdrBoostSwitch(a, ExportFormat.ULTRA_HDR_JPEG, hdrBoost = false, editable = true)
+        assertEquals(HdrBoostSwitchState(checked = false, enabled = true, note = HdrBoostNote.APPLIES), off)
+        val locked = ExportOptions.hdrBoostSwitch(a, ExportFormat.ULTRA_HDR_JPEG, hdrBoost = true, editable = false)
+        assertEquals(HdrBoostSwitchState(checked = true, enabled = false, note = HdrBoostNote.APPLIES), locked)
+    }
+
+    @Test
     fun `every template wireframe has one cell per photo, inside the canvas`() {
         StoryTemplate.entries.forEach { template ->
             val cells = TemplateWireframes.cells(template)

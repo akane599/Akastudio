@@ -95,6 +95,7 @@
     <string name="controls_needs_android_14">Android 14 veya üstü gerekir.</string>
     <string name="controls_resolution_title">Çözünürlük</string>
     <string name="controls_hdr_boost_summary">HDR ekranlar vurguları daha parlak göstersin diye kazanç haritası ekler.</string>
+    <string name="controls_hdr_boost_ultra_hdr_only">Yalnızca Ultra HDR.</string>
     <string name="controls_export_action">Dışa aktar</string>
     <string name="controls_export_share_action">Aktar ve paylaş</string>
     <string name="controls_export_starting">Dışa aktarma başlıyor</string>

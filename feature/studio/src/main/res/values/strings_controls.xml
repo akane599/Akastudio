@@ -105,6 +105,7 @@
     <string name="controls_resolution_4k" translatable="false">4K UHD</string>
     <string name="controls_hdr_boost" translatable="false">HDR Story Boost</string>
     <string name="controls_hdr_boost_summary">Embeds a gain map so HDR screens show the highlights brighter.</string>
+    <string name="controls_hdr_boost_ultra_hdr_only">Ultra HDR only.</string>
     <string name="controls_export_action">Export</string>
     <string name="controls_export_share_action">Export &amp; share</string>
     <string name="controls_export_starting">Starting export</string>

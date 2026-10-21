@@ -93,14 +93,19 @@ fun ExportSheet(
             onSelect = { onIntent(StudioIntent.SetExportResolution(RESOLUTIONS[it])) },
             enabled = editable,
         )
+        val hdrBoost = ExportOptions.hdrBoostSwitch(availability, export.format, export.hdrBoost, editable)
         SwitchRow(
             title = stringResource(R.string.controls_hdr_boost),
             summary = stringResource(
-                if (availability.hdrBoostAvailable) R.string.controls_hdr_boost_summary else R.string.controls_needs_android_14,
+                when (hdrBoost.note) {
+                    HdrBoostNote.APPLIES -> R.string.controls_hdr_boost_summary
+                    HdrBoostNote.ULTRA_HDR_ONLY -> R.string.controls_hdr_boost_ultra_hdr_only
+                    HdrBoostNote.NEEDS_ANDROID_14 -> R.string.controls_needs_android_14
+                },
             ),
-            checked = export.hdrBoost && availability.hdrBoostAvailable,
+            checked = hdrBoost.checked,
             onCheckedChange = { onIntent(StudioIntent.SetHdrBoost(it)) },
-            enabled = availability.hdrBoostAvailable && editable,
+            enabled = hdrBoost.enabled,
         )
         ExportStatus(export = export, exporting = exporting)
         Row(horizontalArrangement = Arrangement.spacedBy(spacing.s)) {
