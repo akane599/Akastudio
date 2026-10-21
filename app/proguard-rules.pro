@@ -18,3 +18,8 @@
 # liblitert_jni.so constructs LiteRtException, TensorBufferRequirements and TensorType (with its ElementType and
 # Layout enums) by name; the vendor rules only cover @UsedByReflection, so keep the small Kotlin API whole.
 -keep class com.google.ai.edge.litert.** { *; }
+
+# --- Room (transitive: work-runtime 2.9.1 -> room-runtime 2.5.0) ---
+# Room creates generated *_Impl databases through their no-arg constructor by reflection. room-runtime 2.5.0's consumer
+# rule keeps the class but not <init>(), which R8 full mode (the AGP default) then removes, so keep it explicitly.
+-keep class * extends androidx.room.RoomDatabase { <init>(); }
