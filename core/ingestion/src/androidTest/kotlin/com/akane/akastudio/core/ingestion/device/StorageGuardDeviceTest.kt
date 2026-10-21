@@ -38,7 +38,7 @@ class StorageGuardDeviceTest {
     @Test
     fun usableBytesForTheIngestVolumeIsPositive() {
         val usable = usableBytes()
-        qaLog("cacheDir.usableSpace = $usable")
+        qaLog("noBackupFilesDir.usableSpace = $usable")
         assertTrue("usable bytes on device: $usable", usable > 0)
     }
 
@@ -70,5 +70,5 @@ class StorageGuardDeviceTest {
             it.collect(IngestionRequest.ZipArchive(zipUri, "one.zip"))
         }
 
-    private fun usableBytes(): Long = targetContext.cacheDir.usableSpace
+    private fun usableBytes(): Long = targetContext.noBackupFilesDir.usableSpace
 }

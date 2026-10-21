@@ -10,7 +10,10 @@ sealed interface IngestionRequest {
     data class ZipArchive(val uri: String, val displayName: String) : IngestionRequest
 }
 
-/** Owns a session temp dir under cacheDir/ingest/<sessionId>/; close() deletes it recursively. */
+/**
+ * Owns a session work dir under noBackupFilesDir/ingest/<sessionId>/ (app-private, not evictable like cacheDir, so
+ * staged photos outlive storage pressure for the whole session); close() deletes it recursively.
+ */
 interface IngestionSession : Closeable {
     val workDir: File
     fun ingest(requests: List<IngestionRequest>): Flow<IngestionEvent>

@@ -26,7 +26,7 @@ class ZipPathDeviceTest {
 
     private val store = QaMediaStore()
     private val appDir = File(targetContext.filesDir, "qa-zip-${store.runId}").apply { mkdirs() }
-    private val ingestRoot = File(targetContext.cacheDir, "ingest")
+    private val ingestRoot = File(targetContext.noBackupFilesDir, "ingest")
 
     private val photo1 = deviceJpeg(80, 60, Color.RED, Color.BLUE)
     private val photo2 = deviceJpeg(60, 80, Color.GREEN, Color.MAGENTA)
