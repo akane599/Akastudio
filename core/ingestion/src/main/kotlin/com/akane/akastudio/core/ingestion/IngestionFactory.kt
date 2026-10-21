@@ -2,7 +2,6 @@ package com.akane.akastudio.core.ingestion
 
 import android.content.ContentResolver
 import android.content.Context
-import android.os.storage.StorageManager
 import android.provider.OpenableColumns
 import androidx.core.net.toUri
 import com.akane.akastudio.core.ingestion.api.AnalysisDecoder
@@ -49,10 +48,9 @@ fun createIngestionSession(context: Context, limits: ZipLimits = ZipLimits()): I
     val resolver = app.contentResolver
     val opener = ContentSourceOpener(resolver)
     val workDir = File(app.cacheDir, "$INGEST_DIR/${UUID.randomUUID()}").apply { mkdirs() }
-    val storage = app.getSystemService(StorageManager::class.java)
     return DefaultIngestionSession(
         workDir = workDir,
-        extractor = StreamingZipExtractor(limits, freeSpaceProvider = { allocatableBytes(storage, it) }),
+        extractor = StreamingZipExtractor(limits, freeSpaceProvider = ::usableBytes),
         parser = ExifAndGainMapParser(opener, { sourceSize(resolver, it) }, contentResolver = resolver),
         picker = MediaPickerIngestor(resolver)::resolve,
         zipOpener = { uri -> opener.open(PhotoSource.ContentUri(uri, "")) },
@@ -60,16 +58,13 @@ fun createIngestionSession(context: Context, limits: ZipLimits = ZipLimits()): I
 }
 
 /**
- * Bytes the app can still claim on [dir]'s volume. Unlike [File.getUsableSpace], [StorageManager.getAllocatableBytes]
- * also counts cached data the system will clear on the app's behalf, so a nearly full device whose space is mostly
- * other apps' caches is not refused outright. The extractor still subtracts [ZipLimits.freeSpaceReserveBytes] from
- * this figure. A path on no known volume falls back to the plain usable space.
+ * Bytes actually free on [dir]'s volume. `StorageManager.getAllocatableBytes` would also count other apps' cache,
+ * which only `allocateBytes` frees. That call clears app caches by how far over quota they are, and mid-import our
+ * own staging folder (in cacheDir, possibly gigabytes) is a likely victim. So the extractor checks the real free
+ * space and reports a shortfall up front; the user can free space and retry. [ZipLimits.freeSpaceReserveBytes] is
+ * still subtracted from this figure.
  */
-private fun allocatableBytes(storage: StorageManager, dir: File): Long = try {
-    storage.getAllocatableBytes(storage.getUuidForPath(dir))
-} catch (_: IOException) {
-    dir.usableSpace
-}
+private fun usableBytes(dir: File): Long = dir.usableSpace
 
 fun createAnalysisDecoder(context: Context): AnalysisDecoder {
     val resolver = context.applicationContext.contentResolver

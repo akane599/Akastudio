@@ -1,7 +1,6 @@
 package com.akane.akastudio.core.ingestion.picker
 
 import android.content.ContentResolver
-import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.core.net.toUri
@@ -12,7 +11,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
-/** Thin ContentResolver adapter turning picker URIs into [PickedItem]s. */
+/**
+ * Thin ContentResolver adapter turning picker URIs into [PickedItem]s. It relies on the picker's
+ * session-scoped read grant and takes no persistable grant: nothing outlives the ingestion session.
+ */
 class MediaPickerIngestor(
     private val contentResolver: ContentResolver,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -27,21 +29,11 @@ class MediaPickerIngestor(
 
     private fun resolveOne(uriString: String): PickedItem {
         val uri = uriString.toUri()
-        persistReadPermission(uri)
         val openable = queryOpenable(uri)
         val displayName = openable?.displayName?.takeUnless { it.isBlank() }
             ?: PickerItems.displayNameFallback(uriString)
         val format = ImageFormat.fromMimeType(mimeTypeOf(uri)) ?: PickerItems.formatFromDisplayName(displayName)
         return PickedItem(PhotoSource.ContentUri(uriString, displayName), format, openable?.sizeBytes)
-    }
-
-    /** Picker URIs are often not persistable; the grant is best-effort. */
-    private fun persistReadPermission(uri: Uri) {
-        try {
-            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        } catch (_: SecurityException) {
-            // Not persistable: the session-scoped grant still covers this ingestion.
-        }
     }
 
     private fun queryOpenable(uri: Uri): Openable? =

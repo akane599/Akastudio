@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -176,6 +177,41 @@ class DefaultIngestionSessionTest {
             IngestionTelemetry(sourcesTotal = 3, filesRead = 2, candidatesAccepted = 2, skipped = 1),
             completed.telemetry,
         )
+    }
+
+    @Test
+    fun sameUriInALaterIngestCall_isSkippedAsDuplicateWithoutParsingAgain() = runTest {
+        val a = picked("a")
+        val parser = FakeParser()
+        val session = session(parser = parser, pickerItems = listOf(a))
+        session.ingest(listOf(IngestionRequest.PickedMedia(listOf(a.source.uri)))).toList()
+
+        val events = session.ingest(listOf(IngestionRequest.PickedMedia(listOf(a.source.uri)))).toList()
+
+        assertEquals(
+            listOf("a" to SkipReason.DUPLICATE),
+            events.filterIsInstance<IngestionEvent.Skipped>().map { it.displayName to it.reason },
+        )
+        assertEquals(emptyList<Any>(), (events.last() as IngestionEvent.Completed).candidates)
+        assertEquals(1, parser.calls.size)
+    }
+
+    @Test
+    fun aCancelledRunReleasesItsClaims_soTheSameImportIsParsedAgain() = runTest {
+        val a = picked("a")
+        val parser = FakeParser(delayMs = { 1_000L })
+        val session = session(parser = parser, pickerItems = listOf(a))
+        val request = listOf(IngestionRequest.PickedMedia(listOf(a.source.uri)))
+
+        val job = launch { session.ingest(request).toList() }
+        advanceTimeBy(500L)
+        assertEquals("the first parse is in flight", 1, parser.calls.size)
+        job.cancel()
+        job.join()
+        val events = session.ingest(request).toList()
+
+        assertEquals(listOf("a"), (events.last() as IngestionEvent.Completed).candidates.map { it.source.displayName })
+        assertEquals(2, parser.calls.size)
     }
 
     @Test

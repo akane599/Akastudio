@@ -7,7 +7,12 @@ import com.akane.akastudio.core.ingestion.model.IngestionError
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FilterInputStream
+import java.io.FilterOutputStream
+import java.io.IOException
 import java.io.InputStream
+import java.io.OutputStream
+import java.nio.file.Files
+import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.zip.ZipEntry
@@ -15,12 +20,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -152,6 +159,62 @@ class ZipCleanupTest {
 
         assertTrue("$error", error is IngestionError.InsufficientStorage)
         assertEquals(emptyList<String>(), filesUnder(dest))
+    }
+
+    @Test
+    fun enospcPartwayThroughAWriteIsInsufficientStorageAndRemovesThePartialFile() = runTest {
+        val dest = temp.newFolder()
+        var partialBytesOnDisk = 0L
+        // Writes really reach the file, then the volume fills up after 1 MiB, as Android reports it.
+        val fillsUp: (Path) -> OutputStream = { path ->
+            object : FilterOutputStream(Files.newOutputStream(path)) {
+                var written = 0L
+
+                override fun write(b: ByteArray, off: Int, len: Int) {
+                    if (written >= MIB) {
+                        partialBytesOnDisk = Files.size(path)
+                        throw IOException("write failed: ENOSPC (No space left on device)")
+                    }
+                    out.write(b, off, len)
+                    out.flush()
+                    written += len
+                }
+            }
+        }
+        val extractor = StreamingZipExtractor(ZipLimits(), StandardTestDispatcher(testScheduler), plentyOfSpace, fillsUp)
+
+        val error = failureOf(
+            extractor.extract({ ByteArrayInputStream(zipOf("big.jpg" to randomBytes(4 * MIB))) }, "archive", dest),
+        )
+
+        assertTrue("a partial file existed when the write failed", partialBytesOnDisk >= MIB)
+        assertTrue("$error", error is IngestionError.InsufficientStorage)
+        assertEquals(0L, (error as IngestionError.InsufficientStorage).availableBytes)
+        assertTrue("the entry's estimate is reported", error.requiredBytes > 0)
+        assertEquals("the partial is gone", emptyList<String>(), filesUnder(dest))
+    }
+
+    @Test
+    fun outOfSpaceIsRecognisedThroughTheCauseChainAndOnlyThere() {
+        assertTrue(isOutOfSpace(IOException("write failed: ENOSPC (No space left on device)")))
+        assertTrue(isOutOfSpace(IOException("No space left on device")))
+        assertTrue(isOutOfSpace(IOException("copy failed", IOException("write failed: ENOSPC"))))
+        assertFalse(isOutOfSpace(IOException("read failed: EIO (I/O error)")))
+        assertFalse(isOutOfSpace(IllegalStateException()))
+    }
+
+    @Test
+    fun freeSpaceIsReadOncePerArchive() = runTest {
+        val dest = temp.newFolder()
+        var reads = 0
+        val counting: (File) -> Long = { reads++; Long.MAX_VALUE / 2 }
+        // Three entries, one of them past the 8 MiB re-check interval: all checks use the cached figure.
+        val zip = zipOf("a.jpg" to randomBytes(KIB), "b.jpg" to randomBytes(20 * MIB), "c.jpg" to randomBytes(KIB))
+
+        val events = extractor(freeSpace = counting).extract({ ByteArrayInputStream(zip) }, "archive", dest).toList()
+
+        assertEquals(3, events.size)
+        assertEquals(1, reads)
     }
 
     @Test
