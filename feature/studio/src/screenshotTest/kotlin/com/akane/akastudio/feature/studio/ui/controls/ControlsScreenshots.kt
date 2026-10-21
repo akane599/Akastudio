@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.akane.akastudio.feature.studio.mvi.ControlTab
@@ -36,15 +37,18 @@ private fun Panel(state: StudioState, sdkInt: Int = API_34) = DarkroomTheme {
     ControlPanel(state = state, onIntent = {}, sdkInt = sdkInt, modifier = Modifier.fillMaxSize())
 }
 
+/** The modal export sheet's surface, handle and body, drawn inline because a modal sheet opens its own window. */
 @Composable
 private fun SheetSurface(state: StudioState, sdkInt: Int) = DarkroomTheme {
     Column(
         Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surfaceContainerLow, DarkroomShapeTokens.sheetTop)
-            .padding(vertical = DarkroomTheme.spacing.l),
+            .padding(bottom = DarkroomTheme.spacing.l),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        ExportSheet(state = state, onIntent = {}, sdkInt = sdkInt)
+        ExportSheetDragHandle()
+        ExportSheetBody(state = state, onIntent = {}, sdkInt = sdkInt)
     }
 }
 

@@ -105,6 +105,9 @@ internal fun LayoutTab(state: StudioState, onIntent: (StudioIntent) -> Unit) {
                     options = BACKGROUNDS.map { stringResource(it.labelRes()) },
                     selectedIndex = BACKGROUNDS.indexOf(layout.background),
                     onSelect = { onIntent(StudioIntent.SetBackground(BACKGROUNDS[it])) },
+                    // Four segments share the row: one compact line each, wrapping only at large font sizes.
+                    labelStyle = MaterialTheme.typography.labelMedium,
+                    maxLines = if (isLargeFont()) 2 else 1,
                 )
             }
             SwitchRow(
@@ -143,6 +146,8 @@ private fun TemplateTile(template: StoryTemplate, selected: Boolean, onClick: ()
             style = MaterialTheme.typography.labelSmall,
             color = if (selected) scheme.onSurface else scheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
+            // Two reserved lines keep every template tile the same height whether its name wraps or not.
+            minLines = 2,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )

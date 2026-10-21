@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
@@ -31,6 +32,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -95,14 +97,32 @@ internal object ControlMetrics {
     /** Meter (synergy and export progress) bar thickness. */
     val MeterHeight: Dp = 3.dp
 
-    /** Slider track, centre tick and thumb. */
-    val TrackHeight: Dp = 2.dp
+    /** Slider track, centre tick and thumb. The track matches [MeterHeight] so both boundaries read alike. */
+    val TrackHeight: Dp = 3.dp
     val CenterTickHeight: Dp = 10.dp
     val ThumbSize: Dp = 14.dp
 
     /** Tab indicator thickness. */
     val TabIndicator: Dp = 2.dp
 }
+
+/**
+ * Ink for non-text boundaries: the inactive slider track, the meter remainder and outlined-button borders.
+ * The theme's Outline (#2C2F34) reaches only 1.4:1 on the panel (#141518) and no theme tone sits between it and
+ * Tertiary, so these boundaries use Tertiary, the lowest theme tone that clears 1.8:1 (5.3:1).
+ */
+internal val boundaryColor: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = MaterialTheme.colorScheme.tertiary
+
+/** Font scale from which compact controls switch to their large-font layout. */
+internal const val LARGE_FONT_SCALE = 1.3f
+
+/** Whether the user's font scale calls for the large-font layout of compact controls. */
+@Composable
+@ReadOnlyComposable
+internal fun isLargeFont(): Boolean = LocalDensity.current.fontScale >= LARGE_FONT_SCALE
 
 /** Alpha of thumbnails for rejected photos: still recognisable, clearly out of the story. */
 internal const val REJECTED_ALPHA = 0.55f
@@ -203,7 +223,7 @@ internal fun MeterBar(fraction: Float, modifier: Modifier = Modifier, progressSe
             .then(semanticsModifier)
             .height(ControlMetrics.MeterHeight)
             .clip(MaterialTheme.shapes.extraSmall)
-            .background(colors.sliderTrack),
+            .background(boundaryColor),
     ) {
         if (f > 0f) {
             Box(
@@ -217,8 +237,8 @@ internal fun MeterBar(fraction: Float, modifier: Modifier = Modifier, progressSe
 }
 
 /**
- * A single-choice segmented control. The selected segment is shown by fill and luminance only. Labels may wrap
- * to two lines so long translations and large fonts never truncate.
+ * A single-choice segmented control. The selected segment is shown by fill and luminance only. Labels wrap to
+ * at most [maxLines] lines; the default of two keeps long translations and large fonts from truncating.
  */
 @Composable
 internal fun SegmentedControl(
@@ -227,6 +247,8 @@ internal fun SegmentedControl(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    labelStyle: TextStyle = MaterialTheme.typography.labelLarge,
+    maxLines: Int = 2,
 ) {
     val scheme = MaterialTheme.colorScheme
     val shape = MaterialTheme.shapes.small
@@ -258,14 +280,14 @@ internal fun SegmentedControl(
             ) {
                 Text(
                     text = label,
-                    style = MaterialTheme.typography.labelLarge,
+                    style = labelStyle,
                     color = when {
                         !enabled -> scheme.onSurfaceVariant.copy(alpha = DISABLED_ALPHA)
                         selected -> scheme.onSurface
                         else -> scheme.onSurfaceVariant
                     },
                     textAlign = TextAlign.Center,
-                    maxLines = 2,
+                    maxLines = maxLines,
                     overflow = TextOverflow.Ellipsis,
                 )
             }

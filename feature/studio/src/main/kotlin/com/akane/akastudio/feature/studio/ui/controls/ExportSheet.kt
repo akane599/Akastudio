@@ -1,6 +1,7 @@
 package com.akane.akastudio.feature.studio.ui.controls
 
 import android.os.Build
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,7 +13,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -113,6 +116,11 @@ fun ExportSheet(
             OutlinedButton(
                 onClick = { onIntent(StudioIntent.Export(share = true)) },
                 enabled = canExport,
+                border = if (canExport) {
+                    BorderStroke(ControlMetrics.Hairline, boundaryColor)
+                } else {
+                    ButtonDefaults.outlinedButtonBorder(enabled = false)
+                },
                 modifier = Modifier
                     .weight(1f)
                     .heightIn(min = ControlMetrics.TouchTarget),
@@ -142,25 +150,49 @@ fun ExportModalSheet(
         shape = DarkroomShapeTokens.sheetTop,
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         contentColor = MaterialTheme.colorScheme.onSurface,
+        dragHandle = { ExportSheetDragHandle() },
     ) {
-        Column(
+        ExportSheetBody(
+            state = state,
+            onIntent = onIntent,
+            sdkInt = sdkInt,
             modifier = Modifier
-                .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .navigationBarsPadding()
                 .padding(bottom = spacing.l),
-            verticalArrangement = Arrangement.spacedBy(spacing.m),
-        ) {
-            Text(
-                text = stringResource(R.string.controls_export_title),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier
-                    .padding(horizontal = spacing.l)
-                    .semantics { heading() },
-            )
-            ExportSheet(state = state, onIntent = onIntent, sdkInt = sdkInt)
-        }
+        )
+    }
+}
+
+/** The export sheet's 32×4 dp Material drag handle. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun ExportSheetDragHandle(modifier: Modifier = Modifier) {
+    BottomSheetDefaults.DragHandle(modifier = modifier)
+}
+
+/** The modal export sheet's content under its drag handle: the "Export" heading over [ExportSheet]. */
+@Composable
+internal fun ExportSheetBody(
+    state: StudioState,
+    onIntent: (StudioIntent) -> Unit,
+    modifier: Modifier = Modifier,
+    sdkInt: Int = Build.VERSION.SDK_INT,
+) {
+    val spacing = DarkroomTheme.spacing
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(spacing.m),
+    ) {
+        Text(
+            text = stringResource(R.string.controls_export_title),
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier
+                .padding(horizontal = spacing.l)
+                .semantics { heading() },
+        )
+        ExportSheet(state = state, onIntent = onIntent, sdkInt = sdkInt)
     }
 }
 
@@ -189,12 +221,18 @@ private fun FormatRow(
             Text(
                 text = stringResource(title),
                 style = MaterialTheme.typography.bodyMedium,
-                color = if (available) scheme.onSurface else scheme.onSurfaceVariant.copy(alpha = DISABLED_ALPHA),
+                color = if (enabled) scheme.onSurface else scheme.onSurfaceVariant.copy(alpha = DISABLED_ALPHA),
             )
+            // A format locked by a running export dims like the other locked settings; an unavailable one keeps
+            // its reason ("Needs Android 14") legible.
             Text(
                 text = stringResource(if (available) summary else R.string.controls_needs_android_14),
                 style = MaterialTheme.typography.labelSmall,
-                color = scheme.onSurfaceVariant,
+                color = if (available && !enabled) {
+                    scheme.onSurfaceVariant.copy(alpha = DISABLED_ALPHA)
+                } else {
+                    scheme.onSurfaceVariant
+                },
             )
         }
     }

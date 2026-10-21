@@ -29,6 +29,17 @@ internal object ControlIcons {
         }
     }
 
+    /** Selection check of the mode drawer's chosen row. */
+    val Check: ImageVector by lazy {
+        icon("check") {
+            stroke {
+                moveTo(5f, 12.5f)
+                lineTo(10f, 17.5f)
+                lineTo(19f, 7.5f)
+            }
+        }
+    }
+
     /** Before/after split: a frame with the left half filled. */
     val Compare: ImageVector by lazy {
         icon("compare") {

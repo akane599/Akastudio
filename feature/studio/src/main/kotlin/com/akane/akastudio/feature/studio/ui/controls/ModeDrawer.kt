@@ -8,17 +8,20 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -35,6 +38,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import com.akane.akastudio.core.curator.api.CurationOption
 import com.akane.akastudio.core.curator.api.CurationResult
@@ -175,14 +179,24 @@ private fun ModeRow(
                 Text(
                     text = modeName,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = if (selected) scheme.onSurface else scheme.onSurfaceVariant,
+                    color = scheme.onSurface,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
                 if (aiPick) TagChip(stringResource(R.string.controls_tag_ai), emphasized = selected)
             }
-            ValueReadout(score)
+            // The name leads and the score is secondary; selection is carried by the row fill and the check.
+            Text(
+                text = score,
+                style = DarkroomTextStyles.tabular.copy(fontWeight = FontWeight.Normal),
+                color = scheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+            // A fixed slot keeps every row's score at the same x whether or not it carries the check.
+            Box(Modifier.size(ControlMetrics.IconSize)) {
+                if (selected) Icon(imageVector = ControlIcons.Check, contentDescription = null, tint = scheme.onSurface)
+            }
         }
         option.synergy?.let { SynergyMeters(it) }
     }
