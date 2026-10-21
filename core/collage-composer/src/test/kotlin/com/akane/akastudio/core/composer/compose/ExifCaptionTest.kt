@@ -27,6 +27,20 @@ class ExifCaptionTest {
     }
 
     @Test
+    fun exposure_usesAFractionOnlyWhenItIsWithinFivePercent() {
+        // Standard fast speeds, including the camera's rounded values, stay fractions.
+        assertEquals("1/2s", ExifCaption.format(meta(t = 0.5)))
+        assertEquals("1/3s", ExifCaption.format(meta(t = 1.0 / 3.0)))
+        assertEquals("1/4s", ExifCaption.format(meta(t = 0.25)))
+        assertEquals("1/8000s", ExifCaption.format(meta(t = 1.0 / 8000.0)))
+        assertEquals("1/13s", ExifCaption.format(meta(t = 0.077)))
+        // Between 1/3 and 1/2 and between 1/2 and 1 s no whole denominator is close: decimal seconds.
+        assertEquals("0.4s", ExifCaption.format(meta(t = 0.4)))
+        assertEquals("0.6s", ExifCaption.format(meta(t = 0.6)))
+        assertEquals("0.3s", ExifCaption.format(meta(t = 0.3)))
+    }
+
+    @Test
     fun none_orOnlyInvalidValues_isNull() {
         assertNull(ExifCaption.format(CaptureMetadata.EMPTY))
         assertNull(ExifCaption.format(meta(focal = 0, f = -1.0, t = Double.NaN, iso = 0)))
