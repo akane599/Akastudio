@@ -29,6 +29,10 @@ android {
     buildFeatures {
         compose = true
     }
+    // Library-level noCompress does not reach the app APK; keep ML models stored so MediaPipe/LiteRT can mmap them.
+    androidResources {
+        noCompress += listOf("tflite", "task")
+    }
     experimentalProperties["android.experimental.enableScreenshotTest"] = true
 }
 
