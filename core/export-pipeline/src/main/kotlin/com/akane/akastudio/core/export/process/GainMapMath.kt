@@ -78,11 +78,12 @@ object GainMapMath {
      */
     fun compute(hdr: HalfFloatImage, gainDownscale: Int = 4): GainMapResult {
         require(gainDownscale >= 1) { "gainDownscale must be >= 1, was $gainDownscale" }
-        val peak = max(1f, peakLuminance(hdr))
         val gainWidth = (hdr.width + gainDownscale - 1) / gainDownscale
         val gainHeight = (hdr.height + gainDownscale - 1) / gainDownscale
         val log2Gain = FloatArray(gainWidth * gainHeight)
-        val sdr = toneMap(hdr, peak, gainDownscale, gainWidth, log2Gain)
+        val sdrRgba = ShortArray(hdr.rgba.size)
+        toneMap(hdr, gainDownscale, gainWidth, log2Gain, sdrRgba)
+        val sdr = HalfFloatImage(hdr.width, hdr.height, sdrRgba)
 
         var minG = Float.POSITIVE_INFINITY
         var maxG = Float.NEGATIVE_INFINITY
@@ -101,6 +102,21 @@ object GainMapMath {
             (255f * t.pow(1f / GAMMA)).roundToInt().coerceIn(0, 255).toByte()
         }
         return result(sdr, gain, gainWidth, gainHeight, 2f.pow(logMin), 2f.pow(maxG))
+    }
+
+    /**
+     * The [GainMapResult.ratioMax] that [compute] returns for [hdr] (1 when there is no usable headroom), without
+     * allocating the SDR base, so a caller can decide on the headroom while still holding another full frame.
+     */
+    fun ratioMax(hdr: HalfFloatImage, gainDownscale: Int = 4): Float {
+        require(gainDownscale >= 1) { "gainDownscale must be >= 1, was $gainDownscale" }
+        val gainWidth = (hdr.width + gainDownscale - 1) / gainDownscale
+        val gainHeight = (hdr.height + gainDownscale - 1) / gainDownscale
+        val log2Gain = FloatArray(gainWidth * gainHeight)
+        toneMap(hdr, gainDownscale, gainWidth, log2Gain, sdrOut = null)
+        var maxG = Float.NEGATIVE_INFINITY
+        for (g in log2Gain) maxG = max(maxG, g)
+        return if (maxG <= MIN_HEADROOM_LOG2) 1f else 2f.pow(maxG)
     }
 
     private fun result(sdr: HalfFloatImage, gain: ByteArray, w: Int, h: Int, ratioMin: Float, ratioMax: Float) =
@@ -122,13 +138,14 @@ object GainMapMath {
     }
 
     /**
-     * Writes the SDR base and fills [log2Gain] cell by cell. Luminance sums for one band of [cell] rows are kept per
-     * gain column and flushed when the band (or the image) ends; edge cells average over the pixels they cover.
+     * Tone-maps against [hdr]'s peak luminance, writes the SDR base into [sdrOut] (when given) and fills [log2Gain]
+     * cell by cell. Luminance sums for one band of [cell] rows are kept per gain column and flushed when the band (or
+     * the image) ends; edge cells average over the pixels they cover.
      */
-    private fun toneMap(hdr: HalfFloatImage, peak: Float, cell: Int, gainWidth: Int, log2Gain: FloatArray): HalfFloatImage {
+    private fun toneMap(hdr: HalfFloatImage, cell: Int, gainWidth: Int, log2Gain: FloatArray, sdrOut: ShortArray?) {
         val w = hdr.width
+        val peak = max(1f, peakLuminance(hdr))
         val invPeak2 = 1f / (peak * peak)
-        val out = ShortArray(hdr.rgba.size)
         val row = FloatArray(w * 4)
         val sumHdr = DoubleArray(gainWidth)
         val sumSdr = DoubleArray(gainWidth)
@@ -144,7 +161,7 @@ object GainMapMath {
                 sumHdr[x / cell] += yHdr.toDouble()
                 sumSdr[x / cell] += (yHdr * factor).toDouble()
             }
-            HalfRows.write(out, w, y, row)
+            if (sdrOut != null) HalfRows.write(sdrOut, w, y, row)
             val bandEnds = (y + 1) % cell == 0 || y == hdr.height - 1
             if (bandEnds) {
                 val bandRows = y % cell + 1
@@ -159,7 +176,6 @@ object GainMapMath {
                 sumSdr.fill(0.0)
             }
         }
-        return HalfFloatImage(w, hdr.height, out)
     }
 
     /** Non-negative Rec.709 luminance of the sanitized pixel at [p]. */

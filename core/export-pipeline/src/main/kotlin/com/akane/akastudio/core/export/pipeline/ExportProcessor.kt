@@ -52,7 +52,10 @@ import kotlin.math.pow
  * target size and reports SOCIAL_STORY_JPEG. So does an ULTRA_HDR_JPEG export without hdrBoost whose render has no
  * perceptible HDR headroom (gain-map ratioMax below [MIN_HDR_RATIO], a third of a stop): an SDR source whose grade only
  * nudges highlights a few percent past SDR white would get a gain map nobody can see, on a 4:2:0 platform base instead
- * of the 4:4:4 Social one, so the gain-map RENDER steps are followed by the plain Social Story JPEG stages.
+ * of the 4:4:4 Social one, so the gain-map RENDER steps are followed by the plain Social Story JPEG stages. With
+ * hdrBoost the same happens when the boosted render has no headroom at all ([MIN_BOOSTED_HDR_RATIO]). The fallback
+ * encodes the render itself, not the gain map's tone-mapped base, so it matches an explicit Social export of the same
+ * render.
  *
  * Cancellation is checked between stages and on every pulled row; the sink removes the partial entry. Once the sink
  * has published the entry, WRITE 1 and Done are emitted without a cancellation point, so a cancel racing the publish
@@ -255,20 +258,31 @@ class ExportProcessor(
 
         /**
          * Finishes RENDER for Ultra HDR: the optional highlight boost, then the gain map, whose SDR base replaces the
-         * frame. Returns `null` when there is no perceptible headroom to encode (hdrBoost off and ratioMax below
-         * [MIN_HDR_RATIO]).
+         * frame. Returns `null` when there is no headroom worth encoding: ratioMax below [MIN_HDR_RATIO] without
+         * hdrBoost, or below [MIN_BOOSTED_HDR_RATIO] (an all-zero gain map, a scene with no highlights to boost) with
+         * it. The frame then still holds the render, so the fallback writes exactly what SOCIAL_STORY_JPEG would.
          */
         private fun gainMapWithHeadroom(frame: Frame): GainMapResult? {
             progress.stage(ExportStage.RENDER, 0.5f)
-            if (request.hdrBoost) {
-                frame.image = GainMapMath.boostHighlights(frame.image)
-                progress.stage(ExportStage.RENDER, 0.75f)
+            if (!request.hdrBoost) {
+                val gainMap = GainMapMath.compute(frame.image)
+                progress.stage(ExportStage.RENDER, 1f)
+                if (gainMap.ratioMax < MIN_HDR_RATIO) return null
+                frame.image = gainMap.sdr
+                return gainMap
             }
-            val gainMap = GainMapMath.compute(frame.image)
+            val boosted = GainMapMath.boostHighlights(frame.image)
+            progress.stage(ExportStage.RENDER, 0.75f)
+            // Decided before the SDR base exists, so the render, the boosted frame and the base are never all held.
+            if (GainMapMath.ratioMax(boosted) < MIN_BOOSTED_HDR_RATIO) {
+                progress.stage(ExportStage.RENDER, 1f)
+                return null
+            }
+            frame.image = boosted
+            val gainMap = GainMapMath.compute(boosted)
             frame.image = gainMap.sdr
             progress.stage(ExportStage.RENDER, 1f)
-            val noHeadroom = !request.hdrBoost && gainMap.ratioMax < MIN_HDR_RATIO
-            return if (noHeadroom) null else gainMap
+            return gainMap
         }
 
         /** Closes a streaming ENCODE inside the sink block: everything is encoded, the sink is about to publish. */
@@ -316,10 +330,17 @@ class ExportProcessor(
          * little. The CPU reference grade of an SDR chart (sRGB steps 0..1, white included) gave log2 ratioMax 0 to
          * 0.044 for every Master look at default sliders, and at most 0.25 with one slider at its extreme (contrast,
          * halation, temperature). SQ-52's SDR story exported a 0.072-stop gain map (about 5% brighter) through the old
-         * near-zero cut-off (ratioMax above 1 + 1e-4). hdrBoost adds 2 stops and always keeps the gain map. Deliberate
-         * brightening of an SDR source past a third of a stop (exposure, a strong harmonization lift) reaches the
-         * threshold and keeps it too.
+         * near-zero cut-off (ratioMax above 1 + 1e-4). hdrBoost adds 2 stops to the highlights, so it uses
+         * [MIN_BOOSTED_HDR_RATIO] instead. Deliberate brightening of an SDR source past a third of a stop (exposure, a
+         * strong harmonization lift) reaches the threshold and keeps the gain map too.
          */
         val MIN_HDR_RATIO = 2f.pow(1f / 3f)
+
+        /**
+         * Smallest gain-map ratioMax kept with hdrBoost: anything above 1. [GainMapMath.compute] reports exactly 1 for
+         * a gain map with no usable headroom (all codes zero), which is what a scene with no highlights to boost
+         * gives; such a scene falls back to SOCIAL_STORY_JPEG like any other no-headroom request.
+         */
+        const val MIN_BOOSTED_HDR_RATIO = 1f + 1e-3f
     }
 }

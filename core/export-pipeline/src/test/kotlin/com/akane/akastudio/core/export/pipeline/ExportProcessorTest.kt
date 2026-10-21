@@ -172,6 +172,37 @@ class ExportProcessorTest {
         assertFile(run, "image/jpeg", "ULTRA_HDR_JPEG", "jpg", 1080, 1920)
     }
 
+    /**
+     * F-10: the low-headroom fallback encodes the render itself, not the gain map's tone-mapped base, so at UHD_4K
+     * (both formats render 2160x3840) it is the explicit Social Story JPEG byte for byte.
+     */
+    @Test
+    fun ultraHdrFallbackWithImperceptibleHeadroom_isByteIdenticalToTheSocialStoryJpeg() {
+        val fallback = export(
+            ExportFormat.ULTRA_HDR_JPEG, renderer = FakeRenderer(peak = 1.08f), ultraHdr = FakeUltraHdrEncoder(),
+            resolution = ExportResolution.UHD_4K,
+        )
+        assertEquals(ExportFormat.SOCIAL_STORY_JPEG, fallback.result.format)
+        val social = export(ExportFormat.SOCIAL_STORY_JPEG, renderer = FakeRenderer(peak = 1.08f), resolution = ExportResolution.UHD_4K)
+        assertArrayEquals("the fallback must be the Social Story JPEG of the same render", social.bytes, fallback.bytes)
+    }
+
+    /** F-27: hdrBoost on a scene with no highlights would give an all-zero gain map; it falls back to Social instead. */
+    @Test
+    fun ultraHdrWithBoostAndNoHighlights_writesThePlainSocialJpeg() {
+        val encoder = FakeUltraHdrEncoder()
+        val fallback = export(
+            ExportFormat.ULTRA_HDR_JPEG, renderer = FakeRenderer(exposure = 0.2f), ultraHdr = encoder, hdrBoost = true,
+            resolution = ExportResolution.UHD_4K,
+        )
+        assertEquals("the reported format names the fallback", ExportFormat.SOCIAL_STORY_JPEG, fallback.result.format)
+        assertEquals("the gain-map encoder is never called", -1, encoder.quality)
+        assertEquals(listOf(0f, 0.5f, 0.75f, 1f), fallback.fractions(ExportStage.RENDER))
+        assertFile(fallback, "image/jpeg", "SOCIAL_STORY_JPEG", "jpg", 2160, 3840)
+        val social = export(ExportFormat.SOCIAL_STORY_JPEG, renderer = FakeRenderer(exposure = 0.2f), resolution = ExportResolution.UHD_4K)
+        assertArrayEquals("the fallback encodes the unboosted render", social.bytes, fallback.bytes)
+    }
+
     @Test
     fun minHdrRatio_isAThirdOfAStop() {
         assertEquals(1.2599f, ExportProcessor.MIN_HDR_RATIO, 1e-4f)
@@ -305,10 +336,11 @@ class ExportProcessorTest {
         ultraHdr: UltraHdrEncoder? = null,
         webpEncoder: WebpLosslessEncoder = FakeWebpEncoder(),
         hdrBoost: Boolean = false,
+        resolution: ExportResolution = ExportResolution.HD_1080,
     ): Run {
         val sink = MemorySink()
         val processor = ExportProcessor(renderer, sink, ultraHdr, webpEncoder, clock = { captureMillis })
-        val events = runBlocking { processor.export(request(format, hdrBoost = hdrBoost)).toList() }
+        val events = runBlocking { processor.export(request(format, hdrBoost = hdrBoost, resolution = resolution)).toList() }
         assertWellFormed(events)
         return Run(events, (events.last() as ExportProgress.Done).result, sink)
     }
@@ -353,12 +385,17 @@ class ExportProcessorTest {
         assertTrue(name, Regex("AkaStudio_\\d{8}_\\d{6}_${formatName}\\.$extension").matches(name))
     }
 
-    private fun request(format: ExportFormat, hdrBoost: Boolean = false, canvas: Pair<Int, Int>? = null): ExportRequest {
-        val (w, h) = canvas ?: ExportPlan.renderSize(format, ExportResolution.HD_1080)
+    private fun request(
+        format: ExportFormat,
+        hdrBoost: Boolean = false,
+        canvas: Pair<Int, Int>? = null,
+        resolution: ExportResolution = ExportResolution.HD_1080,
+    ): ExportRequest {
+        val (w, h) = canvas ?: ExportPlan.renderSize(format, resolution)
         return ExportRequest(
             scene = RenderScene(w, h, SceneBackground.Solid(0xFF000000.toInt()), emptyList()),
             format = format,
-            resolution = ExportResolution.HD_1080,
+            resolution = resolution,
             metadata = ExportMetadata(captureEpochMillis = captureMillis, description = "Lisbon"),
             hdrBoost = hdrBoost,
         )
@@ -378,8 +415,11 @@ class ExportProcessorTest {
 
     // ---- fakes -------------------------------------------------------------------------------------------------
 
-    /** Returns an opaque gradient at the scene canvas size; the top eighth reaches [peak] (linear) for HDR headroom. */
-    private class FakeRenderer(private val peak: Float = 1f) : StoryRenderer {
+    /**
+     * Returns an opaque gradient at the scene canvas size; the top eighth reaches [peak] (linear) for HDR headroom. RGB
+     * is scaled by [exposure], so a low one leaves no highlight for hdrBoost to lift.
+     */
+    private class FakeRenderer(private val peak: Float = 1f, private val exposure: Float = 1f) : StoryRenderer {
         @Volatile var calls = 0
         @Volatile var lastCanvas: Pair<Int, Int>? = null
 
@@ -395,9 +435,9 @@ class ExportProcessorTest {
                 for (x in 0 until w) {
                     val o = (y * w + x) * 4
                     val base = x.toFloat() / w
-                    data[o] = Half.fromFloat(if (highlight) peak * base else base)
-                    data[o + 1] = Half.fromFloat(if (highlight) peak else y.toFloat() / h)
-                    data[o + 2] = Half.fromFloat(0.25f + 0.5f * ((x + y) % 64) / 64f)
+                    data[o] = Half.fromFloat(exposure * if (highlight) peak * base else base)
+                    data[o + 1] = Half.fromFloat(exposure * if (highlight) peak else y.toFloat() / h)
+                    data[o + 2] = Half.fromFloat(exposure * (0.25f + 0.5f * ((x + y) % 64) / 64f))
                     data[o + 3] = one
                 }
             }
