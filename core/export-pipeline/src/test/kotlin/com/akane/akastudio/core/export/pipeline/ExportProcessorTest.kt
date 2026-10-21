@@ -1,11 +1,16 @@
 package com.akane.akastudio.core.export.pipeline
 
+import com.akane.akastudio.core.color.api.GradeParams
 import com.akane.akastudio.core.color.api.HalfFloatImage
 import com.akane.akastudio.core.color.api.ImagePixels
+import com.akane.akastudio.core.color.api.MasterLook
 import com.akane.akastudio.core.color.api.PreviewOptions
 import com.akane.akastudio.core.color.api.RenderScene
 import com.akane.akastudio.core.color.api.SceneBackground
 import com.akane.akastudio.core.color.api.StoryRenderer
+import com.akane.akastudio.core.color.grade.CpuGradingPipeline
+import com.akane.akastudio.core.color.grade.LinearImage
+import com.akane.akastudio.core.color.math.ColorMath
 import com.akane.akastudio.core.export.api.ExportFormat
 import com.akane.akastudio.core.export.api.ExportMetadata
 import com.akane.akastudio.core.export.api.ExportPlan
@@ -24,6 +29,7 @@ import com.akane.akastudio.core.export.process.Dither
 import com.akane.akastudio.core.export.process.GainMapMath
 import com.akane.akastudio.core.export.process.GainMapResult
 import com.akane.akastudio.core.export.process.Half
+import com.akane.akastudio.core.export.process.LumaSharpen
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.toList
@@ -46,6 +52,9 @@ import java.time.ZoneOffset
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import javax.imageio.ImageIO
+import kotlin.math.abs
+import kotlin.math.log2
+import kotlin.math.pow
 
 class ExportProcessorTest {
 
@@ -135,6 +144,45 @@ class ExportProcessorTest {
         assertEquals(1080, decoded.width)
     }
 
+    /**
+     * AUD-03: the base handed to the Ultra HDR encoder is exactly the one its gain map was computed from. The HDR frame
+     * (boosted render) is sharpened first and the gain map derived from it, instead of sharpening the tone-mapped base
+     * after the gain was measured against the unsharpened one.
+     *
+     * Quantified with the cell-mean luminance the gain map encodes: reconstructing `(base + e) * 2^g - e` from the
+     * 8-bit encoded base must give back each cell's mean HDR luminance. The old order (gain from the unsharpened
+     * base, then sharpening that base, with channels the encoder then clips) is measured on the same render for
+     * comparison; the fixed order must stay within 1.5% in every cell (gain-code rounding ~0.3%, blue-noise 8-bit
+     * dither averaged over a 4x4 cell) and never put a base channel above SDR white.
+     */
+    @Test
+    fun ultraHdrEncodesTheBaseItsGainMapWasComputedFrom() {
+        val encoder = FakeUltraHdrEncoder()
+        val renderer = FakeRenderer(peak = 4f)
+        val run = export(ExportFormat.ULTRA_HDR_JPEG, renderer = renderer, ultraHdr = encoder, hdrBoost = true)
+        assertEquals(ExportFormat.ULTRA_HDR_JPEG, run.result.format)
+        val render = runBlocking { renderer.renderOffscreen(request(ExportFormat.ULTRA_HDR_JPEG).scene) }
+        val hdr = LumaSharpen.apply(GainMapMath.boostHighlights(render))
+        val expected = GainMapMath.compute(hdr)
+        val sdr = checkNotNull(encoder.sdr)
+        val gain = checkNotNull(encoder.gain)
+        assertArrayEquals("the encoded base is the gain map's own base", expected.sdr.rgba, sdr.rgba)
+        assertArrayEquals("the gain codes are derived from that base", expected.gain, gain.gain)
+        assertEquals(expected.ratioMin, gain.ratioMin, 0f)
+        assertEquals(expected.ratioMax, gain.ratioMax, 0f)
+
+        val fixed = worstCellLuminanceError(hdr, sdr, gain)
+        val unsharpened = GainMapMath.compute(GainMapMath.boostHighlights(render))
+        val sharpenedAfter = LumaSharpen.apply(unsharpened.sdr)
+        val old = worstCellLuminanceError(hdr, sharpenedAfter, unsharpened)
+        println(
+            "AUD-03 sharpen order: worst cell luminance error fixed=${"%.4f".format(fixed)} " +
+                "old=${"%.4f".format(old)}; max base channel fixed=${maxChannel(sdr)} old=${maxChannel(sharpenedAfter)}",
+        )
+        assertTrue("fixed order reconstructs every cell within 1.5% (worst $fixed)", fixed <= 0.015f)
+        assertTrue("no base channel above SDR white", maxChannel(sdr) <= 1f)
+    }
+
     @Test
     fun ultraHdrWithoutHeadroom_writesPlainSocialJpegAtTargetSize() {
         val encoder = FakeUltraHdrEncoder()
@@ -201,6 +249,24 @@ class ExportProcessorTest {
         assertFile(fallback, "image/jpeg", "SOCIAL_STORY_JPEG", "jpg", 2160, 3840)
         val social = export(ExportFormat.SOCIAL_STORY_JPEG, renderer = FakeRenderer(exposure = 0.2f), resolution = ExportResolution.UHD_4K)
         assertArrayEquals("the fallback encodes the unboosted render", social.bytes, fallback.bytes)
+    }
+
+    /**
+     * SQ-66 under AUD-03's channel-bounded base: an SDR photo (SdrOnlyUltraHdrDeviceTest's fixture, CPU-graded, no JPEG)
+     * graded with any Master look at default sliders, or with the device test's MEDITERRANEAN_AZURE + contrast 1, still
+     * has less than a third of a stop of gain-map headroom, so it keeps falling back to the Social Story JPEG.
+     */
+    @Test
+    fun sdrPhotoGradedWithDefaultLooks_staysBelowTheUltraHdrThreshold() {
+        val photo = sdrPhoto()
+        val grades = MasterLook.entries.map { GradeParams(look = it) } +
+            GradeParams(look = MasterLook.MEDITERRANEAN_AZURE, contrast = 1f)
+        for (grade in grades) {
+            val graded = CpuGradingPipeline.grade(photo, grade)
+            val image = HalfFloatImage(graded.width, graded.height, ShortArray(graded.rgba.size) { Half.fromFloat(graded.rgba[it]) })
+            val ratioMax = GainMapMath.ratioMax(image)
+            assertTrue("$grade: ratioMax $ratioMax", ratioMax < ExportProcessor.MIN_HDR_RATIO)
+        }
     }
 
     @Test
@@ -413,6 +479,78 @@ class ExportProcessorTest {
         return chunks
     }
 
+    /**
+     * Worst relative error, over gain cells, between [hdr]'s mean cell luminance and the mean luminance reconstructed
+     * from [base] after 8-bit encoding with [gain]'s codes: `(Y_base + e) * 2^g - e` (gamma 1, downscale 4).
+     */
+    private fun worstCellLuminanceError(hdr: HalfFloatImage, base: HalfFloatImage, gain: GainMapResult, cell: Int = 4): Float {
+        assertEquals(1f, gain.gamma, 0f)
+        val lo = log2(gain.ratioMin)
+        val hi = log2(gain.ratioMax)
+        val sumHdr = DoubleArray(gain.gainWidth * gain.gainHeight)
+        val sumRecon = DoubleArray(sumHdr.size)
+        val counts = IntArray(sumHdr.size)
+        val row = IntArray(base.width)
+        for (y in 0 until base.height) {
+            Dither.toSrgb8Row(base, y, row)
+            for (x in 0 until base.width) {
+                val i = (y / cell) * gain.gainWidth + x / cell
+                val boost = 2f.pow(lo + (gain.gain[i].toInt() and 0xFF) / 255f * (hi - lo))
+                val p = row[x]
+                val yBase = ColorMath.relativeLuminance(
+                    ColorMath.srgbToLinear((p shr 16 and 0xFF) / 255f),
+                    ColorMath.srgbToLinear((p shr 8 and 0xFF) / 255f),
+                    ColorMath.srgbToLinear((p and 0xFF) / 255f),
+                )
+                sumRecon[i] += ((yBase + gain.epsilonSdr) * boost - gain.epsilonHdr).toDouble()
+                val o = (y * hdr.width + x) * 4
+                sumHdr[i] += ColorMath.relativeLuminance(
+                    Half.toFloat(hdr.rgba[o]), Half.toFloat(hdr.rgba[o + 1]), Half.toFloat(hdr.rgba[o + 2]),
+                ).coerceAtLeast(0f).toDouble()
+                counts[i]++
+            }
+        }
+        var worst = 0.0
+        for (i in sumHdr.indices) {
+            val meanHdr = sumHdr[i] / counts[i]
+            val meanRecon = sumRecon[i] / counts[i]
+            worst = maxOf(worst, abs(meanRecon - meanHdr) / (meanHdr + gain.epsilonHdr))
+        }
+        return worst.toFloat()
+    }
+
+    private fun maxChannel(img: HalfFloatImage): Float {
+        var m = Float.NEGATIVE_INFINITY
+        for (i in img.rgba.indices) if (i % 4 != 3) m = maxOf(m, Half.toFloat(img.rgba[i]))
+        return m
+    }
+
+    /** SdrOnlyUltraHdrDeviceTest's SDR photo in linear light: a sky fading to white, saturated patches, a grey ramp. */
+    private fun sdrPhoto(): LinearImage {
+        val w = 270
+        val h = 480
+        val sky = intArrayOf(0xFFFFFF, 0x6FA8DC)
+        val patches = intArrayOf(0xE53935, 0xFDD835, 0x00ACC1, 0x43A047, 0xFFFFFF)
+        val rgba = FloatArray(w * h * 4)
+        for (y in 0 until h) for (x in 0 until w) {
+            val o = (y * w + x) * 4
+            for (c in 0 until 3) {
+                val shift = 16 - 8 * c
+                val code = when {
+                    y < h / 3 -> {
+                        val t = y / (h / 3f)
+                        ((sky[0] shr shift and 0xFF) * (1 - t) + (sky[1] shr shift and 0xFF) * t) / 255f
+                    }
+                    y < 2 * h / 3 -> (patches[x * patches.size / w] shr shift and 0xFF) / 255f
+                    else -> x / (w - 1f)
+                }
+                rgba[o + c] = ColorMath.srgbToLinear(code)
+            }
+            rgba[o + 3] = 1f
+        }
+        return LinearImage(w, h, rgba)
+    }
+
     // ---- fakes -------------------------------------------------------------------------------------------------
 
     /**
@@ -531,12 +669,14 @@ class ExportProcessorTest {
     private class FakeUltraHdrEncoder : UltraHdrEncoder {
         @Volatile var quality = -1
         @Volatile var sdrSize: Pair<Int, Int>? = null
+        @Volatile var sdr: HalfFloatImage? = null
         @Volatile var gain: GainMapResult? = null
         @Volatile var exif: ByteArray? = null
 
         override fun encode(sdr: HalfFloatImage, gain: GainMapResult, out: OutputStream, quality: Int, exifTiff: ByteArray?) {
             this.quality = quality
             this.sdrSize = sdr.width to sdr.height
+            this.sdr = sdr
             this.gain = gain
             this.exif = exifTiff
             check(sdr === gain.sdr) { "the encoder receives the sharpened base as both arguments" }
