@@ -9,6 +9,7 @@ import com.google.ai.edge.litert.CompiledModel
 import com.google.ai.edge.litert.TensorBuffer
 import com.google.ai.edge.litert.TensorType
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.ExecutorCoroutineDispatcher
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -143,9 +144,14 @@ internal class LiteRtNimaScorer private constructor(
             val dispatcher = Executors.newSingleThreadExecutor { r ->
                 Thread(r, THREAD_NAME).apply { isDaemon = true }
             }.asCoroutineDispatcher()
+            val compiled = AtomicReference<Engine?>()
             val engine = try {
-                runBlocking(dispatcher) { compileFirstUsable(compile) }
+                runBlocking(dispatcher) { compileFirstUsable(compile).also(compiled::set) }
             } catch (e: Throwable) {
+                // An interrupted wait cancels the coroutine, but the compile is not cancellable: it runs to the end
+                // on the scorer thread and its engine is dropped with the cancelled result. The executor is FIFO,
+                // so this task runs after that compile and releases whatever engine it produced.
+                dispatcher.executor.execute { compiled.get()?.let(::closeEngineLogged) }
                 dispatcher.close()
                 throw e
             }
@@ -168,8 +174,8 @@ internal class LiteRtNimaScorer private constructor(
                     runChecked(backend, FloatArray(INPUT_FLOATS))
                     return Engine(backend, accelerator, compile)
                 } catch (e: Throwable) {
-                    if (!isRecoverable(e)) throw e
                     closeLogged(backend)
+                    if (!isRecoverable(e)) throw e
                     Log.i(TAG, "NIMA $accelerator probe run rejected", e)
                     lastFailure = e
                 }
@@ -181,12 +187,19 @@ internal class LiteRtNimaScorer private constructor(
         private fun releaseOn(dispatcher: ExecutorCoroutineDispatcher, engine: Engine) {
             dispatcher.executor.execute {
                 try {
-                    engine.close()
-                } catch (e: Exception) {
-                    Log.w(TAG, "NIMA model release failed", e)
+                    closeEngineLogged(engine)
                 } finally {
                     dispatcher.close()
                 }
+            }
+        }
+
+        /** Never throws: an Error escaping a task on the daemon scorer thread would kill the process. */
+        private fun closeEngineLogged(engine: Engine) {
+            try {
+                engine.close()
+            } catch (t: Throwable) {
+                Log.w(TAG, "NIMA model release failed", t)
             }
         }
 
