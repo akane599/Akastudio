@@ -224,7 +224,7 @@ class ExportProcessor(
             val rows = RowProgress(image.height, ExportStage.DITHER, progress)
             val lossless = webpLossless.encode(image.width, image.height) { y, row ->
                 rows.pull(y)
-                Dither.toSrgb8Row(image, y, row)
+                Dither.toStraightSrgb8Row(image, y, row)
             }
             check(rows.complete) { "WebP encoder returned before pulling all ${image.height} rows" }
             return lossless

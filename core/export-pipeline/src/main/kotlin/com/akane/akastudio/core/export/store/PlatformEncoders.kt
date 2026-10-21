@@ -57,6 +57,9 @@ class PlatformUltraHdrEncoder : UltraHdrEncoder {
             val row = IntArray(sdr.width)
             for (y in 0 until sdr.height) {
                 Dither.toSrgb8Row(sdr, y, row)
+                // The base is opaque (its premultiplied colour over black, like the Social JPEG); a fractional alpha
+                // here would make the premultiplied bitmap scale the colour by it a second time.
+                for (x in 0 until sdr.width) row[x] = row[x] or (0xFF shl 24)
                 base.setPixels(row, 0, sdr.width, 0, y, sdr.width, 1)
             }
             val stride = contents.rowBytes
@@ -93,6 +96,9 @@ internal class PlatformWebpLosslessEncoder : WebpLosslessEncoder {
     override fun encode(width: Int, height: Int, rows: Rgba8Rows): ByteArray {
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         try {
+            // The rows are straight-alpha colour; stored as such, so no premultiply/unpremultiply round trip can
+            // lose a code of translucent colour on the way into the file.
+            bitmap.setPremultiplied(false)
             val row = IntArray(width)
             for (y in 0 until height) {
                 rows.row(y, row)

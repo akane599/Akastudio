@@ -156,7 +156,7 @@ class PlatformDecodeDeviceTest {
             assertEquals(1920, bitmap.height)
             val actual = IntArray(bitmap.width)
             for (y in 0 until bitmap.height) {
-                Dither.toSrgb8Row(image, y, expected)
+                Dither.toStraightSrgb8Row(image, y, expected)
                 bitmap.getPixels(actual, 0, bitmap.width, 0, y, bitmap.width, 1)
                 assertArrayEquals("$name row $y", expected, actual)
             }
