@@ -1,8 +1,10 @@
 package com.akane.akastudio.core.ingestion.zip
 
 import com.akane.akastudio.core.ingestion.api.ZipExtractionEvent.EntryExtracted
+import com.akane.akastudio.core.ingestion.api.ZipExtractionEvent.EntrySkipped
 import com.akane.akastudio.core.ingestion.api.ZipLimits
 import com.akane.akastudio.core.ingestion.model.IngestionError
+import com.akane.akastudio.core.ingestion.model.SkipReason
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.util.zip.ZipEntry
@@ -98,6 +100,99 @@ class ZipBombLimitsTest {
     }
 
     @Test
+    fun skippedEntryOverMaxEntryBytesIsLimitExceeded() = runTest {
+        val limits = ZipLimits(maxEntryBytes = 1L * MIB)
+        val notes = "notes.txt" to compressibleBytes(2 * MIB)
+        val zip = zipOf(okImage, notes)
+        assertBelowRatio(zip, limits, okImage, notes)
+
+        val (error, dest) = failureFor(zip, limits)
+
+        assertEquals(IngestionError.LimitExceeded("entry larger than ${1L * MIB} bytes"), error)
+        assertEquals(listOf("ok.jpg"), survivingEntries(dest, okImage, notes))
+    }
+
+    @Test
+    fun skippedEntriesUnderTheEntryCapButOverMaxTotalBytesAreLimitExceeded() = runTest {
+        val limits = ZipLimits(maxEntryBytes = 1L * MIB, maxTotalBytes = 2L * MIB)
+        // Every skip kind that drains: unsupported type, hidden, junk and duplicate, each under the entry cap.
+        val skipped = arrayOf(
+            "notes.txt" to compressibleBytes(700 * KIB, seed = 1),
+            "trip/.hidden.jpg" to compressibleBytes(700 * KIB, seed = 2),
+            "__MACOSX/trip/._ok.jpg" to compressibleBytes(700 * KIB, seed = 3),
+            "ok.jpg" to compressibleBytes(700 * KIB, seed = 4),
+        )
+        // ZipOutputStream refuses a repeated name, so this archive's local headers are written by hand.
+        val deflated = skipped.map { (name, content) -> deflatedEntry(name, content) }
+        val zip = archive(RawZip.stored(okImage.first, okImage.second), *deflated.toTypedArray())
+        assertBelowRatio(zip, limits, okImage, *skipped)
+
+        val (error, dest) = failureFor(zip, limits)
+
+        assertEquals(IngestionError.LimitExceeded("archive larger than ${2L * MIB} bytes"), error)
+        assertEquals(listOf("ok.jpg"), survivingEntries(dest, okImage))
+    }
+
+    @Test
+    fun skippedAndImageBytesShareOneCumulativeBudget() = runTest {
+        val limits = ZipLimits(maxTotalBytes = 1L * MIB)
+        val notes = "notes.txt" to compressibleBytes(700 * KIB, seed = 1)
+        val photo = "photo.jpg" to compressibleBytes(500 * KIB, seed = 2)
+        val withoutNotes = zipOf(okImage, photo)
+        val withNotes = zipOf(okImage, notes, photo)
+        assertBelowRatio(withNotes, limits, okImage, notes, photo)
+
+        val alone = extractor(limits)
+            .extract({ ByteArrayInputStream(withoutNotes) }, "archive", temp.newFolder())
+            .toList()
+        val (error, dest) = failureFor(withNotes, limits)
+
+        assertEquals("the image fits the budget on its own", 2, alone.filterIsInstance<EntryExtracted>().size)
+        assertEquals(IngestionError.LimitExceeded("archive larger than ${1L * MIB} bytes"), error)
+        assertEquals(
+            "the image that crossed the shared budget is deleted",
+            listOf("ok.jpg"),
+            survivingEntries(dest, okImage, photo),
+        )
+    }
+
+    @Test
+    fun charsetFallbackReplayCountsAlreadyHandledEntriesOnce() = runTest {
+        // A malformed UTF-8 name makes the first pass give up and replay the archive as CP437; the replay drains
+        // the entries the first pass handled. Counted twice, ok.jpg + notes.txt + café.jpg would exceed 1 MiB.
+        val limits = ZipLimits(maxTotalBytes = 1L * MIB)
+        val notes = compressibleBytes(600 * KIB, seed = 1)
+        val cafeName = "caf".toByteArray() + byteArrayOf(0x82.toByte()) + ".jpg".toByteArray() // 0x82 is é in CP437
+        val cafe = randomBytes(1_000, seed = 2)
+        val prefix = arrayOf(
+            RawZip.stored(okImage.first, okImage.second),
+            deflatedEntry("notes.txt", notes),
+            RawZip.stored(cafeName, cafe),
+        )
+        var opens = 0
+
+        val fits = archive(*prefix)
+        val events = extractor(limits)
+            .extract({ opens++; ByteArrayInputStream(fits) }, "archive", temp.newFolder())
+            .toList()
+
+        assertEquals("the fallback replay ran", 2, opens)
+        assertEquals(
+            listOf("ok.jpg", "notes.txt", "café.jpg"),
+            events.map { if (it is EntryExtracted) it.source.displayName else (it as EntrySkipped).entryName },
+        )
+        assertEquals(EntrySkipped("notes.txt", SkipReason.UNSUPPORTED_TYPE), events[1])
+
+        // ...but counted once they still are: 450 KiB more after the replay crosses the budget.
+        val more = "more.jpg" to compressibleBytes(450 * KIB, seed = 3)
+        val over = archive(*prefix, deflatedEntry(more.first, more.second))
+        val (error, dest) = failureFor(over, limits)
+
+        assertEquals(IngestionError.LimitExceeded("archive larger than ${1L * MIB} bytes"), error)
+        assertEquals(listOf("ok.jpg", "café.jpg"), survivingEntries(dest, okImage, "café.jpg" to cafe, more))
+    }
+
+    @Test
     fun deflatedEntryDeclaringTenBytesIsCappedByCountedBytes() = runTest {
         val actual = randomBytes(5 * MIB)
         val compressed = RawZip.deflate(actual)
@@ -172,5 +267,26 @@ class ZipBombLimitsTest {
 
         assertTrue("$error", error is IngestionError.LimitExceeded)
         assertEquals(listOf("ok.jpg"), survivingEntries(dest, okImage, deep to ByteArray(10)))
+    }
+
+    /** An honest DEFLATED entry without a data descriptor: the local header declares its real sizes and CRC. */
+    private fun deflatedEntry(name: String, content: ByteArray): ByteArray {
+        val compressed = RawZip.deflate(content)
+        return RawZip.entry(
+            name = name.toByteArray(),
+            data = compressed,
+            method = ZipEntry.DEFLATED,
+            declaredSize = content.size.toLong(),
+            declaredCompressedSize = compressed.size.toLong(),
+            crc = RawZip.crc(content),
+        )
+    }
+
+    /** Only the inflated-byte caps may trip: the archive stays below the ratio limit and its compressed cap. */
+    private fun assertBelowRatio(zip: ByteArray, limits: ZipLimits, vararg entries: Pair<String, ByteArray>) {
+        val ratio = entries.sumOf { it.second.size.toLong() }.toDouble() / zip.size
+        val ceiling = limits.maxCompressionRatio / 10
+        assertTrue("ratio $ratio:1 must stay well below ${limits.maxCompressionRatio}:1", ratio < ceiling)
+        assertTrue("compressed ${zip.size} must stay under ${limits.maxTotalBytes}", zip.size < limits.maxTotalBytes)
     }
 }
