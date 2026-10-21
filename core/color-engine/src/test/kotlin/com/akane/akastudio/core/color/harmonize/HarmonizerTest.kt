@@ -6,7 +6,9 @@ import com.akane.akastudio.core.color.api.OkLab
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.math.abs
 import kotlin.math.sqrt
 import kotlin.random.Random
 
@@ -76,17 +78,52 @@ class HarmonizerTest {
         val src = stats(0.2f, -0.3f, 0.3f, sl = 0.1f, sa = 0.05f, sb = 0.05f)
         val ref = stats(0.95f, 0.3f, -0.3f, sl = 0.15f, sa = 0.08f, sb = 0.03f)
         val p = Harmonizer.params(src, ref, 1f)
-        assertEquals(0.15f, p.offsetL, 0f)
-        assertEquals(0.06f, p.offsetA, 0f)
-        assertEquals(-0.06f, p.offsetB, 0f)
         assertEquals(1f + 0.55f * (1.5f - 1f), p.scaleL, 1e-6f)
         assertEquals(1f + 0.70f * (1.6f - 1f), p.scaleA, 1e-6f)
         assertEquals(1f + 0.70f * (0.6f - 1f), p.scaleB, 1e-6f)
+        // The cap limits only the mean shift; the offset still re-centres the scale on the source mean.
+        assertEquals(0.2f * (1f - p.scaleL) + 0.15f, p.offsetL, 1e-6f)
+        assertEquals(-0.3f * (1f - p.scaleA) + 0.06f, p.offsetA, 1e-6f)
+        assertEquals(0.3f * (1f - p.scaleB) - 0.06f, p.offsetB, 1e-6f)
+        assertEquals(0.15f, meanShift(src.meanL, p.scaleL, p.offsetL), 1e-6f)
+        assertEquals(0.06f, meanShift(src.meanA, p.scaleA, p.offsetA), 1e-6f)
+        assertEquals(-0.06f, meanShift(src.meanB, p.scaleB, p.offsetB), 1e-6f)
         val reverse = Harmonizer.params(ref, src, 1f)
-        assertEquals(-0.15f, reverse.offsetL, 0f)
-        assertEquals(-0.06f, reverse.offsetA, 0f)
-        assertEquals(0.06f, reverse.offsetB, 0f)
+        assertEquals(-0.15f, meanShift(ref.meanL, reverse.scaleL, reverse.offsetL), 1e-6f)
+        assertEquals(-0.06f, meanShift(ref.meanA, reverse.scaleA, reverse.offsetA), 1e-6f)
+        assertEquals(0.06f, meanShift(ref.meanB, reverse.scaleB, reverse.offsetB), 1e-6f)
     }
+
+    @Test
+    fun meanShift_staysWithinCapForEveryContrastRatio() {
+        for (k in floatArrayOf(0.5f, 1.5f, 2f)) {
+            for ((sourceMean, referenceMean) in listOf(0.6f to 0.6f, 0.2f to 0.95f, 0.9f to 0.1f, 0.5f to 0.55f)) {
+                val src = stats(sourceMean, sourceMean - 0.5f, 0.5f - sourceMean, sl = 0.1f, sa = 0.04f, sb = 0.04f)
+                val ref = stats(
+                    referenceMean, referenceMean - 0.5f, 0.5f - referenceMean,
+                    sl = 0.1f * k, sa = 0.04f * k, sb = 0.04f * k,
+                )
+                val p = Harmonizer.params(src, ref, 1f)
+                val label = "k = $k, mu_s = $sourceMean, mu_r = $referenceMean"
+                val shiftL = meanShift(src.meanL, p.scaleL, p.offsetL)
+                val shiftA = meanShift(src.meanA, p.scaleA, p.offsetA)
+                val shiftB = meanShift(src.meanB, p.scaleB, p.offsetB)
+                assertTrue("$label: L shift $shiftL", abs(shiftL) <= Harmonizer.MAX_OFFSET_L + 1e-6f)
+                assertTrue("$label: a shift $shiftA", abs(shiftA) <= Harmonizer.MAX_OFFSET_AB + 1e-6f)
+                assertTrue("$label: b shift $shiftB", abs(shiftB) <= Harmonizer.MAX_OFFSET_AB + 1e-6f)
+                // The shift always heads toward the reference and never past it.
+                val gapL = referenceMean - sourceMean
+                assertTrue("$label: L shift $shiftL vs gap $gapL", shiftL * gapL >= 0f && abs(shiftL) <= abs(gapL) + 1e-6f)
+            }
+        }
+        // The audit scenario: equal means, k = 2, default strength 0.8 used to lift mean L 0.6 to 0.714.
+        val flat = stats(0.6f, 0f, 0f, sl = 0.05f)
+        val contrasty = stats(0.6f, 0f, 0f, sl = 0.2f)
+        val p = Harmonizer.params(flat, contrasty, 0.8f)
+        assertEquals(0.6f, p.scaleL * 0.6f + p.offsetL, 1e-6f)
+    }
+
+    private fun meanShift(sourceMean: Float, scale: Float, offset: Float): Float = scale * sourceMean + offset - sourceMean
 
     @Test
     fun strengthAboveOne_isClamped() {
