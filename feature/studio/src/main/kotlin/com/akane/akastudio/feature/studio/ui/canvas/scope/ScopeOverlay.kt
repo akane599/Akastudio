@@ -164,7 +164,8 @@ internal fun ScopePanel(data: ScopeData?, mode: ScopeMode, modifier: Modifier = 
             Canvas(Modifier.fillMaxSize()) {
                 val gap = spacing.xs.toPx()
                 if (mode == ScopeMode.HISTOGRAM) {
-                    val plot = Size(size.width, size.height - tickLabels.maxOf { it.size.height } - gap)
+                    val labelBand = tickLabels.maxOf { it.size.height } + gap
+                    val plot = Size(size.width, (size.height - labelBand).coerceAtLeast(0f))
                     drawCodeTicks(plot, tick, tickLabels)
                     if (data is ScopeData.Histogram) {
                         drawHistogramFill(data.red, colors.scopeR, plot)
@@ -176,7 +177,7 @@ internal fun ScopePanel(data: ScopeData?, mode: ScopeMode, modifier: Modifier = 
                     val gutter = tickLabels.maxOf { it.size.width } + gap
                     drawLevelLabels(tickLabels, gutter - gap)
                     translate(left = gutter) {
-                        val area = Size(size.width - gutter, size.height)
+                        val area = Size((size.width - gutter).coerceAtLeast(0f), size.height)
                         if (mode == ScopeMode.RGB_PARADE) {
                             drawParade(data as? ScopeData.Parade, area, gap, tick, channelLabels)
                         } else {
@@ -219,7 +220,7 @@ private fun DrawScope.drawParade(
     tick: Color,
     channelLabels: List<TextLayoutResult>,
 ) {
-    val panel = Size((area.width - 2 * gap) / 3f, area.height)
+    val panel = Size(((area.width - 2 * gap) / 3f).coerceAtLeast(0f), area.height)
     val images = data?.let { listOf(it.red, it.green, it.blue) }
     channelLabels.forEachIndexed { i, label ->
         val origin = Offset(i * (panel.width + gap), 0f)
@@ -237,22 +238,29 @@ private fun DrawScope.drawLevelTicks(origin: Offset, plot: Size, colour: Color) 
     }
 }
 
-/** The 0 / 50 / 100 level labels, right-aligned to [right] and centred on their ticks, kept inside the plot height. */
+/**
+ * The 0 / 50 / 100 level labels, right-aligned to [right] and centred on their ticks, kept inside the plot height;
+ * skipped while the plot is shorter than a label (the panel's first frames as it animates in).
+ */
 private fun DrawScope.drawLevelLabels(labels: List<TextLayoutResult>, right: Float) {
     labels.forEachIndexed { i, label ->
-        val height = label.size.height.toFloat()
-        val top = (size.height * (1f - TICK_FRACTIONS[i]) - height / 2f).coerceIn(0f, size.height - height)
+        val centre = size.height * (1f - TICK_FRACTIONS[i])
+        val top = ScopeLabelLayout.start(centre, label.size.height.toFloat(), size.height) ?: return@forEachIndexed
         drawText(label, topLeft = Offset(right - label.size.width, top))
     }
 }
 
-/** Vertical hairlines at code 0, the midpoint and code 255 across a histogram [plot], labelled 0 / 50 / 100 below it. */
+/**
+ * Vertical hairlines at code 0, the midpoint and code 255 across a histogram [plot], labelled 0 / 50 / 100 below it;
+ * a label is skipped while the canvas is narrower or shorter than it.
+ */
 private fun DrawScope.drawCodeTicks(plot: Size, colour: Color, labels: List<TextLayoutResult>) {
     TICK_FRACTIONS.forEachIndexed { i, f ->
         val x = plot.width * f
         drawLine(colour, Offset(x, 0f), Offset(x, plot.height), strokeWidth = Stroke.HairlineWidth)
         val label = labels[i]
-        val left = (x - label.size.width / 2f).coerceIn(0f, size.width - label.size.width)
+        if (size.height < label.size.height) return@forEachIndexed
+        val left = ScopeLabelLayout.start(x, label.size.width.toFloat(), size.width) ?: return@forEachIndexed
         drawText(label, topLeft = Offset(left, size.height - label.size.height))
     }
 }
