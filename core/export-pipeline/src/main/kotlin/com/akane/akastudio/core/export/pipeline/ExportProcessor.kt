@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import java.io.OutputStream
 import java.time.ZoneId
+import kotlin.math.pow
 
 /**
  * Production [StoryExporter]: render -> process -> encode -> [EncodedSink].
@@ -49,8 +50,9 @@ import java.time.ZoneId
  *
  * ULTRA_HDR_JPEG without an [ultraHdr] encoder (below API 34) falls back to SOCIAL_STORY_JPEG processing at the
  * target size and reports SOCIAL_STORY_JPEG. So does an ULTRA_HDR_JPEG export without hdrBoost whose render has no
- * HDR headroom (gain-map ratioMax at most 1 + 1e-4): a gain-map container would carry nothing, so the gain-map RENDER
- * steps are followed by the plain Social Story JPEG stages.
+ * perceptible HDR headroom (gain-map ratioMax below [MIN_HDR_RATIO], a third of a stop): an SDR source whose grade only
+ * nudges highlights a few percent past SDR white would get a gain map nobody can see, on a 4:2:0 platform base instead
+ * of the 4:4:4 Social one, so the gain-map RENDER steps are followed by the plain Social Story JPEG stages.
  *
  * Cancellation is checked between stages and on every pulled row; the sink removes the partial entry. Once the sink
  * has published the entry, WRITE 1 and Done are emitted without a cancellation point, so a cancel racing the publish
@@ -113,7 +115,7 @@ class ExportProcessor(
 
     /**
      * One export. [format] is the format written; it can still drop from ULTRA_HDR_JPEG to SOCIAL_STORY_JPEG once the
-     * gain map shows no headroom, so the file name and MIME type are resolved at publish time.
+     * gain map shows no perceptible headroom, so the file name and MIME type are resolved at publish time.
      */
     private inner class ExportJob(
         private val request: ExportRequest,
@@ -253,8 +255,8 @@ class ExportProcessor(
 
         /**
          * Finishes RENDER for Ultra HDR: the optional highlight boost, then the gain map, whose SDR base replaces the
-         * frame. Returns `null` when there is no headroom to encode (hdrBoost off and ratioMax at most
-         * 1 + [NO_HEADROOM_EPSILON]).
+         * frame. Returns `null` when there is no perceptible headroom to encode (hdrBoost off and ratioMax below
+         * [MIN_HDR_RATIO]).
          */
         private fun gainMapWithHeadroom(frame: Frame): GainMapResult? {
             progress.stage(ExportStage.RENDER, 0.5f)
@@ -265,7 +267,7 @@ class ExportProcessor(
             val gainMap = GainMapMath.compute(frame.image)
             frame.image = gainMap.sdr
             progress.stage(ExportStage.RENDER, 1f)
-            val noHeadroom = !request.hdrBoost && gainMap.ratioMax <= 1f + NO_HEADROOM_EPSILON
+            val noHeadroom = !request.hdrBoost && gainMap.ratioMax < MIN_HDR_RATIO
             return if (noHeadroom) null else gainMap
         }
 
@@ -302,9 +304,22 @@ class ExportProcessor(
         )
     }
 
-    private companion object {
-        const val JPEG_QUALITY = 95
-        const val WRITE_CHUNK = 64 * 1024
-        const val NO_HEADROOM_EPSILON = 1e-4f
+    internal companion object {
+        private const val JPEG_QUALITY = 95
+        private const val WRITE_CHUNK = 64 * 1024
+
+        /**
+         * Smallest gain-map ratioMax worth an Ultra HDR file without hdrBoost: 2^(1/3), a third of a stop, the finest
+         * exposure step cameras offer as a visible change (about 26% brighter highlights).
+         *
+         * Measured (SQ-66): the render keeps values above SDR white, so grading an SDR-only source overshoots it a
+         * little. The CPU reference grade of an SDR chart (sRGB steps 0..1, white included) gave log2 ratioMax 0 to
+         * 0.044 for every Master look at default sliders, and at most 0.25 with one slider at its extreme (contrast,
+         * halation, temperature). SQ-52's SDR story exported a 0.072-stop gain map (about 5% brighter) through the old
+         * near-zero cut-off (ratioMax above 1 + 1e-4). hdrBoost adds 2 stops and always keeps the gain map. Deliberate
+         * brightening of an SDR source past a third of a stop (exposure, a strong harmonization lift) reaches the
+         * threshold and keeps it too.
+         */
+        val MIN_HDR_RATIO = 2f.pow(1f / 3f)
     }
 }

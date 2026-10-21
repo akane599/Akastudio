@@ -25,7 +25,10 @@ import kotlin.math.max
  * spliced in right after SOI ([JpegSegments.insertApp1AfterSoi]; the MPF offsets stay valid).
  *
  * Chroma subsampling is the platform default (4:2:0): `Bitmap.compress` exposes no way to change it, unlike the
- * 4:4:4 [com.akane.akastudio.core.export.encode.JpegEncoder] used for SOCIAL_STORY_JPEG.
+ * 4:4:4 [com.akane.akastudio.core.export.encode.JpegEncoder] used for SOCIAL_STORY_JPEG. Nothing here chooses it: the
+ * gain-map path hands the base to the platform JPEG encoder with only a quality setting, and the base comes out 4:2:0
+ * (redroid API 35, SdrOnlyUltraHdrDeviceTest pins it). That is why ExportProcessor writes Ultra HDR only when the
+ * gain map carries perceptible headroom.
  *
  * Requires API 34. The requirement is declared with [TargetApi], so lint does not propagate it: construct this only
  * behind an `SDK_INT >= UPSIDE_DOWN_CAKE` check, as [createStoryExporter] does.

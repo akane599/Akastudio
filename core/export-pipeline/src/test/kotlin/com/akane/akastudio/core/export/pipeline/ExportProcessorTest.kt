@@ -21,6 +21,7 @@ import com.akane.akastudio.core.export.encode.Rgba8Rows
 import com.akane.akastudio.core.export.encode.SrgbIccProfile
 import com.akane.akastudio.core.export.encode.WebpContainer
 import com.akane.akastudio.core.export.process.Dither
+import com.akane.akastudio.core.export.process.GainMapMath
 import com.akane.akastudio.core.export.process.GainMapResult
 import com.akane.akastudio.core.export.process.Half
 import kotlinx.coroutines.CancellationException
@@ -146,6 +147,34 @@ class ExportProcessorTest {
         val decoded = ImageIO.read(ByteArrayInputStream(run.bytes))
         assertEquals(1080, decoded.width)
         assertEquals(1920, decoded.height)
+    }
+
+    /** SQ-66: an SDR grade that nudges highlights ~5% past white (SQ-52's 0.072-stop gain map) is not HDR. */
+    @Test
+    fun ultraHdrWithImperceptibleHeadroom_writesPlainSocialJpeg() {
+        val renderer = FakeRenderer(peak = 1.08f)
+        val ratioMax = GainMapMath.compute(runBlocking { renderer.renderOffscreen(request(ExportFormat.ULTRA_HDR_JPEG).scene) }).ratioMax
+        assertTrue("fixture has a near-zero gain map like SQ-52's: ratioMax $ratioMax", ratioMax > 1.03f && ratioMax < ExportProcessor.MIN_HDR_RATIO)
+        val encoder = FakeUltraHdrEncoder()
+        val run = export(ExportFormat.ULTRA_HDR_JPEG, renderer = renderer, ultraHdr = encoder, hdrBoost = false)
+        assertEquals("the reported format names the fallback", ExportFormat.SOCIAL_STORY_JPEG, run.result.format)
+        assertEquals("the gain-map encoder is never called", -1, encoder.quality)
+        assertFile(run, "image/jpeg", "SOCIAL_STORY_JPEG", "jpg", 1080, 1920)
+    }
+
+    @Test
+    fun ultraHdrWithPerceptibleHeadroomAndNoBoost_keepsTheGainMap() {
+        val encoder = FakeUltraHdrEncoder()
+        val run = export(ExportFormat.ULTRA_HDR_JPEG, renderer = FakeRenderer(peak = 2f), ultraHdr = encoder, hdrBoost = false)
+        assertEquals(ExportFormat.ULTRA_HDR_JPEG, run.result.format)
+        val gain = checkNotNull(encoder.gain) { "the gain-map encoder must be called" }
+        assertTrue("ratioMax ${gain.ratioMax} reaches the threshold", gain.ratioMax >= ExportProcessor.MIN_HDR_RATIO)
+        assertFile(run, "image/jpeg", "ULTRA_HDR_JPEG", "jpg", 1080, 1920)
+    }
+
+    @Test
+    fun minHdrRatio_isAThirdOfAStop() {
+        assertEquals(1.2599f, ExportProcessor.MIN_HDR_RATIO, 1e-4f)
     }
 
     @Test
