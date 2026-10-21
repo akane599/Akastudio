@@ -6,6 +6,7 @@ Package roots: `com.akane.akastudio` (+ `core.<name>`, `feature.studio`). Paths 
 ```
 settings.gradle.kts, build.gradle.kts, gradle/libs.versions.toml   version catalog
 PROGRESS.md                       baseline + decision log
+.github/workflows/ci.yml          GitHub Actions CI (see onboarding)
 .claude/kit/gradle-check.sh       Gradle wrapper helper (see onboarding)
 app/                              AkaStudioApp.kt, MainActivity.kt, res/values (themes, strings)
                                   src/screenshotTest + screenshotTestDebug/reference (StudioAppScreenshotsKt)
