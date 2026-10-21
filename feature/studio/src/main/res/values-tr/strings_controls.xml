@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Değer gösterimleri. %1$s işaretli sayı metnidir. -->
+    <string name="controls_value_percent">%%%1$s</string>
+    <string name="controls_value_kelvin">%1$s K</string>
+    <string name="controls_value_px">%1$s px</string>
+
+    <!-- Üst çubuk -->
+    <string name="controls_mode_ai_pick">AI Seçimi: %1$s</string>
+    <string name="controls_mode_user_pick">Seçiminiz: %1$s</string>
+    <string name="controls_mode_pending">Hikâye modu</string>
+    <string name="controls_mode_drawer_expanded">Mod listesi açık</string>
+    <string name="controls_mode_drawer_collapsed">Mod listesi kapalı</string>
+    <string name="controls_compare">Öncesi ve sonrasını karşılaştır</string>
+    <string name="controls_scope">Skop: %1$s</string>
+    <string name="controls_scope_off">Kapalı</string>
+    <string name="controls_scope_luma">Luma dalga formu</string>
+    <string name="controls_scope_rgb_parade">RGB geçidi</string>
+    <string name="controls_scope_histogram">Histogram</string>
+    <string name="controls_open_export">Dışa aktar</string>
+    <string name="controls_state_on">Açık</string>
+    <string name="controls_state_off">Kapalı</string>
+
+    <!-- Mod çekmecesi -->
+    <string name="controls_drawer_title">Hikâye modu</string>
+    <string name="controls_tag_ai">AI</string>
+    <string name="controls_score">Puan %1$s</string>
+    <string name="controls_synergy_color">Renk</string>
+    <string name="controls_synergy_rhythm">Ritim</string>
+    <string name="controls_synergy_context">Bağlam</string>
+    <string name="controls_rejected_title">Elenenler (%1$d)</string>
+    <string name="controls_reject_blurry">Bulanık</string>
+    <string name="controls_reject_eyes_closed">Gözler kapalı</string>
+    <string name="controls_reject_exposure">Pozlama</string>
+    <string name="controls_reject_unreadable">Okunamadı</string>
+    <string name="controls_mode_row_description">%1$s, puan %2$s</string>
+
+    <!-- Sekmeler -->
+    <string name="controls_tab_curation">Seçki</string>
+    <string name="controls_tab_layout">Yerleşim</string>
+    <string name="controls_tab_color">Renk</string>
+    <string name="controls_tab_export">Dışa aktar</string>
+
+    <!-- Seçki sekmesi -->
+    <string name="controls_curation_waiting">Seçki karar verince hikâye burada görünür.</string>
+    <string name="controls_slots_title">Hikâye fotoğrafları</string>
+    <string name="controls_quality">K %1$s</string>
+    <string name="controls_slot_description">Fotoğraf %1$d, %2$s, kalite %3$s</string>
+    <string name="controls_burst_title">Seriden değiştir · fotoğraf %1$d</string>
+    <string name="controls_burst_same_scene">Aynı sahne</string>
+    <string name="controls_burst_other_scene">Başka sahne</string>
+    <string name="controls_burst_empty">Bu fotoğraf için kullanılabilir başka kare yok.</string>
+    <string name="controls_burst_description">Fotoğraf %1$d yerine bu kareyi koy (%2$s), kalite %3$s</string>
+
+    <!-- Yerleşim sekmesi -->
+    <string name="controls_template_title">Şablon</string>
+    <string name="controls_gutter">Boşluk</string>
+    <string name="controls_corner_radius">Köşe yarıçapı</string>
+    <string name="controls_background">Arka plan</string>
+    <string name="controls_background_off_white">Kırık beyaz</string>
+    <string name="controls_background_anthracite">Antrasit</string>
+    <string name="controls_background_palette">Palet</string>
+    <string name="controls_background_frosted">Buzlu cam</string>
+    <string name="controls_exif_caption">EXIF açıklaması</string>
+    <string name="controls_exif_caption_summary">Hikâyenin altında fotoğraf makinesi, lens ve pozlama bilgisi.</string>
+
+    <!-- Renk sekmesi -->
+    <string name="controls_look_title">Ana görünüm</string>
+    <string name="controls_grade_title">Ayarlar</string>
+    <string name="controls_grade_intensity">Yoğunluk</string>
+    <string name="controls_grade_harmonization">Uyum gücü</string>
+    <string name="controls_grade_temperature">Sıcaklık</string>
+    <string name="controls_grade_tint">Renk tonu</string>
+    <string name="controls_grade_contrast">Kontrast</string>
+    <string name="controls_grade_saturation">Doygunluk</string>
+    <string name="controls_grade_halation">Halasyon</string>
+    <string name="controls_grade_grain">Film greni</string>
+    <string name="controls_grade_skin_protection">Cilt koruması</string>
+    <string name="controls_reset">Varsayılana sıfırla</string>
+    <string name="controls_reset_hint">Sıfırlamak için kaydırıcıya iki kez dokunun.</string>
+
+    <!-- Dışa aktarma -->
+    <string name="controls_export_title">Dışa aktar</string>
+    <string name="controls_format_title">Biçim</string>
+    <string name="controls_format_png16">Kayıpsız PNG 16 bit</string>
+    <string name="controls_format_png16_summary">Arşiv ve sonraki düzenlemeler için tam 16 bit derinlik.</string>
+    <string name="controls_format_png8">Kayıpsız PNG 8 bit</string>
+    <string name="controls_format_png8_summary">Piksel piksel aynı, her yerde açılır.</string>
+    <string name="controls_format_webp">Kayıpsız WebP</string>
+    <string name="controls_format_webp_summary">Piksel piksel aynı, daha küçük dosya.</string>
+    <string name="controls_format_social">Social Story Master</string>
+    <string name="controls_format_social_summary">Sıkıştırma karşıtı: Lanczos-3, mavi gürültü, sRGB ICC, 4:4:4.</string>
+    <string name="controls_format_ultra_hdr">Ultra HDR</string>
+    <string name="controls_format_ultra_hdr_summary">HDR ekranlarda daha parlak vurgular için kazanç haritalı JPEG.</string>
+    <string name="controls_needs_android_14">Android 14 veya üstü gerekir.</string>
+    <string name="controls_resolution_title">Çözünürlük</string>
+    <string name="controls_hdr_boost_summary">HDR ekranlar vurguları daha parlak göstersin diye kazanç haritası ekler.</string>
+    <string name="controls_export_action">Dışa aktar</string>
+    <string name="controls_export_share_action">Dışa aktar ve paylaş</string>
+    <string name="controls_export_starting">Dışa aktarma başlıyor</string>
+    <string name="controls_stage_render">İşleniyor</string>
+    <string name="controls_stage_resample">Yeniden örnekleniyor</string>
+    <string name="controls_stage_sharpen">Keskinleştiriliyor</string>
+    <string name="controls_stage_dither">Dither uygulanıyor</string>
+    <string name="controls_stage_encode">Kodlanıyor</string>
+    <string name="controls_stage_write">Kaydediliyor</string>
+    <string name="controls_export_saved">Resimler/AkaStudio klasörüne kaydedildi</string>
+</resources>

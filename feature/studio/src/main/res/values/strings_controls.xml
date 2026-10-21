@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Studio controls: top bar, mode drawer, control panel and export sheet. -->
+
+    <!-- Value readouts. %1$s is the already-signed number text. -->
+    <string name="controls_value_percent">%1$s%%</string>
+    <string name="controls_value_kelvin">%1$s K</string>
+    <string name="controls_value_px">%1$s px</string>
+
+    <!-- Top bar -->
+    <string name="controls_mode_ai_pick">AI pick: %1$s</string>
+    <string name="controls_mode_user_pick">Your pick: %1$s</string>
+    <string name="controls_mode_pending">Story mode</string>
+    <string name="controls_mode_drawer_expanded">Mode list open</string>
+    <string name="controls_mode_drawer_collapsed">Mode list closed</string>
+    <string name="controls_compare">Compare before and after</string>
+    <string name="controls_scope">Scope: %1$s</string>
+    <string name="controls_scope_off">Off</string>
+    <string name="controls_scope_luma">Luma waveform</string>
+    <string name="controls_scope_rgb_parade">RGB parade</string>
+    <string name="controls_scope_histogram">Histogram</string>
+    <string name="controls_open_export">Export</string>
+    <string name="controls_state_on">On</string>
+    <string name="controls_state_off">Off</string>
+
+    <!-- Mode drawer -->
+    <string name="controls_drawer_title">Story mode</string>
+    <string name="controls_tag_ai">AI</string>
+    <string name="controls_score">Score %1$s</string>
+    <string name="controls_synergy_color">Color</string>
+    <string name="controls_synergy_rhythm">Rhythm</string>
+    <string name="controls_synergy_context">Context</string>
+    <string name="controls_rejected_title">Rejected (%1$d)</string>
+    <string name="controls_reject_blurry">Blurry</string>
+    <string name="controls_reject_eyes_closed">Eyes closed</string>
+    <string name="controls_reject_exposure">Exposure</string>
+    <string name="controls_reject_unreadable">Unreadable</string>
+    <!-- %1$s mode name, %2$s score percent -->
+    <string name="controls_mode_row_description">%1$s, score %2$s</string>
+
+    <!-- Tabs -->
+    <string name="controls_tab_curation">Curation</string>
+    <string name="controls_tab_layout">Layout</string>
+    <string name="controls_tab_color">Color</string>
+    <string name="controls_tab_export">Export</string>
+
+    <!-- Curation tab -->
+    <string name="controls_curation_waiting">The story appears here once curation decides.</string>
+    <string name="controls_slots_title">Story photos</string>
+    <string name="controls_quality">Q %1$s</string>
+    <!-- %1$d slot number, %2$s shot scale, %3$s quality percent -->
+    <string name="controls_slot_description">Photo %1$d, %2$s, quality %3$s</string>
+    <!-- %1$d slot number -->
+    <string name="controls_burst_title">Swap from burst · photo %1$d</string>
+    <string name="controls_burst_same_scene">Same scene</string>
+    <string name="controls_burst_other_scene">Other scene</string>
+    <string name="controls_burst_empty">No other usable shot for this photo.</string>
+    <!-- %1$d slot number, %2$s same/other scene, %3$s quality percent -->
+    <string name="controls_burst_description">Swap photo %1$d for this %2$s shot, quality %3$s</string>
+
+    <!-- Layout tab -->
+    <string name="controls_template_title">Template</string>
+    <string name="controls_gutter">Gutter</string>
+    <string name="controls_corner_radius">Corner radius</string>
+    <string name="controls_background">Background</string>
+    <string name="controls_background_off_white">Off-white</string>
+    <string name="controls_background_anthracite">Anthracite</string>
+    <string name="controls_background_palette">Palette</string>
+    <string name="controls_background_frosted">Frosted glass</string>
+    <string name="controls_exif_caption">EXIF caption</string>
+    <string name="controls_exif_caption_summary">Camera, lens and exposure under the story.</string>
+
+    <!-- Color tab -->
+    <string name="controls_look_title">Master look</string>
+    <string name="controls_grade_title">Adjust</string>
+    <string name="controls_grade_intensity">Intensity</string>
+    <string name="controls_grade_harmonization">Harmonization strength</string>
+    <string name="controls_grade_temperature">Temperature</string>
+    <string name="controls_grade_tint">Tint</string>
+    <string name="controls_grade_contrast">Contrast</string>
+    <string name="controls_grade_saturation">Saturation</string>
+    <string name="controls_grade_halation">Halation</string>
+    <string name="controls_grade_grain">Film grain</string>
+    <string name="controls_grade_skin_protection">Skin protection</string>
+    <string name="controls_reset">Reset to default</string>
+    <string name="controls_reset_hint">Double-tap a slider to reset it.</string>
+
+    <!-- Export -->
+    <string name="controls_export_title">Export</string>
+    <string name="controls_format_title">Format</string>
+    <string name="controls_format_png16">Lossless PNG 16-bit</string>
+    <string name="controls_format_png16_summary">Full 16-bit depth for archiving and further editing.</string>
+    <string name="controls_format_png8">Lossless PNG 8-bit</string>
+    <string name="controls_format_png8_summary">Pixel-exact and opens everywhere.</string>
+    <string name="controls_format_webp">Lossless WebP</string>
+    <string name="controls_format_webp_summary">Pixel-exact at a smaller file size.</string>
+    <string name="controls_format_social">Social Story Master</string>
+    <string name="controls_format_social_summary">Anti-compression: Lanczos-3, blue-noise, sRGB ICC, 4:4:4.</string>
+    <string name="controls_format_ultra_hdr">Ultra HDR</string>
+    <string name="controls_format_ultra_hdr_summary">JPEG with a gain map for brighter highlights on HDR screens.</string>
+    <string name="controls_needs_android_14">Needs Android 14 or later.</string>
+    <string name="controls_resolution_title">Resolution</string>
+    <string name="controls_resolution_1080" translatable="false">1080p</string>
+    <string name="controls_resolution_4k" translatable="false">4K UHD</string>
+    <string name="controls_hdr_boost" translatable="false">HDR Story Boost</string>
+    <string name="controls_hdr_boost_summary">Embeds a gain map so HDR screens show the highlights brighter.</string>
+    <string name="controls_export_action">Export</string>
+    <string name="controls_export_share_action">Export &amp; share</string>
+    <string name="controls_export_starting">Starting export</string>
+    <string name="controls_stage_render">Rendering</string>
+    <string name="controls_stage_resample">Resampling</string>
+    <string name="controls_stage_sharpen">Sharpening</string>
+    <string name="controls_stage_dither">Dithering</string>
+    <string name="controls_stage_encode">Encoding</string>
+    <string name="controls_stage_write">Saving</string>
+    <string name="controls_export_saved">Saved to Pictures/AkaStudio</string>
+</resources>
