@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Story modes (StoryMode) -->
-    <string name="mode_hero">Hero</string>
+    <string name="mode_hero">Tek kare</string>
     <string name="mode_collage_2">2\'li kolaj</string>
     <string name="mode_collage_3">3\'lü kolaj</string>
     <string name="mode_collage_4">4\'lü kolaj</string>

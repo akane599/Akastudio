@@ -125,7 +125,8 @@ private fun SliderTrack(fraction: Float, zeroFraction: Float, bipolar: Boolean, 
     val colors = DarkroomTheme.colors
     val scheme = MaterialTheme.colorScheme
     val active = if (enabled) colors.sliderActive else scheme.onSurfaceVariant
-    val inactive = colors.sliderTrack
+    // Disabled, the active part falls to onSurfaceVariant, so the boundary dims too to stay distinct from it.
+    val inactive = if (enabled) boundaryColor else boundaryColor.copy(alpha = DISABLED_ALPHA)
     val tickColor = scheme.onSurfaceVariant
     Canvas(
         Modifier

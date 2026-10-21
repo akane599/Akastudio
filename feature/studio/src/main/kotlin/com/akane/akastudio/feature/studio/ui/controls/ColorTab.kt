@@ -141,6 +141,8 @@ private fun LookTile(look: MasterLook, selected: Boolean, suggested: Boolean, on
             text = stringResource(look.nameRes()),
             style = MaterialTheme.typography.labelMedium,
             color = if (selected) scheme.onSurface else scheme.onSurfaceVariant,
+            // Two reserved lines keep one-line names on tiles as tall as their two-line neighbours.
+            minLines = 2,
             maxLines = 3,
             overflow = TextOverflow.Ellipsis,
         )

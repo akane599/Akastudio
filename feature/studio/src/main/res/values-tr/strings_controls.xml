@@ -96,7 +96,7 @@
     <string name="controls_resolution_title">Çözünürlük</string>
     <string name="controls_hdr_boost_summary">HDR ekranlar vurguları daha parlak göstersin diye kazanç haritası ekler.</string>
     <string name="controls_export_action">Dışa aktar</string>
-    <string name="controls_export_share_action">Dışa aktar ve paylaş</string>
+    <string name="controls_export_share_action">Aktar ve paylaş</string>
     <string name="controls_export_starting">Dışa aktarma başlıyor</string>
     <string name="controls_stage_render">İşleniyor</string>
     <string name="controls_stage_resample">Yeniden örnekleniyor</string>

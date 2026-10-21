@@ -26,6 +26,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -95,11 +96,17 @@ private fun ModeChip(state: StudioState, onClick: () -> Unit, modifier: Modifier
     val motion = DarkroomTheme.motion
     val curation = state.curation
     val mode = state.selection.mode ?: curation?.chosen?.mode
+    val modeName = mode?.let { stringResource(it.nameRes()) }
+    val aiPick = curation != null && mode == curation.note.chosenMode
     val label = when {
-        curation == null || mode == null -> stringResource(R.string.controls_mode_pending)
-        mode == curation.note.chosenMode -> stringResource(R.string.controls_mode_ai_pick, stringResource(mode.nameRes()))
-        else -> stringResource(R.string.controls_mode_user_pick, stringResource(mode.nameRes()))
+        curation == null || modeName == null -> stringResource(R.string.controls_mode_pending)
+        aiPick -> stringResource(R.string.controls_mode_ai_pick, modeName)
+        else -> stringResource(R.string.controls_mode_user_pick, modeName)
     }
+    // At large font the "AI pick:" / "Your pick:" prefix would push the mode name into an ellipsis, so the chip
+    // shows the bare name (wrapping if it must) and the AI tag; screen readers still hear the full label.
+    val largeFont = isLargeFont()
+    val shown = if (largeFont && curation != null && modeName != null) modeName else label
     val open = state.modeDrawerOpen
     val enabled = curation != null
     val container by animateColorAsState(
@@ -121,18 +128,27 @@ private fun ModeChip(state: StudioState, onClick: () -> Unit, modifier: Modifier
             .clip(MaterialTheme.shapes.large)
             .background(container)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .semantics { stateDescription = stateText }
-            .padding(start = spacing.m, end = spacing.s),
+            .semantics {
+                contentDescription = label
+                stateDescription = stateText
+            }
+            .padding(start = spacing.m, end = spacing.s, top = spacing.xs, bottom = spacing.xs),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(spacing.xs),
     ) {
+        // Leading, so a name that wraps leaves its slack before the chevron rather than between name and tag.
+        if (largeFont && aiPick) {
+            TagChip(stringResource(R.string.controls_tag_ai), Modifier.clearAndSetSemantics { }, emphasized = true)
+        }
         Text(
-            text = label,
+            text = shown,
             style = MaterialTheme.typography.labelLarge,
             color = if (enabled) scheme.onSurface else scheme.onSurfaceVariant,
-            maxLines = 1,
+            maxLines = if (largeFont) 2 else 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f, fill = false),
+            modifier = Modifier
+                .weight(1f, fill = false)
+                .clearAndSetSemantics { },
         )
         Icon(
             imageVector = ControlIcons.ChevronDown,
