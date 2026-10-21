@@ -107,7 +107,7 @@ internal class DefaultPhotoPreparer(
     ): ComposerPhoto {
         val analysis = checkNotNull(analyses[candidate.id]) { "No curator analysis for photo ${candidate.id}" }
         val image = try {
-            backend.decodeFull(candidate, edge)
+            decodeOwned(candidate, edge)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -137,6 +137,25 @@ internal class DefaultPhotoPreparer(
             horizonTiltDegrees = tiltOf(candidate),
             metadata = candidate.metadata,
         )
+    }
+
+    /**
+     * Decodes [candidate] so that the result always has an owner. The decoder hops to its IO dispatcher, and a
+     * `withContext` whose caller was cancelled meanwhile discards the finished decode, which nobody could then free.
+     * So the decode runs to completion even after a cancel (it blocks on the IO thread either way), and a decode the
+     * cancelled caller will not register is freed here.
+     */
+    private suspend fun decodeOwned(candidate: PhotoCandidate, edge: Int): FullResolutionImage {
+        currentCoroutineContext().ensureActive()
+        var decoded: FullResolutionImage? = null
+        try {
+            val image = withContext(NonCancellable) { backend.decodeFull(candidate, edge).also { decoded = it } }
+            currentCoroutineContext().ensureActive()
+            return image
+        } catch (e: CancellationException) {
+            decoded?.free()
+            throw e
+        }
     }
 
     /**

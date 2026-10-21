@@ -8,9 +8,11 @@ import com.akane.akastudio.core.curator.api.FaceObservation
 import com.akane.akastudio.core.curator.api.PhotoAnalysis
 import com.akane.akastudio.core.ingestion.model.PhotoCandidate
 import com.akane.akastudio.feature.studio.domain.TestData
+import com.akane.akastudio.feature.studio.domain.studioTestDispatchers
 import java.io.IOException
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -61,6 +63,12 @@ class DefaultPhotoPreparerTest {
         var registerContext: CoroutineContext? = null
         val failUnregister = mutableSetOf<String>()
 
+        /** When set, [decodeFull] decodes on this context, like the real decoder's hop to its IO dispatcher. */
+        var decodeContext: CoroutineContext? = null
+
+        /** Runs on [decodeContext] once the image exists, as the blocking decode returns. */
+        var afterDecode: (() -> Unit)? = null
+
         /** How long [register] suspends before recording the registration. */
         var registerDelayMs = 0L
         var inFlight = 0
@@ -75,7 +83,13 @@ class DefaultPhotoPreparerTest {
                 delay(10)
                 decodeEdges += candidate.id to maxLongEdge
                 if (candidate.id in failDecode) throw IOException("truncated ${candidate.id}")
-                return FakeImage(candidate.id, candidate.widthPx, candidate.heightPx, events).also { images += it }
+                val decode = {
+                    FakeImage(candidate.id, candidate.widthPx, candidate.heightPx, events)
+                        .also { images += it }
+                        .also { afterDecode?.invoke() }
+                }
+                val context = decodeContext ?: return decode()
+                return withContext(context) { decode() }
             } finally {
                 inFlight--
             }
@@ -260,6 +274,25 @@ class DefaultPhotoPreparerTest {
 
         assertEquals(listOf("unregister:a", "free:a"), backend.events)
         assertTrue(backend.registry.isEmpty())
+    }
+
+    @Test
+    fun cancellingAsTheDecodeReturnsAcrossADispatcherSwitchFreesTheDecode() = runTest {
+        val dispatchers = studioTestDispatchers(testScheduler)
+        backend.decodeContext = dispatchers.io
+        lateinit var job: Job
+        // The user discards while the blocking decode finishes on the IO thread, so withContext would drop its result.
+        backend.afterDecode = { job.cancel() }
+        job = launch(dispatchers.main) { preparer.prepare(listOf(a), analyses, hero = false) }
+        advanceUntilIdle()
+
+        assertTrue(job.isCancelled)
+        val image = backend.images.single()
+        assertEquals("a decode the caller never used must be freed", 1, image.freed)
+        assertTrue("nothing is registered for a cancelled decode", backend.registry.isEmpty())
+        preparer.release(listOf("a"))
+        assertTrue(backend.unregistered.isEmpty())
+        assertEquals(1, image.freed)
     }
 
     @Test
