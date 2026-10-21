@@ -21,11 +21,13 @@
         </activity>
         <!-- WorkManager arrives only transitively (LiteRT -> play:ai-delivery -> play:asset-delivery -> work-runtime) and
              nothing here schedules work: models load from APK assets, not AI packs. Skip its startup initializer so
-             launch never opens WorkManager's Room database. -->
+             launch never opens WorkManager's Room database.
+             MissingClass is a lint false positive: startup-runtime is on the runtime classpath, only transitively. -->
         <provider
             android:name="androidx.startup.InitializationProvider"
             android:authorities="${applicationId}.androidx-startup"
             android:exported="false"
+            tools:ignore="MissingClass"
             tools:node="merge">
             <meta-data
                 android:name="androidx.work.WorkManagerInitializer"

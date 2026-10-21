@@ -5,7 +5,6 @@ import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Gainmap
 import android.os.Build
-import androidx.annotation.RequiresApi
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
 import com.akane.akastudio.core.ingestion.api.IngestionRequest
@@ -34,7 +33,6 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 @SdkSuppress(minSdkVersion = Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
-@RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
 class GainMapDeviceTest {
 
     private val store = QaMediaStore()
