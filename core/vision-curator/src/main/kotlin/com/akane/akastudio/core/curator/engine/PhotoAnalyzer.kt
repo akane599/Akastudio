@@ -64,9 +64,9 @@ internal class PhotoAnalyzer(private val pixels: PixelSource, private val models
 
         val subjectWeights = Sharpness.subjectWeights(px.width, px.height, Sharpness.subjectBox(faces, saliency))
         val sharpness = Sharpness.score(Sharpness.laplacianVariance(gray, px.width, px.height, subjectWeights))
-        val exposure = Exposure.evaluate(gray).score
-        val technical = TechnicalGate.score(sharpness, exposure, faces)
-        val rejectReason = TechnicalGate.rejectReason(technical, faces)
+        val exposure = Exposure.evaluate(gray)
+        val technical = TechnicalGate.score(sharpness, exposure.score, faces)
+        val rejectReason = TechnicalGate.rejectReason(technical, faces, exposure)
         checkActive()
 
         val dHash = PerceptualHash.dHash(px)

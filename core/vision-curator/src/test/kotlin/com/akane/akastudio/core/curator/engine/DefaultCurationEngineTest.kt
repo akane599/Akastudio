@@ -141,6 +141,26 @@ class DefaultCurationEngineTest {
     }
 
     @Test
+    fun curate_sharpLowKeyAndHighKeyFramesPassTheGateButFlatFramesDoNot() = runBlocking {
+        val world = FakeWorld(
+            linkedMapOf(
+                "night" to Shot(EngineImages.clipped(seed = 45, fraction = 0.4f, fill = 0)),
+                "snow" to Shot(EngineImages.clipped(seed = 46, fraction = 0.3f, fill = 255)),
+                "black" to Shot(EngineImages.flat(0)),
+                "white" to Shot(EngineImages.flat(255)),
+            ),
+        )
+        val result = decided(engine(world).curate(world.candidates).toList())
+
+        assertNull(result.analyses.getValue("night").rejectReason)
+        assertNull(result.analyses.getValue("snow").rejectReason)
+        assertEquals(listOf("black", "white"), result.rejectedIds)
+        // Clipping still costs ranking: the exposure score is driven to zero.
+        assertEquals(0f, result.analyses.getValue("night").technical.exposure, 0f)
+        assertEquals(0f, result.analyses.getValue("snow").technical.exposure, 0f)
+    }
+
+    @Test
     fun curate_threeNearDuplicatesCollapseToOneCluster() = runBlocking {
         val base = noise(51)
         val world = FakeWorld(

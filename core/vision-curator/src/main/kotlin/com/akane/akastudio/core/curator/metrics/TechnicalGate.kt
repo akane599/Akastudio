@@ -13,7 +13,6 @@ object TechnicalGate {
     private const val EYES_CLOSED_BELOW = 0.35f
     private const val FACE_BLUR_BELOW = 0.15f
     private const val BLURRY_BELOW = 0.18f
-    private const val BAD_EXPOSURE_BELOW = 0.15f
 
     /**
      * `total = 0.5*sharpness + 0.3*exposure + 0.2*faceQuality`, where faceQuality is the area-weighted mean
@@ -45,9 +44,12 @@ object TechnicalGate {
     /**
      * First failing check, in order: [RejectReason.EYES_CLOSED] (a prominent face with both eyes below 0.35
      * or face sharpness below 0.15), [RejectReason.BLURRY] (sharpness below 0.18),
-     * [RejectReason.BAD_EXPOSURE] (exposure below 0.15); null when the photo passes.
+     * [RejectReason.BAD_EXPOSURE] ([exposure] is [Exposure.Result.unusable]); null when the photo passes.
+     *
+     * The exposure *score* in [t] only ranks: a sharp low-key or high-key frame with heavy but legitimate clipping
+     * passes the gate and is merely ranked lower.
      */
-    fun rejectReason(t: TechnicalScore, faces: List<FaceObservation>): RejectReason? {
+    fun rejectReason(t: TechnicalScore, faces: List<FaceObservation>, exposure: Exposure.Result): RejectReason? {
         val closedOrBlurredFace = faces.any { face ->
             faceArea(face) >= PROMINENT_FACE_AREA &&
                 (maxOf(face.leftEyeOpenness, face.rightEyeOpenness) < EYES_CLOSED_BELOW || face.sharpness < FACE_BLUR_BELOW)
@@ -55,7 +57,7 @@ object TechnicalGate {
         return when {
             closedOrBlurredFace -> RejectReason.EYES_CLOSED
             t.sharpness < BLURRY_BELOW -> RejectReason.BLURRY
-            t.exposure < BAD_EXPOSURE_BELOW -> RejectReason.BAD_EXPOSURE
+            exposure.unusable -> RejectReason.BAD_EXPOSURE
             else -> null
         }
     }

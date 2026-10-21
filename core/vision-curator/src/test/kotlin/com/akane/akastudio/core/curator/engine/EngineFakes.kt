@@ -43,6 +43,19 @@ internal object EngineImages {
         })
     }
 
+    /**
+     * A low-key or high-key frame: the first [fraction] of the pixels (top rows) are the flat luma [fill], the rest
+     * sharp full-range grey noise in 0..255, seeded.
+     */
+    fun clipped(seed: Int, fraction: Float, fill: Int, w: Int = WIDTH, h: Int = HEIGHT): ImagePixels {
+        val random = Random(seed)
+        val flat = (fraction * w * h).toInt()
+        return ImagePixels(w, h, IntArray(w * h) { i -> grey(if (i < flat) fill else random.nextInt(256)) })
+    }
+
+    /** A uniform frame of luma [v]. */
+    fun flat(v: Int, w: Int = WIDTH, h: Int = HEIGHT): ImagePixels = ImagePixels(w, h, IntArray(w * h) { grey(v) })
+
     /** [image] with one pixel nudged by +3 luma: a near-duplicate frame. */
     fun nudged(image: ImagePixels, index: Int): ImagePixels {
         val argb = image.argb.copyOf()

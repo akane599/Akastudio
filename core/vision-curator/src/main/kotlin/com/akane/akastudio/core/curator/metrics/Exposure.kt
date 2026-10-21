@@ -3,7 +3,13 @@ package com.akane.akastudio.core.curator.metrics
 import kotlin.math.ln
 import kotlin.math.roundToInt
 
-/** Exposure quality from the luma histogram: tonal entropy penalised by clipped highlights and shadows. */
+/**
+ * Exposure quality from the luma histogram: tonal entropy penalised by clipped highlights and shadows.
+ *
+ * The [Result.score] ranks photos and penalises clipping steeply, so a well-exposed low-key or high-key frame
+ * (night, fireworks, snow, overcast sky) can score near zero. Whether a frame is unusable is a separate, much
+ * stricter test, [Result.unusable].
+ */
 object Exposure {
     /** Entropy (bits) at which the entropy term saturates at 1. */
     private const val FULL_ENTROPY_BITS = 7.2f
@@ -12,6 +18,13 @@ object Exposure {
     private const val HIGHLIGHT_PENALTY = 5f
     private const val SHADOW_PENALTY = 3f
 
+    /** Clipped-highlight fraction above which the frame is unusable (mostly blown to white). */
+    private const val UNUSABLE_CLIP_HIGH = 0.6f
+    /** Clipped-shadow fraction above which the frame is unusable (mostly crushed to black). */
+    private const val UNUSABLE_CLIP_LOW = 0.7f
+    /** Entropy (bits) below which the frame is unusable: fewer tones than about six equally used levels. */
+    private const val UNUSABLE_ENTROPY_BITS = 2.5f
+
     /**
      * Exposure evaluation.
      * @property score combined 0..1 exposure score.
@@ -19,7 +32,14 @@ object Exposure {
      * @property clipHigh fraction of pixels whose rounded luma is above 252.
      * @property clipLow fraction of pixels whose rounded luma is below 3.
      */
-    data class Result(val score: Float, val entropyBits: Float, val clipHigh: Float, val clipLow: Float)
+    data class Result(val score: Float, val entropyBits: Float, val clipHigh: Float, val clipLow: Float) {
+        /**
+         * True when the frame carries too little tonal information to be a usable photo: more than 60% of it clipped
+         * to white, more than 70% crushed to black, or a histogram entropy below 2.5 bits. Independent of [score].
+         */
+        val unusable: Boolean
+            get() = clipHigh > UNUSABLE_CLIP_HIGH || clipLow > UNUSABLE_CLIP_LOW || entropyBits < UNUSABLE_ENTROPY_BITS
+    }
 
     /**
      * Evaluates a 0..255 luma plane:
