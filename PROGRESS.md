@@ -31,16 +31,22 @@ _Work items, stories and blockers live on the Sidequest board. This file keeps w
 - 2026-10-21: toolchain patch bump to Kotlin 2.4.21 and Gradle 9.8.2 (AGP 9.4.1 unchanged, still the latest stable 9.4.x). CI on GitHub Actions (`.github/workflows/ci.yml`) runs on JDK 21 Temurin: the full JVM gate plus lint on every push to main and every PR, and a parallel `assembleRelease`/`bundleRelease` job, because R8 broke release twice (SQ-47, SQ-55). Device suites stay local on emulator-5554. (SQ-46)
 - 2026-10-21: switching mode re-decides without re-scoring. Forcing an offered mode returns that alternative unchanged, rather than rebuilding every alternative without the quality gate, because the drawer shows the original options and scores. (SQ-67)
 - 2026-10-21: device verification runs as module-local `src/androidTest` suites on the shared emulator-5554, serialized by `flock $HOME/.cache/akastudio-emulator-5554.lock`, rather than JVM-only verification. Stages 1–5 had skipped it, and the first device QA found 2 crashes and 3 defects. (US-6)
+- 2026-10-21: the app ships with no network permissions: the manifest removes INTERNET, ACCESS_NETWORK_STATE, WAKE_LOCK, boot and foreground-service permissions plus MediaPipe's CCT telemetry backend, and `check<Variant>NoInternetPermission` fails release builds if INTERNET comes back. (audit F-02)
+- 2026-10-21: the renderer is trimmed, never closed: `StoryRenderer.trimMemory()`/`releaseSurface()` (additive api defaults) free pooled FBOs and grade slots after export and on TRIM_MEMORY_UI_HIDDEN; an idle trim was not added. (audit F-03)
+- 2026-10-21: zip staging lives in `noBackupFilesDir/ingest`, not `cacheDir`, so the system can't evict photos mid-session; startup purges every session dir older than process start (sessions never survive process death) and the legacy `cacheDir/ingest`. (audit N-06)
+- 2026-10-21: crop edits (pinch, double-tap, accessibility zoom/reset) are accepted only in Ready; grade and layout stay editable during an export, which keeps rendering the state captured at its start. (audit N-03)
+- 2026-10-21: the preparer frees a full-resolution bitmap only after its GL unregister succeeds and retries failed unregisters on the next release; with GL permanently broken the pixels stay held rather than risk a texture over freed memory. (audit N-02)
 
 ## Audit status
 | Area | Last run | Result | How |
 |---|---|---|---|
 | Sidequest bug hunt | — | — | `/bug-hunt` |
-| Repository audit | — | — | `/full-repo-audit` |
-| Audit fixes | — | — | `/audit-remediate` |
+| Repository audit | 2026-10-21 @ 0e283ce | 32 findings (F-01..F-32), T-01..T-06, 13 dead-code items; report kept local (untracked AUDIT_REPORT.md) | `/full-repo-audit` |
+| Audit fixes | 2026-10-21 @ f1056c4 | All F and T-01..T-05 fixed; T-06 partial (no `:app` JVM tests, SceneCompositor device-only); DC-09 skipped; 7 follow-ups N-01..N-07 fixed | `/audit-remediate` |
 | UI / design | — | — | `/ui-overhaul` phase review |
-| Lint | — | — | `./gradlew :app:lintDebug -q` |
-| Device QA | — | — | Mobile MCP (when configured) or android-emulator-qa fallback skill |
+| Lint | 2026-10-21 @ f1056c4 | 0 errors, all modules | `lintDebug` (in the full gate) |
+| Device QA | 2026-10-21 @ f1056c4 | 115/115 pass (app 15, studio 12, ingestion 19, color 25, composer 14, export 17, curator 13) | `connectedDebugAndroidTest` per module on emulator-5554 under the flock lock |
 
 ## Environment notes
 - No /dev/kvm on this machine, so no local AVD. A shared redroid Android 15 emulator (`emulator-5554`) is attached over adb and is approved for AkaStudio QA (2026-10-21); check `adb devices` at the start of each stage.
+- The host (Gradle daemons, RAM, emulator) is shared with the `com.akane.inspiration` session. Never run `./gradlew --stop` or kill Gradle/adb processes: that stops its builds too (it happened once, 2026-10-21). Coordinate whole-project gates with that session over cross-session messages, and keep worktrees on disk, not in the `/tmp` tmpfs.

@@ -10,7 +10,7 @@ Android, developed on Ubuntu from the CLI.
 - JDK target 17 · Gradle 9.8.2 · AGP 9.4.1 · Kotlin 2.4.21 (built-in) · compileSdk 37 · minSdk 31
 - Modules: :app, :core:ingestion, :core:vision-curator, :core:color-engine, :core:collage-composer, :core:export-pipeline, :feature:studio · Architecture: Clean Architecture + MVI · DI/DB/Net: none (StudioContainer, constructor injection) / none / none
 - App id: com.akane.akastudio · Launcher: .MainActivity
-- Baseline: full gate green at ba0f14a (all module unit tests + app/studio screenshot tests); lint 0 errors (PROGRESS.md)
+- Baseline: full gate green at f1056c4 (all module unit tests + app/studio screenshot tests + lintDebug 0 errors, plus assembleRelease/bundleRelease); device suites 115/115 at f1056c4 (`connectedDebugAndroidTest`, all 7 modules)
 <!-- STACK:END -->
 
 ## How work flows here
@@ -28,7 +28,7 @@ Android, developed on Ubuntu from the CLI.
 ## Commands
 - Build: `./gradlew :app:assembleDebug --console=plain -q` · Unit: `:app:testDebugUnitTest` · Lint: `:app:lintDebug`
 - Screenshots: `:app:updateDebugScreenshotTest` (write refs) · `:app:validateDebugScreenshotTest` (diff)
-- Full gate: `bash .claude/kit/gradle-check.sh :app:assembleDebug :app:testDebugUnitTest :app:validateDebugScreenshotTest :feature:studio:testDebugUnitTest :feature:studio:validateDebugScreenshotTest :core:ingestion:testDebugUnitTest :core:color-engine:testDebugUnitTest :core:vision-curator:testDebugUnitTest :core:collage-composer:testDebugUnitTest :core:export-pipeline:testDebugUnitTest --max-workers=2`
+- Full gate: `bash .claude/kit/gradle-check.sh :app:assembleDebug :app:testDebugUnitTest :app:validateDebugScreenshotTest :feature:studio:testDebugUnitTest :feature:studio:validateDebugScreenshotTest :core:ingestion:testDebugUnitTest :core:color-engine:testDebugUnitTest :core:vision-curator:testDebugUnitTest :core:collage-composer:testDebugUnitTest :core:export-pipeline:testDebugUnitTest lintDebug --max-workers=2`
 - Device: `./gradlew :app:installDebug -q && adb shell am start -n com.akane.akastudio/.MainActivity` · logs: `adb logcat -d --pid=$(adb shell pidof -s com.akane.akastudio) | tail -80`
 - Emulator: run `adb devices` before deciding device QA is impossible. No /dev/kvm here means no local AVD, but a shared redroid Android 15 emulator (`emulator-5554`, x86_64, SwiftShader GL) is usually attached. It also hosts another session's app (com.akane.inspiration): install/uninstall only com.akane.akastudio, one ticket on the device at a time.
 
