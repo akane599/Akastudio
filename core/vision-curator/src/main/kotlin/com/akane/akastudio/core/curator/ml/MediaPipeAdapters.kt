@@ -32,15 +32,34 @@ private inline fun <R> withMpImage(bitmap: Bitmap, use: (MPImage) -> R): R {
 private fun baseOptions(entry: ModelManifest.Entry): BaseOptions =
     BaseOptions.builder().setModelAssetPath(entry.assetPath).build()
 
+/**
+ * Runs one image's [inference]. A RuntimeException from it (a MediaPipeException, a malformed result) is
+ * logged and replaced by [fallback], so one bad image never aborts curation. Call it inside
+ * [SerializedResource.withResource]: the closed-model IllegalStateException is thrown before the block runs
+ * and still propagates. Errors propagate too.
+ */
+internal inline fun <R> degradePerImage(tag: String, fallback: () -> R, inference: () -> R): R =
+    try {
+        inference()
+    } catch (e: RuntimeException) {
+        Log.w(tag, "inference failed for one image; using the fallback for it", e)
+        fallback()
+    }
+
 /** MediaPipe FaceLandmarker (IMAGE mode, up to 6 faces, blendshapes on). */
 internal class MediaPipeFaceDetector private constructor(
     private val task: SerializedResource<FaceLandmarker>,
 ) : FaceDetector, AutoCloseable {
 
+    /** Faces in [bitmap]; an image whose detection fails is logged and reported as face-free. */
     override suspend fun detect(bitmap: Bitmap): List<DetectedFace> = task.withResource { landmarker ->
+        degradePerImage(TAG, { emptyList() }) { detectWith(landmarker, bitmap) }
+    }
+
+    private fun detectWith(landmarker: FaceLandmarker, bitmap: Bitmap): List<DetectedFace> {
         val result = withMpImage(bitmap) { landmarker.detect(it) }
         val blendshapes = result.faceBlendshapes().orElse(emptyList())
-        result.faceLandmarks().mapIndexedNotNull { index, landmarks ->
+        return result.faceLandmarks().mapIndexedNotNull { index, landmarks ->
             if (landmarks.isEmpty()) return@mapIndexedNotNull null
             val xs = FloatArray(landmarks.size) { landmarks[it].x() }
             val ys = FloatArray(landmarks.size) { landmarks[it].y() }
@@ -56,6 +75,7 @@ internal class MediaPipeFaceDetector private constructor(
     override fun close() = task.close()
 
     companion object {
+        private const val TAG = "FaceDetector"
         const val MAX_FACES = 6
 
         fun create(context: Context, dispatcher: CoroutineDispatcher): MediaPipeFaceDetector {
@@ -77,15 +97,22 @@ internal class MediaPipeEmbedder private constructor(
     override val dimension: Int,
 ) : Embedder, AutoCloseable {
 
+    /**
+     * Embedding of [bitmap]. When MediaPipe fails for this image, the [FallbackEmbedder] descriptor fitted to
+     * [dimension] ([FallbackEmbedder.fitTo]) is returned instead, so the vector length stays constant.
+     */
     override suspend fun embed(bitmap: Bitmap): FloatArray = task.withResource { embedder ->
-        val vector = withMpImage(bitmap) { embedVector(embedder, it) }
-        check(vector.size == dimension) { "embedder returned ${vector.size} values, expected $dimension" }
-        vector
+        degradePerImage(TAG, { FallbackEmbedder.fitTo(FallbackEmbedder.embed(BitmapSupport.pixelsOf(bitmap)), dimension) }) {
+            val vector = withMpImage(bitmap) { embedVector(embedder, it) }
+            check(vector.size == dimension) { "embedder returned ${vector.size} values, expected $dimension" }
+            vector
+        }
     }
 
     override fun close() = task.close()
 
     companion object {
+        private const val TAG = "Embedder"
         private const val PROBE_EDGE = 32
 
         /** Loads the model and runs one probe embedding to pin [dimension]; throws if either fails. */

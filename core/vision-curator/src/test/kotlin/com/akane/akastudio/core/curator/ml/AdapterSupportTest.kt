@@ -82,4 +82,37 @@ class AdapterSupportTest {
         val failure = runCatching { resource.withResource { } }.exceptionOrNull()
         assertTrue(failure is IllegalStateException)
     }
+
+    @Test
+    fun perImageInferenceFailureDegradesToTheFallback() = runBlocking {
+        val resource = SerializedResource(Any(), Dispatchers.Default) {}
+        val faces = resource.withResource {
+            degradePerImage("test", { emptyList<String>() }) { throw RuntimeException("MediaPipe: bad image") }
+        }
+        assertEquals(emptyList<String>(), faces)
+        val malformed = resource.withResource {
+            degradePerImage("test", { "fallback" }) { error("embedder returned 3 values, expected 4") }
+        }
+        assertEquals("fallback", malformed)
+        assertEquals("ok", resource.withResource { degradePerImage("test", { "fallback" }) { "ok" } })
+    }
+
+    @Test
+    fun closedResourceStillFailsThroughPerImageDegrade() = runBlocking {
+        val resource = SerializedResource(Any(), Dispatchers.Default) {}
+        resource.close()
+        val failure = runCatching {
+            resource.withResource { degradePerImage("test", { "fallback" }) { "inference" } }
+        }.exceptionOrNull()
+        assertTrue("got $failure", failure is IllegalStateException)
+    }
+
+    @Test
+    fun perImageDegradeLetsErrorsPropagate() = runBlocking {
+        val resource = SerializedResource(Any(), Dispatchers.Default) {}
+        val failure = runCatching {
+            resource.withResource { degradePerImage("test", { "fallback" }) { throw OutOfMemoryError("native heap") } }
+        }.exceptionOrNull()
+        assertTrue("got $failure", failure is OutOfMemoryError)
+    }
 }

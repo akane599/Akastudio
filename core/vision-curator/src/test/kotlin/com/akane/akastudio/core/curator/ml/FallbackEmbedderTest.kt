@@ -58,6 +58,35 @@ class FallbackEmbedderTest {
         assertArrayEquals(FallbackEmbedder.embed(beach()), FallbackEmbedder.embed(beach()), 0f)
     }
 
+    @Test
+    fun fitToLongerDimensionZeroPadsAndKeepsUnitNorm() {
+        val v = FallbackEmbedder.embed(beach())
+        val fitted = FallbackEmbedder.fitTo(v, 1024)
+        assertEquals(1024, fitted.size)
+        assertEquals(1.0, norm(fitted), 1e-5)
+        assertArrayEquals(v, fitted.copyOf(FallbackEmbedder.DIMENSION), 1e-6f)
+        assertTrue(fitted.drop(FallbackEmbedder.DIMENSION).all { it == 0f })
+    }
+
+    @Test
+    fun fitToShorterDimensionFoldsAndRenormalizes() {
+        val v = FallbackEmbedder.embed(forest())
+        val fitted = FallbackEmbedder.fitTo(v, 100)
+        assertEquals(100, fitted.size)
+        assertEquals(1.0, norm(fitted), 1e-5)
+        val folded = FloatArray(100) { i -> v[i] + (if (i + 100 < v.size) v[i + 100] else 0f) }
+        val expectedNorm = norm(folded)
+        for (i in 0 until 100) assertEquals((folded[i] / expectedNorm).toFloat(), fitted[i], 1e-5f)
+    }
+
+    @Test
+    fun fitToSameDimensionReturnsAnEqualCopy() {
+        val v = FallbackEmbedder.embed(beach())
+        val fitted = FallbackEmbedder.fitTo(v, FallbackEmbedder.DIMENSION)
+        assertArrayEquals(v, fitted, 0f)
+        assertTrue(fitted !== v)
+    }
+
     private fun norm(v: FloatArray): Double = sqrt(v.sumOf { it.toDouble() * it })
 
     private fun cosine(a: FloatArray, b: FloatArray): Double {

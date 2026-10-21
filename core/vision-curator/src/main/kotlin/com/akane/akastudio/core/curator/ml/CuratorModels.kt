@@ -8,8 +8,12 @@ import kotlinx.coroutines.Dispatchers
 /**
  * The curator's model set. Each slot holds either the on-device model adapter or its deterministic
  * fallback; [degraded] names the slots running on a fallback ([FACES], [EMBEDDER], [AESTHETICS],
- * [SCENES]). [close] releases every native model; calls after closing fail with IllegalStateException
- * (the aesthetic scorer returns `null` instead).
+ * [SCENES]).
+ *
+ * [close] releases every native model. After it, an on-device adapter behaves as follows: the scene
+ * classifier degrades to the [HeuristicSceneClassifier] result, the aesthetic scorer returns `null`, and the
+ * face detector and embedder throw IllegalStateException. Fallback adapters hold no native model and keep
+ * working.
  */
 class CuratorModels(
     val faces: FaceDetector,
@@ -61,7 +65,7 @@ object CuratorModelsFactory {
             MediaPipeEmbedder.create(app, dispatcher)
         }
         val aesthetics = load(CuratorModels.AESTHETICS, degraded, { UnavailableAestheticScorer }) {
-            LiteRtNimaScorer.create(app, dispatcher)
+            LiteRtNimaScorer.create(app)
         }
         val scenes = load(CuratorModels.SCENES, degraded, { HeuristicSceneClassifierAdapter(dispatcher) }) {
             MediaPipeSceneClassifier.create(app, dispatcher)

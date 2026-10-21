@@ -54,6 +54,20 @@ object FallbackEmbedder {
         return l2Normalize(out)
     }
 
+    /**
+     * Fits a descriptor to [dimension] values so it can stand in for another embedder's vector of that
+     * length: value `i` is added to slot `i mod dimension` (plain zero padding when [dimension] is at least
+     * the descriptor's length), then the result is L2-normalized again. The fitted vector is unit length
+     * but lives in this descriptor's feature space, not the other embedder's.
+     */
+    fun fitTo(vector: FloatArray, dimension: Int): FloatArray {
+        require(dimension > 0) { "dimension must be positive, was $dimension" }
+        if (vector.size == dimension) return vector.copyOf()
+        val out = FloatArray(dimension)
+        for (i in vector.indices) out[i % dimension] += vector[i]
+        return l2Normalize(out)
+    }
+
     private class LabGrid(val l: FloatArray, val a: FloatArray, val b: FloatArray)
 
     /** Area-averages 8-bit sRGB into a GRID×GRID raster (nearest pixel when the source is smaller), then OKLab. */
@@ -178,7 +192,7 @@ object FallbackEmbedder {
         var sq = 0.0
         for (x in v) sq += x.toDouble() * x
         if (sq < 1e-18) {
-            v.fill((1.0 / sqrt(DIMENSION.toDouble())).toFloat())
+            v.fill((1.0 / sqrt(v.size.toDouble())).toFloat())
             return v
         }
         val inv = (1.0 / sqrt(sq)).toFloat()

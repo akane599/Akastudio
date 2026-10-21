@@ -1,5 +1,6 @@
 package com.akane.akastudio.core.curator.ml
 
+import android.util.Log
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -10,7 +11,8 @@ import kotlinx.coroutines.withContext
  *
  * [close] never blocks: when a call is in flight the release is deferred to that call's exit. The
  * close flag is written before the lock is probed and every call probes it after unlocking, so at least
- * one side always observes the other and the resource is released exactly once.
+ * one side always observes the other and the resource is released exactly once. A release deferred to a
+ * call's exit that fails is logged; it never replaces that call's result or exception.
  */
 internal class SerializedResource<T : Any>(
     private val resource: T,
@@ -34,10 +36,15 @@ internal class SerializedResource<T : Any>(
                 withContext(dispatcher) { block(resource) }
             }
         } finally {
-            releaseIfRequested()
+            try {
+                releaseIfRequested()
+            } catch (e: Exception) {
+                Log.w(TAG, "deferred model release failed", e)
+            }
         }
     }
 
+    /** Requests the release. When no call is in flight it runs now, and its failure propagates to the caller. */
     override fun close() {
         closeRequested = true
         releaseIfRequested()
@@ -53,5 +60,9 @@ internal class SerializedResource<T : Any>(
         } finally {
             mutex.unlock()
         }
+    }
+
+    private companion object {
+        const val TAG = "SerializedResource"
     }
 }
