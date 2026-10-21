@@ -255,17 +255,44 @@ class DecisionEngineTest {
     }
 
     @Test
-    fun redecide_forcedHero_isTopChampion_withEveryFeasibleAlternative() {
+    fun redecide_forcedHero_isTopChampion_keepingTheOfferedAlternatives() {
         val photos = threeClusters()
         val previous = DecisionEngine.decide(photos, emptyMap())
         assertEquals(setOf(StoryMode.HERO, StoryMode.COLLAGE_2), previous.alternatives.keys)
         val forced = DecisionEngine.redecide(previous, photos, emptyMap(), StoryMode.HERO)
         assertEquals(StoryMode.HERO, forced.chosen.mode)
         assertEquals(listOf("A1"), forced.chosen.photoIds)
-        assertEquals(StoryMode.entries.toSet(), forced.alternatives.keys)
+        assertEquals(previous.alternatives, forced.alternatives)
         assertEquals(previous.clusters, forced.clusters)
         assertEquals(previous.rejectedIds, forced.rejectedIds)
         assertEquals(previous.champions, forced.champions)
+    }
+
+    /**
+     * SQ-67: forcing an offered mode must not re-score. The drawer's options (modes, photos and scores) stay the
+     * original curation's, the forced choice is exactly the offered option, and forcing back restores the original.
+     * Clusters A1 .9, B1 .8, C1 .75 pass the member gate (0.62); D1 .6 does not, so the curation offers HERO, 2 and 3.
+     */
+    @Test
+    fun redecide_forcingAnOfferedMode_keepsEveryOptionAndScore() {
+        val fourClusters = listOf(
+            analysis("A1", quality = 0.9f, scale = ShotScale.WIDE, cct = 5500f),
+            analysis("B1", quality = 0.8f, scale = ShotScale.MEDIUM, cct = 5500f),
+            analysis("C1", quality = 0.75f, scale = ShotScale.WIDE, cct = 2500f),
+            analysis("D1", quality = 0.6f, scale = ShotScale.DETAIL, cct = 5500f),
+        )
+        val fourTimes = times("A1" to 0L, "B1" to 0L, "C1" to 30 * hour, "D1" to 0L)
+        for ((photos, captured) in listOf(threeClusters() to emptyMap(), fourClusters to fourTimes)) {
+            val previous = DecisionEngine.decide(photos, captured)
+            assertTrue(previous.alternatives.size >= 2)
+            for ((mode, offered) in previous.alternatives) {
+                val forced = DecisionEngine.redecide(previous, photos, captured, mode)
+                assertEquals("options after forcing $mode", previous.alternatives, forced.alternatives)
+                assertEquals("forced $mode", offered, forced.chosen)
+                val back = DecisionEngine.redecide(forced, photos, captured, previous.chosen.mode)
+                assertEquals("forcing back from $mode", previous, back)
+            }
+        }
     }
 
     @Test
@@ -287,10 +314,11 @@ class DecisionEngineTest {
         assertEquals(setOf("A1", "B1", "C1", "A2"), four.chosen.photoIds.toSet())
         assertNotNullSynergyAndScore(four)
 
-        for (decision in listOf(two, three, four)) {
+        assertEquals(previous.alternatives, two.alternatives)
+        for (decision in listOf(three, four)) {
             assertFalse("R" in allIds(decision))
-            assertEquals(StoryMode.entries.toSet(), decision.alternatives.keys)
-            assertEquals(decision.chosen, decision.alternatives[decision.chosen.mode])
+            // Only the forced, previously unoffered mode is added; the offered options are untouched.
+            assertEquals(previous.alternatives + (decision.chosen.mode to decision.chosen), decision.alternatives)
         }
     }
 
