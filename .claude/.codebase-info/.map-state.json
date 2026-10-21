@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "tool": "codebase-mapper",
+  "version": "2.15.10",
+  "mappedAt": "2026-10-21",
+  "gitCommit": "0aef3af129dde17e46cefb9ef694b9d20c84afd0",
+  "documents": [
+    "architecture.md",
+    "directory-structure.md",
+    "onboarding.md",
+    "tech-landscape.md"
+  ],
+  "hashes": {
+    "INDEX.md": "687ed323c36991b919d6f8c07f2ee28066c704c887cd631dd88c82f7bd44f542",
+    "architecture.md": "0bcf6a672429d4edf1a9e8efd9326d06680ca90e5240d26d6f5a58d87566616d",
+    "directory-structure.md": "a1824f66595cce1835be29e5db18c328b87c13a7ecebe714b907ca3606abd471",
+    "onboarding.md": "e4ff27be4b9a32bf5a4e6ff35df7f7a5de3db76567ef2ba85f919cda885bb4eb",
+    "tech-landscape.md": "03f62cbb1170087d3c049d55989a2fe5bf8fdfcde1844b8f3269ecd242f62b21"
+  }
+}
