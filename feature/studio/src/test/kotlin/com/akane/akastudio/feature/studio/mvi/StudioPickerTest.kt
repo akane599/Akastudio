@@ -6,12 +6,12 @@ import com.akane.akastudio.core.ingestion.api.IngestionRequest
 import com.akane.akastudio.feature.studio.domain.FakeCurationEngine
 import com.akane.akastudio.feature.studio.domain.FakeStudioDependencies
 import com.akane.akastudio.feature.studio.domain.TestData
+import com.akane.akastudio.feature.studio.domain.studioTestDispatchers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
@@ -41,9 +41,8 @@ class StudioPickerTest {
     }
 
     private fun TestScope.harness(): Harness {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        val deps = FakeStudioDependencies(dispatcher, FakeCurationEngine(result))
-        val vm = StudioViewModel(deps, CoroutineScope(SupervisorJob(backgroundScope.coroutineContext.job) + dispatcher))
+        val deps = FakeStudioDependencies(studioTestDispatchers(testScheduler), FakeCurationEngine(result))
+        val vm = StudioViewModel(deps, CoroutineScope(SupervisorJob(backgroundScope.coroutineContext.job) + deps.dispatchers.main))
         val effects = mutableListOf<StudioEffect>()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.effects.collect { effects += it } }
         return Harness(vm, deps, effects)
