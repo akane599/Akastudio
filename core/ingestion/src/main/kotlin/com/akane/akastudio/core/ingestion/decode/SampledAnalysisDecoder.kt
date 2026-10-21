@@ -6,7 +6,6 @@ import android.graphics.ImageDecoder
 import androidx.core.graphics.scale
 import com.akane.akastudio.core.ingestion.api.AnalysisDecoder
 import com.akane.akastudio.core.ingestion.api.IngestionException
-import com.akane.akastudio.core.ingestion.api.SourceOpener
 import com.akane.akastudio.core.ingestion.model.IngestionError
 import com.akane.akastudio.core.ingestion.model.PhotoSource
 import java.io.IOException
@@ -19,11 +18,10 @@ import kotlinx.coroutines.withContext
  * Subsampled ImageDecoder decode: never allocates the full-resolution image, lets ImageDecoder apply EXIF
  * orientation, keeps the source color space, then finishes with an exact scale and an ARGB_8888 copy if needed.
  *
- * [opener] is accepted for wiring symmetry with the parser; ImageDecoder needs a seekable source, so decoding goes
- * through [contentResolver] (content URIs) or the extracted file directly.
+ * ImageDecoder needs a seekable source, so decoding goes through [contentResolver] (content URIs) or the extracted
+ * file directly.
  */
 class SampledAnalysisDecoder(
-    @Suppress("unused") private val opener: SourceOpener,
     private val contentResolver: ContentResolver,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : AnalysisDecoder {

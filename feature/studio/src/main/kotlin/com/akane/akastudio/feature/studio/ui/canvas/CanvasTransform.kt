@@ -69,10 +69,6 @@ internal data class CanvasTransform(
         it.x in 0f..canvasWidth && it.y in 0f..canvasHeight
     }
 
-    /** The horizontal position of view x as a fraction of the frame width, clamped to `[0, 1]`. */
-    fun frameFractionX(x: Float): Float? =
-        if (isEmpty) null else ((x - frameLeft) / frameWidth).coerceIn(0f, 1f)
-
     private companion object {
         fun valid(v: Float): Boolean = v.isFinite() && v > 0f
     }

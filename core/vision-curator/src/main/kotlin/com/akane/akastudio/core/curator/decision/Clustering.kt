@@ -2,6 +2,7 @@ package com.akane.akastudio.core.curator.decision
 
 import com.akane.akastudio.core.curator.api.PhotoAnalysis
 import com.akane.akastudio.core.curator.api.SceneCluster
+import com.akane.akastudio.core.curator.hash.PerceptualHash
 import kotlin.math.sqrt
 
 /**
@@ -56,12 +57,9 @@ object Clustering {
         return (dot / (sqrt(normA) * sqrt(normB))).toFloat()
     }
 
-    /** Number of differing bits between two 64-bit perceptual hashes. */
-    internal fun hamming(a: Long, b: Long): Int = java.lang.Long.bitCount(a xor b)
-
     internal fun isNearDuplicate(a: PhotoAnalysis, b: PhotoAnalysis, config: DecisionConfig): Boolean =
-        hamming(a.pHash, b.pHash) <= config.clusterPHashMax ||
-            hamming(a.dHash, b.dHash) <= config.clusterDHashMax ||
+        PerceptualHash.hamming(a.pHash, b.pHash) <= config.clusterPHashMax ||
+            PerceptualHash.hamming(a.dHash, b.dHash) <= config.clusterDHashMax ||
             cosine(a.embedding, b.embedding) > config.clusterCosine
 
     internal fun requireDistinctIds(analyses: List<PhotoAnalysis>) {

@@ -75,14 +75,6 @@ class CanvasTransformTest {
     }
 
     @Test
-    fun `frame fraction clamps to the frame`() {
-        val t = CanvasTransform(1000f, 960f, 1080f, 1920f)
-        assertEquals(0f, t.frameFractionX(0f)!!, eps)
-        assertEquals(0.5f, t.frameFractionX(500f)!!, eps)
-        assertEquals(1f, t.frameFractionX(999f)!!, eps)
-    }
-
-    @Test
     fun `degenerate sizes map nothing`() {
         listOf(
             CanvasTransform(0f, 100f, 1080f, 1920f),

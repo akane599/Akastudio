@@ -40,7 +40,7 @@ class LargeSourceDecodeDeviceTest {
 
     @Test
     fun analysisDecodeSubsamplesWithoutTheFullResolutionAllocation() {
-        val (bitmap, peak) = sampled { runBlocking { SampledAnalysisDecoder({ error("unused") }, resolver).decode(source, 1024) } }
+        val (bitmap, peak) = sampled { runBlocking { SampledAnalysisDecoder(resolver).decode(source, 1024) } }
         DeviceRender.log("analysis decode -> ${bitmap.width}x${bitmap.height} ${bitmap.config}; $peak")
         assertEquals(1024, bitmap.width)
         assertEquals(683, bitmap.height)

@@ -29,7 +29,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -402,6 +401,3 @@ internal fun ExportStage.labelRes(): Int = when (this) {
     ExportStage.ENCODE -> R.string.controls_stage_encode
     ExportStage.WRITE -> R.string.controls_stage_write
 }
-
-/** Accessibility description for an image-only element. */
-internal fun Modifier.describedAs(description: String): Modifier = semantics { contentDescription = description }

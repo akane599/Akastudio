@@ -14,21 +14,6 @@
     <string name="shot_scale_medium">Portrait</string>
     <string name="shot_scale_detail">Detail</string>
 
-    <!-- Scene types (SceneType) -->
-    <string name="scene_beach_sea">Beach &amp; sea</string>
-    <string name="scene_night_city">Night city</string>
-    <string name="scene_cafe_interior">Café interior</string>
-    <string name="scene_nature_forest">Nature &amp; forest</string>
-    <string name="scene_portrait">Portrait</string>
-    <string name="scene_architecture_auto">Architecture &amp; cars</string>
-    <string name="scene_general">General</string>
-
-    <!-- Warmth (Warmth) -->
-    <string name="warmth_golden_warm">Golden warm</string>
-    <string name="warmth_neutral">Neutral</string>
-    <string name="warmth_cool_blue">Cool blue</string>
-    <string name="warmth_night_tungsten">Night tungsten</string>
-
     <!-- Master looks (MasterLook): product names, never translated -->
     <string name="look_portra_400_golden" translatable="false">Portra 400 Golden</string>
     <string name="look_mediterranean_azure" translatable="false">Mediterranean Azure</string>
@@ -54,9 +39,7 @@
 
     <!-- Generic actions -->
     <string name="action_cancel">Cancel</string>
-    <string name="action_done">Done</string>
     <string name="action_retry">Retry</string>
-    <string name="action_share">Share</string>
 
     <!-- Errors (IngestionError and curation) -->
     <string name="error_ingestion_zip_slip">This archive contains files that point outside it, so it was not opened.</string>
