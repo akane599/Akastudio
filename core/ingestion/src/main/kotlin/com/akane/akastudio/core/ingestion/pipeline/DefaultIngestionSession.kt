@@ -5,6 +5,7 @@ import com.akane.akastudio.core.ingestion.api.IngestionException
 import com.akane.akastudio.core.ingestion.api.IngestionRequest
 import com.akane.akastudio.core.ingestion.api.IngestionSession
 import com.akane.akastudio.core.ingestion.api.MetadataParser
+import com.akane.akastudio.core.ingestion.api.ParsedImage
 import com.akane.akastudio.core.ingestion.api.ZipExtractionEvent
 import com.akane.akastudio.core.ingestion.model.IngestionError
 import com.akane.akastudio.core.ingestion.model.IngestionEvent
@@ -24,6 +25,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.ProducerScope
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flowOn
@@ -42,6 +44,7 @@ class DefaultIngestionSession(
     private val zipOpener: (String) -> InputStream,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val parseParallelism: Int = 4,
+    private val skipLogger: SkipLogger = LogcatSkipLogger,
 ) : IngestionSession {
 
     private val closed = AtomicBoolean(false)
@@ -149,11 +152,11 @@ class DefaultIngestionSession(
 
         private suspend fun parse(source: PhotoSource, identity: String) {
             val parsed = try {
-                parser.parse(source)
+                parseWithRetry(source)
             } catch (e: CancellationException) {
                 throw e
-            } catch (_: Exception) {
-                return parseSkipped(source.displayName, SkipReason.UNREADABLE)
+            } catch (e: Exception) {
+                return parseSkipped(source.displayName, SkipReason.UNREADABLE, e)
             }
             if (parsed == null) return parseSkipped(source.displayName, SkipReason.UNDECODABLE)
 
@@ -172,16 +175,35 @@ class DefaultIngestionSession(
             }
         }
 
+        /**
+         * A content URI can fail to open transiently (e.g. while MediaProvider or the photo picker is still syncing
+         * a just-added file), so it gets one retry after a short pause. Extracted files are local and never retried.
+         */
+        private suspend fun parseWithRetry(source: PhotoSource): ParsedImage? {
+            if (source is PhotoSource.ContentUri) {
+                try {
+                    return parser.parse(source)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    delay(CONTENT_URI_RETRY_DELAY_MS)
+                }
+            }
+            return parser.parse(source)
+        }
+
         private suspend fun emitProgress(change: (IngestionTelemetry) -> IngestionTelemetry) =
             telemetry.record(change) { out.send(IngestionEvent.Progress(it)) }
 
         private suspend fun skip(displayName: String, reason: SkipReason) =
             telemetry.record({ it.copy(skipped = it.skipped + 1) }) {
+                skipLogger.skipped(displayName, reason, null)
                 out.send(IngestionEvent.Skipped(displayName, reason, it))
             }
 
-        private suspend fun parseSkipped(displayName: String, reason: SkipReason) =
+        private suspend fun parseSkipped(displayName: String, reason: SkipReason, cause: Throwable? = null) =
             telemetry.record({ it.copy(filesRead = it.filesRead + 1, skipped = it.skipped + 1) }) {
+                skipLogger.skipped(displayName, reason, cause)
                 out.send(IngestionEvent.Skipped(displayName, reason, it))
             }
 
@@ -191,6 +213,7 @@ class DefaultIngestionSession(
 
     private companion object {
         const val ARCHIVE_DIR_HEX_CHARS = 16
+        const val CONTENT_URI_RETRY_DELAY_MS = 250L
 
         val COMPLETION_ORDER: Comparator<PhotoCandidate> =
             compareBy<PhotoCandidate, Long?>(nullsLast()) { it.metadata.captureEpochMillis }
