@@ -40,5 +40,5 @@ Compose UI, MVI state and DI.
 - `domain/StudioDependencies.kt` (`StudioDependencies`, `PhotoPreparer`, `HarmonizationPlanner`, `StudioDispatchers`), `StudioError`, `ExportCanvasPolicy`, `PreparedPhotoStore`.
 - `mvi/`: `StudioState`/`StudioPhase`, `StudioIntent`, `StudioEffect`, `StudioReducer`, `StudioViewModel`, `SceneBuilder`.
 - `di/`: `StudioContainer`, `DefaultPhotoPreparer`, `AndroidPreparerBackend`, `LazyAnalysisModels`, `StudioContainerErrorMapper`, `CanvasHitTest`.
-- `ui/`: `StudioRoute`, `StudioScreen`, `dropzone/`, `canvas/` (+`scope/` waveform; `ScopeLabelLayout` clamps label placement), `controls/` (tabs, export sheet), `note/` (curator note text), `theme/` (Darkroom tokens). Strings in `res/values` and `values-tr`.
+- `ui/`: `StudioRoute`, `StudioScreen`, `dropzone/`, `canvas/` (+`scope/` waveform; `ScopeLabelLayout` clamps label placement), `controls/` (tabs, export sheet, `CollapsibleControlPanel` with a ~240 dp peek, `CompareHint` one-time tooltip persisted via `CompareHintPrefs` SharedPreferences), `note/` (curator note text), `theme/` (Darkroom tokens). Strings in `res/values` and `values-tr`.
 - Deps: all five core modules (api), Compose BOM, lifecycle, activity-compose.
