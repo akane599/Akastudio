@@ -6,9 +6,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.LayoutDirection
 import com.akane.akastudio.feature.studio.mvi.ControlTab
 import com.akane.akastudio.feature.studio.mvi.StudioState
 import com.akane.akastudio.feature.studio.ui.theme.DarkroomShapeTokens
@@ -35,6 +38,29 @@ private fun TopBarWithDrawer(state: StudioState) = DarkroomTheme {
 @Composable
 private fun Panel(state: StudioState, sdkInt: Int = API_34) = DarkroomTheme {
     ControlPanel(state = state, onIntent = {}, sdkInt = sdkInt, modifier = Modifier.fillMaxSize())
+}
+
+/** One [ControlSlider] laid out right-to-left: its fill must run from zero towards the mirrored thumb. */
+@Composable
+private fun RtlSlider(value: Float, range: ClosedFloatingPointRange<Float>, bipolar: Boolean, readout: String) = DarkroomTheme {
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(DarkroomTheme.spacing.l),
+        ) {
+            ControlSlider(
+                label = "Slider",
+                readout = readout,
+                value = value,
+                range = range,
+                bipolar = bipolar,
+                resetValue = if (bipolar) 0f else range.start,
+                onValueChange = {},
+            )
+        }
+    }
 }
 
 /** The modal export sheet's surface, handle and body, drawn inline because a modal sheet opens its own window. */
@@ -93,3 +119,9 @@ private fun SheetSurface(state: StudioState, sdkInt: Int) = DarkroomTheme {
 
 @PreviewTest @Preview(name = "mode-drawer-user-pick-tr", widthDp = 360, heightDp = 720, locale = "tr", showBackground = true, backgroundColor = 0xFF070809)
 @Composable fun ModeDrawerUserPickTurkishShot() = TopBarWithDrawer(ControlsFixtures.userPick())
+
+@PreviewTest @Preview(name = "slider-unipolar-rtl", widthDp = 360, heightDp = 120, showBackground = true, backgroundColor = 0xFF141518)
+@Composable fun SliderUnipolarRtlShot() = RtlSlider(value = 0.8f, range = 0f..1f, bipolar = false, readout = "80")
+
+@PreviewTest @Preview(name = "slider-bipolar-positive-rtl", widthDp = 360, heightDp = 120, showBackground = true, backgroundColor = 0xFF141518)
+@Composable fun SliderBipolarPositiveRtlShot() = RtlSlider(value = 0.5f, range = -1f..1f, bipolar = true, readout = "+50")

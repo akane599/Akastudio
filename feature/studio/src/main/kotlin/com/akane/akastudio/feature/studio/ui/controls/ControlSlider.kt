@@ -32,6 +32,7 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.LayoutDirection
 import com.akane.akastudio.feature.studio.R
 import com.akane.akastudio.feature.studio.ui.theme.DarkroomTheme
 
@@ -120,6 +121,14 @@ internal fun fractionOf(value: Float, range: ClosedFloatingPointRange<Float>): F
     return ((value - range.start) / span).coerceIn(0f, 1f)
 }
 
+/**
+ * Horizontal position, in a track [width] px wide, of a 0..1 [fraction] of the range. The native [Slider] puts
+ * the range start on the right under [LayoutDirection.Rtl], so the drawn track mirrors with it to stay on the
+ * thumb's side; under LTR this is exactly `width * fraction`.
+ */
+internal fun trackX(width: Float, fraction: Float, layoutDirection: LayoutDirection): Float =
+    width * if (layoutDirection == LayoutDirection.Rtl) 1f - fraction else fraction
+
 @Composable
 private fun SliderTrack(fraction: Float, zeroFraction: Float, bipolar: Boolean, enabled: Boolean) {
     val colors = DarkroomTheme.colors
@@ -136,8 +145,9 @@ private fun SliderTrack(fraction: Float, zeroFraction: Float, bipolar: Boolean, 
         val y = size.height / 2f
         val stroke = ControlMetrics.TrackHeight.toPx()
         drawLine(inactive, Offset(0f, y), Offset(size.width, y), strokeWidth = stroke)
-        val from = size.width * zeroFraction
-        val to = size.width * fraction
+        // Both ends and the zero tick follow the layout direction, as the native Slider places its thumb.
+        val from = trackX(size.width, zeroFraction, layoutDirection)
+        val to = trackX(size.width, fraction, layoutDirection)
         if (from != to) {
             drawLine(active, Offset(from, y), Offset(to, y), strokeWidth = stroke)
         }
