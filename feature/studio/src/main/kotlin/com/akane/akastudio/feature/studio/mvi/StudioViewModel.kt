@@ -83,10 +83,13 @@ class StudioViewModel(
     private var debounceJob: Job? = null
     private var startRequested = false
 
-    /** True while a system picker is open: auto-curation waits for its result (see [StudioIntent.PickerOpened]). */
-    private var pickerOpen = false
+    /**
+     * System pickers open now (see [StudioIntent.PickerOpened]); auto-curation waits while any is. Counted, so a
+     * stacked second picker keeps the hold when the first one closes.
+     */
+    private var openPickers = 0
 
-    /** True when the open picker is "+ Add more" (opened while reading): its result only extends this batch. */
+    /** True when an open picker is "+ Add more" (opened while reading): its result only extends this batch. */
     private var addingMore = false
 
     /** The single running unit of work (curation, preparation or export). */
@@ -110,7 +113,8 @@ class StudioViewModel(
         when (intent) {
             is StudioIntent.ImportPhotos ->
                 if (intent.uris.isNotEmpty()) import(IngestionRequest.PickedMedia(intent.uris.toList()))
-            is StudioIntent.ImportZip -> import(IngestionRequest.ZipArchive(intent.uri, intent.displayName))
+            // A blank name is looked up when the zip's turn comes (see [named]).
+            is StudioIntent.ImportZip -> import(IngestionRequest.ZipArchive(intent.uri, intent.displayName.orEmpty()))
             StudioIntent.PickerOpened -> onPickerOpened()
             StudioIntent.PickerClosed -> onPickerClosed()
             StudioIntent.StartCuration -> requestCuration()
@@ -188,7 +192,7 @@ class StudioViewModel(
             val active = session ?: withContext(deps.dispatchers.io) { deps.newIngestionSession() }.also { session = it }
             while (true) {
                 val request = pendingImports.removeFirstOrNull() ?: break
-                ingestedTelemetry += ingestOne(active, request)
+                ingestedTelemetry += ingestOne(active, named(request))
             }
         } catch (e: CancellationException) {
             throw e
@@ -198,6 +202,14 @@ class StudioViewModel(
         }
         onIngestionIdle()
     }
+
+    /** [request], with a zip's blank display name replaced by the document provider's, looked up on io. */
+    private suspend fun named(request: IngestionRequest): IngestionRequest =
+        if (request is IngestionRequest.ZipArchive && request.displayName.isBlank()) {
+            request.copy(displayName = withContext(deps.dispatchers.io) { deps.documentDisplayName(request.uri) })
+        } else {
+            request
+        }
 
     /** Collects one import into telemetry and [candidates]; returns that import's final telemetry. */
     private suspend fun ingestOne(active: IngestionSession, request: IngestionRequest): IngestionTelemetry {
@@ -226,7 +238,7 @@ class StudioViewModel(
 
     private fun onIngestionIdle() {
         // An open picker may still add photos to this batch; PickerClosed re-arms curation.
-        if (pickerOpen) return
+        if (openPickers > 0) return
         if (startRequested) {
             startRequested = false
             startCuration()
@@ -240,15 +252,20 @@ class StudioViewModel(
     }
 
     private fun onPickerOpened() {
-        pickerOpen = true
-        addingMore = _state.value.phase == StudioPhase.Ingesting
+        openPickers++
+        addingMore = addingMore || _state.value.phase == StudioPhase.Ingesting
         debounceJob?.cancel()
         debounceJob = null
     }
 
-    /** Runs after the picker's import, if any: curation follows once ingestion is idle, as after any import. */
+    /**
+     * Runs after the picker's import, if any. Once the last open picker closes, curation follows when ingestion is
+     * idle, as after any import. A close without an open (a view model recreated behind the picker) is ignored.
+     */
     private fun onPickerClosed() {
-        pickerOpen = false
+        if (openPickers == 0) return
+        openPickers--
+        if (openPickers > 0) return
         addingMore = false
         if (_state.value.phase == StudioPhase.Ingesting && ingestJob?.isActive != true && debounceJob == null) {
             onIngestionIdle()

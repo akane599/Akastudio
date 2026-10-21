@@ -13,8 +13,11 @@ sealed interface StudioIntent {
     /** Import picked photos (content uris). Accumulates into the current session until curation starts. */
     data class ImportPhotos(val uris: List<String>) : StudioIntent
 
-    /** Import a zip archive; [displayName] is the user-visible file name (used in messages and errors). */
-    data class ImportZip(val uri: String, val displayName: String) : StudioIntent
+    /**
+     * Import a zip archive; [displayName] is the user-visible file name (used in messages and errors). When null or
+     * blank, the view model looks it up from the document provider off the main thread before reading the zip.
+     */
+    data class ImportZip(val uri: String, val displayName: String? = null) : StudioIntent
 
     /**
      * A system picker opened. Auto-curation waits until [PickerClosed], so the picked photos join the batch being
