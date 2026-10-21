@@ -1,5 +1,6 @@
 package com.akane.akastudio.core.curator.engine
 
+import android.util.Log
 import com.akane.akastudio.core.curator.api.CurationEngine
 import com.akane.akastudio.core.curator.api.CurationProgress
 import com.akane.akastudio.core.curator.api.CurationResult
@@ -37,6 +38,9 @@ class NoUsablePhotosException(val rejectedCount: Int) :
  * `Clustered(clusterCount, rejectedCount)`, then exactly one `Decided`. A candidate whose pixels cannot be loaded is
  * rejected as UNREADABLE and still counts toward progress. When every candidate is rejected the flow throws
  * [NoUsablePhotosException] right after `Clustered(0, n)`.
+ *
+ * The aesthetic formula is all-or-nothing per curation: when NIMA gave no score for any readable candidate, every
+ * analysis uses the no-NIMA formula (see [PhotoAnalyzer.uniformAesthetic]), and the downgrade is logged with counts.
  *
  * Capture times are kept per candidate id so [decide] can rebuild the decision for a mode switch.
  */
@@ -81,7 +85,15 @@ class DefaultCurationEngine(
                 finished.receive()
                 emit(CurationProgress.Analyzing(done, total))
             }
-            jobs.awaitAll()
+            val uniform = PhotoAnalyzer.uniformAesthetic(jobs.awaitAll())
+            if (uniform.rescored > 0) {
+                Log.w(
+                    TAG,
+                    "NIMA unavailable for ${uniform.nimaMissing} of $total photos; " +
+                        "rescored ${uniform.rescored} NIMA-scored photos with the no-NIMA aesthetic",
+                )
+            }
+            uniform.analyses
         }
         val analyses = LinkedHashMap<String, PhotoAnalysis>(total * 2).apply {
             for (analysis in analyzed) put(analysis.candidateId, analysis)
@@ -120,4 +132,8 @@ class DefaultCurationEngine(
     }
 
     private fun captureTimesOf(ids: Collection<String>): Map<String, Long?> = ids.associateWith { captureTimes[it] }
+
+    private companion object {
+        const val TAG = "CurationEngine"
+    }
 }

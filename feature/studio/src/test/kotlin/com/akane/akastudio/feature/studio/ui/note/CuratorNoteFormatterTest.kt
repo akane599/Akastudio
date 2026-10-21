@@ -8,11 +8,15 @@ import com.akane.akastudio.core.curator.api.Warmth
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.w3c.dom.Element
+import java.io.File
+import java.util.Locale
+import javax.xml.parsers.DocumentBuilderFactory
 
 class CuratorNoteFormatterTest {
 
-    private val en = EnglishNoteStrings()
-    private val tr = TurkishNoteStrings()
+    private val en = XmlNoteStrings(qualifier = null, locale = Locale.ENGLISH)
+    private val tr = XmlNoteStrings(qualifier = "tr", locale = Locale.forLanguageTag("tr"))
 
     private fun note(
         mode: StoryMode,
@@ -132,62 +136,57 @@ class CuratorNoteFormatterTest {
     }
 }
 
-/** Mirrors res/values/strings.xml without Android resources. */
-private class EnglishNoteStrings : NoteStrings {
-    private val words = listOf("one", "two", "three", "four")
-    override val listSeparator = ", "
-    override fun photos(count: Int) = if (count == 1) "1 photo" else "$count photos"
-    override fun frames(count: Int) = if (count == 1) "1 frame" else "$count frames"
-    override fun distinctScales(count: Int): String {
-        val word = words.getOrNull(count - 1) ?: count.toString()
-        return if (count == 1) "across $word scale" else "across $word scales"
-    }
-    override fun scaleName(scale: ShotScale) = when (scale) {
-        ShotScale.WIDE -> "Wide"
-        ShotScale.MEDIUM -> "Portrait"
-        ShotScale.DETAIL -> "Detail"
-    }
-    override fun tone(warmth: Warmth) = when (warmth) {
-        Warmth.GOLDEN_WARM -> "warm golden-hour"
-        Warmth.NEUTRAL -> "neutral"
-        Warmth.COOL_BLUE -> "cool blue"
-        Warmth.NIGHT_TUNGSTEN -> "tungsten night"
-    }
-    override fun percent(value: Int) = "$value%"
-    override fun heroSentence(photos: String, tone: String, score: String) =
-        "Chosen from $photos in $tone tones — this frame stands alone (score $score)."
-    override fun collageSentence(
-        photos: String,
-        frames: String,
-        scales: String,
-        scaleList: String,
-        tone: String,
-        harmony: String,
-    ) = "Chosen from $photos: $frames $scales ($scaleList) in $tone tones — $harmony harmony."
-    override fun collageSentenceWithoutScales(photos: String, frames: String, tone: String, harmony: String) =
-        "Chosen from $photos: $frames in $tone tones — $harmony harmony."
-}
+/**
+ * [NoteStrings] read straight from the module's `res/values*` XML on the JVM and mapped exactly as
+ * [ResourceNoteStrings] maps the compiled resources, so these tests check the shipped copy, not a hand copy.
+ * The [qualifier] directory overlays `values`, as Android's resource fallback does.
+ *
+ * Supports what the note resources use: `<string>`, `<plurals>` and `<string-array>` holding plain text with
+ * Android's quote and backslash escapes, and positional format arguments. Plural selection is "one" for 1 and
+ * "other" otherwise, which is the CLDR cardinal rule for both English and Turkish.
+ */
+private class XmlNoteStrings(qualifier: String?, private val locale: Locale) : NoteStrings {
+    private val strings = HashMap<String, String>()
+    private val plurals = HashMap<String, Map<String, String>>()
+    private val arrays = HashMap<String, List<String>>()
 
-/** Mirrors res/values-tr/strings.xml without Android resources. */
-private class TurkishNoteStrings : NoteStrings {
-    override val listSeparator = ", "
-    override fun photos(count: Int) = "$count fotoğraf"
-    override fun frames(count: Int) = "$count kare"
-    override fun distinctScales(count: Int) = if (count == 1) "tek ölçekte" else "$count farklı ölçekte"
-    override fun scaleName(scale: ShotScale) = when (scale) {
-        ShotScale.WIDE -> "Mekan"
-        ShotScale.MEDIUM -> "Portre"
-        ShotScale.DETAIL -> "Detay"
+    init {
+        load(File(RES_DIR, "values"))
+        if (qualifier != null) load(File(RES_DIR, "values-$qualifier"))
     }
-    override fun tone(warmth: Warmth) = when (warmth) {
-        Warmth.GOLDEN_WARM -> "sıcak altın saat"
-        Warmth.NEUTRAL -> "nötr"
-        Warmth.COOL_BLUE -> "soğuk mavi"
-        Warmth.NIGHT_TUNGSTEN -> "gece tungsten"
-    }
-    override fun percent(value: Int) = "%$value"
-    override fun heroSentence(photos: String, tone: String, score: String) =
-        "$photos arasından $tone tonlarında seçilen bu kare tek başına öne çıkıyor (puan $score)."
+
+    private val countWords: List<String> = checkNotNull(arrays["note_count_words"]) { "missing note_count_words" }
+
+    override val listSeparator: String = string("note_list_separator")
+
+    override fun photos(count: Int) = quantity("note_photos", count, count)
+
+    override fun frames(count: Int) = quantity("note_frames", count, count)
+
+    override fun distinctScales(count: Int) =
+        quantity("note_scales", count, countWords.getOrNull(count - 1) ?: count.toString())
+
+    override fun scaleName(scale: ShotScale) = string(
+        when (scale) {
+            ShotScale.WIDE -> "shot_scale_wide"
+            ShotScale.MEDIUM -> "shot_scale_medium"
+            ShotScale.DETAIL -> "shot_scale_detail"
+        },
+    )
+
+    override fun tone(warmth: Warmth) = string(
+        when (warmth) {
+            Warmth.GOLDEN_WARM -> "note_tone_golden_warm"
+            Warmth.NEUTRAL -> "note_tone_neutral"
+            Warmth.COOL_BLUE -> "note_tone_cool_blue"
+            Warmth.NIGHT_TUNGSTEN -> "note_tone_night_tungsten"
+        },
+    )
+
+    override fun percent(value: Int) = string("note_percent", value)
+
+    override fun heroSentence(photos: String, tone: String, score: String) = string("note_hero", photos, tone, score)
+
     override fun collageSentence(
         photos: String,
         frames: String,
@@ -195,7 +194,78 @@ private class TurkishNoteStrings : NoteStrings {
         scaleList: String,
         tone: String,
         harmony: String,
-    ) = "$photos arasından $scales ($scaleList) ve $tone tonlarında $harmony uyum sağlayan $frames kolaj için seçildi."
+    ) = string("note_collage", photos, frames, scales, scaleList, tone, harmony)
+
     override fun collageSentenceWithoutScales(photos: String, frames: String, tone: String, harmony: String) =
-        "$photos arasından $tone tonlarında $harmony uyum sağlayan $frames kolaj için seçildi."
+        string("note_collage_no_scales", photos, frames, tone, harmony)
+
+    /** Like `Resources.getString`: the raw value without arguments, a formatted one with them. */
+    private fun string(name: String, vararg args: Any): String {
+        val template = checkNotNull(strings[name]) { "missing string $name" }
+        return if (args.isEmpty()) template else String.format(locale, template, *args)
+    }
+
+    private fun quantity(name: String, count: Int, vararg args: Any): String {
+        val items = checkNotNull(plurals[name]) { "missing plurals $name" }
+        val template = checkNotNull(items[if (count == 1) "one" else "other"] ?: items["other"]) { "$name has no item for $count" }
+        return String.format(locale, template, *args)
+    }
+
+    private fun load(dir: File) {
+        val files = dir.listFiles { f -> f.name.endsWith(".xml") }.orEmpty().sortedBy { it.name }
+        check(files.isNotEmpty()) { "no resource XML in ${dir.absolutePath}" }
+        val builder = DocumentBuilderFactory.newInstance().newDocumentBuilder()
+        for (file in files) {
+            for (element in builder.parse(file).documentElement.childElements()) {
+                val name = element.getAttribute("name")
+                when (element.tagName) {
+                    "string" -> strings[name] = valueOf(element)
+                    "plurals" -> plurals[name] = element.childElements().associate { it.getAttribute("quantity") to valueOf(it) }
+                    "string-array" -> arrays[name] = element.childElements().map(::valueOf)
+                }
+            }
+        }
+    }
+
+    private companion object {
+        /** Gradle runs unit tests with the module directory as the working directory. */
+        val RES_DIR = File("src/main/res")
+
+        fun Element.childElements(): List<Element> =
+            (0 until childNodes.length).map { childNodes.item(it) }.filterIsInstance<Element>()
+
+        /**
+         * The value aapt2 compiles from [element]'s text: whitespace runs collapse to one space outside double
+         * quotes, unquoted text is trimmed, the quotes are dropped, and backslash escapes are resolved.
+         */
+        fun valueOf(element: Element): String {
+            check(element.childElements().isEmpty()) { "markup inside <${element.tagName}> is not supported" }
+            val raw = element.textContent
+            val out = StringBuilder()
+            var quoted = false
+            var i = 0
+            while (i < raw.length) {
+                val c = raw[i]
+                when {
+                    c == BACKSLASH && i + 1 < raw.length -> {
+                        i++
+                        out.append(
+                            when (val escaped = raw[i]) {
+                                'n' -> '\n'
+                                't' -> '\t'
+                                else -> escaped
+                            },
+                        )
+                    }
+                    c == '"' -> quoted = !quoted
+                    c.isWhitespace() && !quoted -> if (out.isNotEmpty() && out.last() != ' ') out.append(' ')
+                    else -> out.append(c)
+                }
+                i++
+            }
+            return if ('"' in raw) out.toString() else out.toString().trimEnd()
+        }
+
+        const val BACKSLASH = '\\'
+    }
 }

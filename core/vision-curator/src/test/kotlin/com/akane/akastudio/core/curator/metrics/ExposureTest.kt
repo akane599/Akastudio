@@ -2,6 +2,7 @@ package com.akane.akastudio.core.curator.metrics
 
 import com.akane.akastudio.core.color.api.ImagePixels
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -27,6 +28,13 @@ class ExposureTest {
         assertEquals(1f, white.clipHigh, 0f)
         assertEquals(1f, black.clipLow, 0f)
         assertEquals(0f, white.entropyBits, 0f)
+        assertTrue(white.unusable)
+        assertTrue(black.unusable)
+    }
+
+    @Test
+    fun smoothFullRangeGradient_isUsable() {
+        assertFalse(Exposure.evaluate(gradient()).unusable)
     }
 
     @Test

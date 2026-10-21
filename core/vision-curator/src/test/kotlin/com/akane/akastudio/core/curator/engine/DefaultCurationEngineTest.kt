@@ -141,6 +141,52 @@ class DefaultCurationEngineTest {
     }
 
     @Test
+    fun curate_sharpLowKeyAndHighKeyFramesPassTheGateButFlatFramesDoNot() = runBlocking {
+        val world = FakeWorld(
+            linkedMapOf(
+                "night" to Shot(EngineImages.clipped(seed = 45, fraction = 0.4f, fill = 0)),
+                "snow" to Shot(EngineImages.clipped(seed = 46, fraction = 0.3f, fill = 255)),
+                "black" to Shot(EngineImages.flat(0)),
+                "white" to Shot(EngineImages.flat(255)),
+            ),
+        )
+        val result = decided(engine(world).curate(world.candidates).toList())
+
+        assertNull(result.analyses.getValue("night").rejectReason)
+        assertNull(result.analyses.getValue("snow").rejectReason)
+        assertEquals(listOf("black", "white"), result.rejectedIds)
+        // Clipping still costs ranking: the exposure score is driven to zero.
+        assertEquals(0f, result.analyses.getValue("night").technical.exposure, 0f)
+        assertEquals(0f, result.analyses.getValue("snow").technical.exposure, 0f)
+    }
+
+    @Test
+    fun curate_oneMissingNimaScoreMovesTheWholeRunToTheFallbackAesthetic() = runBlocking {
+        val shots = linkedMapOf(
+            "scored1" to Shot(noise(71), nima = 8f),
+            "failed" to Shot(noise(72), nima = null),
+            "scored2" to Shot(noise(73), nima = 6f),
+            "broken" to Shot(noise(74), failLoad = true),
+        )
+        val world = FakeWorld(shots)
+        val result = decided(engine(world).curate(world.candidates).toList())
+
+        for (id in listOf("scored1", "failed", "scored2")) {
+            val a = result.analyses.getValue(id)
+            val fallback = PhotoAnalyzer.aestheticScore(null, a.composition, a.palette)
+            assertEquals(id, fallback, a.aesthetic, 0f)
+            assertEquals(id, PhotoAnalyzer.quality(a.technical.total, fallback), a.quality, 0f)
+        }
+        assertEquals(0f, result.analyses.getValue("broken").aesthetic, 0f)
+
+        // With every score present, the NIMA formula is kept.
+        val allScored = FakeWorld(linkedMapOf("scored1" to Shot(noise(71), nima = 8f), "scored2" to Shot(noise(73), nima = 6f)))
+        val kept = decided(engine(allScored).curate(allScored.candidates).toList())
+        val a = kept.analyses.getValue("scored1")
+        assertEquals(PhotoAnalyzer.aestheticScore(8f, a.composition, a.palette), a.aesthetic, 0f)
+    }
+
+    @Test
     fun curate_threeNearDuplicatesCollapseToOneCluster() = runBlocking {
         val base = noise(51)
         val world = FakeWorld(
