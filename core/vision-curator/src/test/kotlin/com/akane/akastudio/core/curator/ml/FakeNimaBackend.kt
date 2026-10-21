@@ -7,7 +7,8 @@ import java.util.concurrent.CountDownLatch
  * Scripted [NimaBackend]: returns a one-hot distribution on [scoreBin] (mean score `scoreBin + 1`), throws
  * on the run numbers listed in [failingRuns] (1-based; run 1 is the probe), or on every run when
  * [alwaysFails]; each failure is built by [runFailure]. Records the thread of every run and of close, and
- * throws [closeFailure] from close (after recording it) when set.
+ * throws [closeFailure] from close (after recording it) when set. Reports [inputShape] and [outputShape] as
+ * the model's declared tensor dimensions (default: unit batch).
  */
 internal class FakeNimaBackend(
     val accelerator: NimaAccelerator,
@@ -16,6 +17,8 @@ internal class FakeNimaBackend(
     private val alwaysFails: Boolean = false,
     private val runFailure: (String) -> Throwable = ::RuntimeException,
     private val closeFailure: Throwable? = null,
+    override val inputShape: List<Int> = listOf(1, NimaMath.INPUT_EDGE, NimaMath.INPUT_EDGE, 3),
+    override val outputShape: List<Int> = listOf(1, NimaMath.BIN_COUNT),
 ) : NimaBackend {
 
     val runThreads: MutableList<Thread> = Collections.synchronizedList(mutableListOf())
