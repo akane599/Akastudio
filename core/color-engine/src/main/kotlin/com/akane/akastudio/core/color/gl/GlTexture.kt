@@ -54,6 +54,8 @@ internal class GlTexture private constructor(
          */
         fun allocate(width: Int, height: Int, format: GlFormat, levels: Int = 1): GlTexture {
             require(width > 0 && height > 0 && levels >= 1)
+            val operation = "glTexStorage2D ${width}x$height $format levels=$levels"
+            discardStaleGlErrors(operation)
             val ids = IntArray(1)
             GLES20.glGenTextures(1, ids, 0)
             val texture = GlTexture(ids[0], width, height, format, levels)
@@ -65,7 +67,7 @@ internal class GlTexture private constructor(
             GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
             GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
             try {
-                checkGlError("glTexStorage2D ${width}x$height $format levels=$levels")
+                checkGlError(operation)
             } catch (e: GlException) {
                 texture.release()
                 throw e
