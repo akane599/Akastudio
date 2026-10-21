@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Story modes (StoryMode) -->
+    <string name="mode_hero">Hero</string>
+    <string name="mode_collage_2">2\'li kolaj</string>
+    <string name="mode_collage_3">3\'lü kolaj</string>
+    <string name="mode_collage_4">4\'lü kolaj</string>
+
+    <!-- Shot scales (ShotScale) -->
+    <string name="shot_scale_wide">Mekan</string>
+    <string name="shot_scale_medium">Portre</string>
+    <string name="shot_scale_detail">Detay</string>
+
+    <!-- Scene types (SceneType) -->
+    <string name="scene_beach_sea">Plaj ve deniz</string>
+    <string name="scene_night_city">Gece şehri</string>
+    <string name="scene_cafe_interior">Kafe içi</string>
+    <string name="scene_nature_forest">Doğa ve orman</string>
+    <string name="scene_portrait">Portre</string>
+    <string name="scene_architecture_auto">Mimari ve araçlar</string>
+    <string name="scene_general">Genel</string>
+
+    <!-- Warmth (Warmth) -->
+    <string name="warmth_golden_warm">Altın sıcak</string>
+    <string name="warmth_neutral">Nötr</string>
+    <string name="warmth_cool_blue">Soğuk mavi</string>
+    <string name="warmth_night_tungsten">Gece tungsten</string>
+
+    <!-- Story templates (StoryTemplate) -->
+    <string name="template_hero_full_bleed">Tam Ekran</string>
+    <string name="template_hero_gallery_matte">Galeri Paspartu</string>
+    <string name="template_duo_cinematic_split">Dikey Sinematik İkili</string>
+    <string name="template_duo_asymmetric_editorial">Asimetrik Editoryal</string>
+    <string name="template_duo_floating_gallery">Yüzen Galeri</string>
+    <string name="template_trio_bento">Bento Story</string>
+    <string name="template_trio_cinema_strips">Sinema Şeridi</string>
+    <string name="template_trio_magazine">Asimetrik Dergi</string>
+    <string name="template_quad_grid">2×2 Izgara</string>
+    <string name="template_quad_hero_filmstrip">Hero + Film Şeridi</string>
+    <string name="template_quad_mosaic">Dinamik Mozaik</string>
+
+    <!-- Generic actions -->
+    <string name="action_cancel">İptal</string>
+    <string name="action_done">Bitti</string>
+    <string name="action_retry">Yeniden dene</string>
+    <string name="action_share">Paylaş</string>
+
+    <!-- Errors (IngestionError and curation) -->
+    <string name="error_ingestion_zip_slip">Bu arşiv, kendi dışını gösteren dosyalar içerdiği için açılmadı.</string>
+    <string name="error_ingestion_zip_bomb">Bu arşiv güvenli olmayan bir boyuta açıldığı için açılmadı.</string>
+    <string name="error_ingestion_limit_exceeded">Bu arşiv, AkaStudio\'nun tek seferde işleyebileceğinden büyük. Daha az fotoğrafla deneyin.</string>
+    <string name="error_ingestion_invalid_archive">Bu dosya okunabilir bir .zip arşivi değil.</string>
+    <string name="error_ingestion_insufficient_storage">Yeterli boş alan yok: %1$s gerekli, %2$s kullanılabilir.</string>
+    <string name="error_ingestion_io">Bir fotoğraf okunamadı. Kaynağı kontrol edip yeniden deneyin.</string>
+    <string name="error_no_usable_photos">Bu fotoğrafların hiçbiri kullanılamadı. Net ve iyi pozlanmış fotoğraflarla deneyin.</string>
+
+    <!-- Curator note (CuratorNoteFormatter) -->
+    <string name="note_collage">%1$s arasından %3$s (%4$s) ve %5$s tonlarında %6$s uyum sağlayan %2$s kolaj için seçildi.</string>
+    <string name="note_collage_no_scales">%1$s arasından %3$s tonlarında %4$s uyum sağlayan %2$s kolaj için seçildi.</string>
+    <string name="note_hero">%1$s arasından %2$s tonlarında seçilen bu kare tek başına öne çıkıyor (puan %3$s).</string>
+    <string name="note_percent">%%%1$d</string>
+    <string name="note_list_separator">", "</string>
+    <plurals name="note_photos">
+        <item quantity="one">%1$d fotoğraf</item>
+        <item quantity="other">%1$d fotoğraf</item>
+    </plurals>
+    <plurals name="note_frames">
+        <item quantity="one">%1$d kare</item>
+        <item quantity="other">%1$d kare</item>
+    </plurals>
+    <plurals name="note_scales">
+        <item quantity="one">tek ölçekte</item>
+        <item quantity="other">%1$s farklı ölçekte</item>
+    </plurals>
+    <string-array name="note_count_words">
+        <item>1</item>
+        <item>2</item>
+        <item>3</item>
+        <item>4</item>
+    </string-array>
+    <string name="note_tone_golden_warm">sıcak altın saat</string>
+    <string name="note_tone_neutral">nötr</string>
+    <string name="note_tone_cool_blue">soğuk mavi</string>
+    <string name="note_tone_night_tungsten">gece tungsten</string>
+</resources>

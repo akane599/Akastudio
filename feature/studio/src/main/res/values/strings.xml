@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Common studio strings. Feature screens keep their own strings_<feature>.xml files. -->
+    <string name="studio_app_name" translatable="false">AkaStudio</string>
+
+    <!-- Story modes (StoryMode) -->
+    <string name="mode_hero">Hero</string>
+    <string name="mode_collage_2">2-photo collage</string>
+    <string name="mode_collage_3">3-photo collage</string>
+    <string name="mode_collage_4">4-photo collage</string>
+
+    <!-- Shot scales (ShotScale) -->
+    <string name="shot_scale_wide">Wide</string>
+    <string name="shot_scale_medium">Portrait</string>
+    <string name="shot_scale_detail">Detail</string>
+
+    <!-- Scene types (SceneType) -->
+    <string name="scene_beach_sea">Beach &amp; sea</string>
+    <string name="scene_night_city">Night city</string>
+    <string name="scene_cafe_interior">Café interior</string>
+    <string name="scene_nature_forest">Nature &amp; forest</string>
+    <string name="scene_portrait">Portrait</string>
+    <string name="scene_architecture_auto">Architecture &amp; cars</string>
+    <string name="scene_general">General</string>
+
+    <!-- Warmth (Warmth) -->
+    <string name="warmth_golden_warm">Golden warm</string>
+    <string name="warmth_neutral">Neutral</string>
+    <string name="warmth_cool_blue">Cool blue</string>
+    <string name="warmth_night_tungsten">Night tungsten</string>
+
+    <!-- Master looks (MasterLook): product names, never translated -->
+    <string name="look_portra_400_golden" translatable="false">Portra 400 Golden</string>
+    <string name="look_mediterranean_azure" translatable="false">Mediterranean Azure</string>
+    <string name="look_espresso_warm_wood" translatable="false">Espresso &amp; Warm Wood</string>
+    <string name="look_cinestill_800t_night" translatable="false">CineStill 800T Night</string>
+    <string name="look_nordic_slate_matte" translatable="false">Nordic Slate Matte</string>
+    <string name="look_kodachrome_64_classic" translatable="false">Kodachrome 64 Classic</string>
+    <string name="look_velvet_monochrome_hp5" translatable="false">Velvet Monochrome (HP5)</string>
+    <string name="look_pure_natural_pro" translatable="false">Pure Natural Pro</string>
+
+    <!-- Story templates (StoryTemplate) -->
+    <string name="template_hero_full_bleed">Full Bleed</string>
+    <string name="template_hero_gallery_matte">Gallery Matte</string>
+    <string name="template_duo_cinematic_split">Vertical Cinematic Duo</string>
+    <string name="template_duo_asymmetric_editorial">Asymmetric Editorial</string>
+    <string name="template_duo_floating_gallery">Floating Gallery</string>
+    <string name="template_trio_bento">Bento Story</string>
+    <string name="template_trio_cinema_strips">Cinema Strips</string>
+    <string name="template_trio_magazine">Asymmetric Magazine</string>
+    <string name="template_quad_grid">2×2 Grid</string>
+    <string name="template_quad_hero_filmstrip">Hero + Filmstrip</string>
+    <string name="template_quad_mosaic">Dynamic Mosaic</string>
+
+    <!-- Generic actions -->
+    <string name="action_cancel">Cancel</string>
+    <string name="action_done">Done</string>
+    <string name="action_retry">Retry</string>
+    <string name="action_share">Share</string>
+
+    <!-- Errors (IngestionError and curation) -->
+    <string name="error_ingestion_zip_slip">This archive contains files that point outside it, so it was not opened.</string>
+    <string name="error_ingestion_zip_bomb">This archive expands to an unsafe size, so it was not opened.</string>
+    <string name="error_ingestion_limit_exceeded">This archive is larger than AkaStudio can handle at once. Try a smaller set of photos.</string>
+    <string name="error_ingestion_invalid_archive">This file isn\'t a readable .zip archive.</string>
+    <string name="error_ingestion_insufficient_storage">Not enough free space: %1$s needed, %2$s available.</string>
+    <string name="error_ingestion_io">A photo couldn\'t be read. Check the source and try again.</string>
+    <string name="error_no_usable_photos">None of these photos could be used. Try photos that are sharp and well exposed.</string>
+
+    <!-- Curator note (CuratorNoteFormatter). Argument order is fixed; translations may reorder. -->
+    <!-- %1$s photos phrase, %2$s frames phrase, %3$s scales phrase, %4$s scale list, %5$s tone, %6$s percent -->
+    <string name="note_collage">Chosen from %1$s: %2$s %3$s (%4$s) in %5$s tones — %6$s harmony.</string>
+    <!-- %1$s photos phrase, %2$s frames phrase, %3$s tone, %4$s percent -->
+    <string name="note_collage_no_scales">Chosen from %1$s: %2$s in %3$s tones — %4$s harmony.</string>
+    <!-- %1$s photos phrase, %2$s tone, %3$s percent -->
+    <string name="note_hero">Chosen from %1$s in %2$s tones — this frame stands alone (score %3$s).</string>
+    <string name="note_percent">%1$d%%</string>
+    <string name="note_list_separator">", "</string>
+    <plurals name="note_photos">
+        <item quantity="one">%1$d photo</item>
+        <item quantity="other">%1$d photos</item>
+    </plurals>
+    <plurals name="note_frames">
+        <item quantity="one">%1$d frame</item>
+        <item quantity="other">%1$d frames</item>
+    </plurals>
+    <!-- %1$s is the count from note_count_words -->
+    <plurals name="note_scales">
+        <item quantity="one">across %1$s scale</item>
+        <item quantity="other">across %1$s scales</item>
+    </plurals>
+    <string-array name="note_count_words">
+        <item>one</item>
+        <item>two</item>
+        <item>three</item>
+        <item>four</item>
+    </string-array>
+    <string name="note_tone_golden_warm">warm golden-hour</string>
+    <string name="note_tone_neutral">neutral</string>
+    <string name="note_tone_cool_blue">cool blue</string>
+    <string name="note_tone_night_tungsten">tungsten night</string>
+</resources>
