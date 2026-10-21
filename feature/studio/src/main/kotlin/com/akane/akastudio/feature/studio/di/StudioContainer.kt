@@ -35,7 +35,8 @@ import kotlinx.coroutines.Dispatchers
  * per process (the app's `Application` holds it); everything heavy is built on first use.
  *
  * Lifetime: the [renderer] (one GL thread and its textures) and the curator's on-device models are process-wide and
- * are never closed. The studio view model unregisters every photo when it is cleared, so a backgrounded process
+ * are never closed. The studio view model releases every photo when it is cleared (an unregister the renderer
+ * refuses stays tracked for a later retry), so a backgrounded process
  * holds only the idle GL context and the loaded models, and the system reclaims both with the process. Closing them
  * on a trim-memory signal would leave a later view model talking to a closed renderer, so [onTrimMemory] only trims
  * the renderer's caches.

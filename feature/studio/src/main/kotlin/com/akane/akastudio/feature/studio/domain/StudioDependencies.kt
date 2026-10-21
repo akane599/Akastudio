@@ -53,6 +53,13 @@ data class StudioDispatchers(
  * Turns chosen candidates into composer-ready photos: full-resolution decode, `StoryRenderer.registerImage`,
  * horizon tilt detection and palette lookup. Implementations register each photo under its own renderer key, so
  * preparing an id again replaces the earlier registration.
+ *
+ * Ownership: the studio puts a [PhotoOwner] in the coroutine context of every [prepare] and [release], one per
+ * story generation. An implementation shared between generations (the production preparer lives for the process)
+ * registers each owner's photos under keys of their own (the returned [ComposerPhoto.imageKey]) and resolves a
+ * [release] under the calling owner's keys, so a retired generation's late registration or release never touches
+ * what a newer one, or a second live studio, prepared under the same candidate id. An implementation serving one
+ * owner at a time may ignore it.
  */
 interface PhotoPreparer {
     /**

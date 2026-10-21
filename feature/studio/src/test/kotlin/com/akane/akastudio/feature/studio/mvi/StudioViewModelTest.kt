@@ -894,5 +894,63 @@ class StudioViewModelTest {
         assertEquals(1, h.deps.sessions[0].closeCount)
     }
 
+    @Test
+    fun a_failed_release_from_an_earlier_reset_is_not_shown_in_the_empty_studio_a_later_reset_left() = runTest {
+        val h = harness()
+        ready(h)
+        h.deps.preparer.releaseDelayMs = 1_000
+        h.deps.preparer.releaseFailWith = IllegalStateException("EGL lost")
+
+        // Reset A (its release is slow and will fail), import B, then cancel B while it is still being read.
+        h.vm.onIntent(StudioIntent.Reset)
+        runCurrent()
+        h.deps.ingestScripts += TestData.ingestion(listOf(a, b), stepMs = 5_000)
+        h.vm.onIntent(StudioIntent.ImportPhotos(listOf("u9")))
+        advanceTimeBy(500)
+        assertEquals(StudioPhase.Ingesting, h.state.phase)
+        h.vm.onIntent(StudioIntent.CancelWork)
+        runCurrent()
+        assertEquals(StudioPhase.Empty, h.state.phase)
+        assertNull("cancelling an import is not an error", h.state.error)
+
+        // A's release now fails, in the empty studio that B's cancellation (not A's reset) left behind.
+        advanceUntilIdle()
+
+        assertEquals(StudioPhase.Empty, h.state.phase)
+        assertNull("the earlier story's cleanup failure belongs to a state no longer on screen", h.state.error)
+        assertEquals(1, h.deps.sessions[0].closeCount)
+        assertEquals(1, h.deps.sessions[1].closeCount)
+    }
+
+    @Test
+    fun a_reset_whose_release_and_session_close_both_fail_reports_the_release_with_the_close_suppressed() = runTest {
+        val h = harness()
+        ready(h)
+        h.deps.preparer.releaseFailWith = IllegalStateException("EGL lost")
+        h.deps.sessions.single().closeFailWith = IllegalStateException("work dir busy")
+
+        h.vm.onIntent(StudioIntent.Reset)
+        advanceUntilIdle()
+
+        assertEquals(StudioPhase.Empty, h.state.phase)
+        assertEquals("the first failure is the one shown", StudioError.Unknown("EGL lost"), h.state.error)
+        assertEquals("the session close was still attempted", 1, h.deps.sessions.single().closeCount)
+        assertEquals(setOf("a", "b"), h.deps.preparer.released.toSet())
+    }
+
+    @Test
+    fun a_failed_session_close_during_reset_is_shown_when_the_release_succeeded() = runTest {
+        val h = harness()
+        ready(h)
+        h.deps.sessions.single().closeFailWith = IllegalStateException("work dir busy")
+
+        h.vm.onIntent(StudioIntent.Reset)
+        advanceUntilIdle()
+
+        assertEquals(StudioPhase.Empty, h.state.phase)
+        assertEquals(StudioError.Unknown("work dir busy"), h.state.error)
+        assertEquals(setOf("a", "b"), h.deps.preparer.released.toSet())
+    }
+
     // endregion
 }
