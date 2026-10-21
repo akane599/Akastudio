@@ -1,0 +1,273 @@
+{
+  "plugins": [
+    {
+      "commit": null,
+      "definitions": {
+        ".claude-plugin/marketplace.json": "e8f07c47faefa54e1447754094d169ee7b13a4f0227d72d47a758e44ecac0b27",
+        ".claude-plugin/plugin.json": "4966eb8dfba988cde7225a02571ba9a022602f99fd2ebf745f2ca5ecd1fbbd21"
+      },
+      "id": "android-kmp-playbook@android-claude-max",
+      "scope": "project",
+      "version": "1.0.0"
+    },
+    {
+      "commit": null,
+      "definitions": {
+        ".claude-plugin/marketplace.json": "e8f07c47faefa54e1447754094d169ee7b13a4f0227d72d47a758e44ecac0b27",
+        ".claude-plugin/plugin.json": "4966eb8dfba988cde7225a02571ba9a022602f99fd2ebf745f2ca5ecd1fbbd21"
+      },
+      "id": "android-kmp-playbook@android-claude-max-hybrid",
+      "scope": "project",
+      "version": "1.0.0"
+    },
+    {
+      "commit": null,
+      "definitions": {
+        ".claude-plugin/icon.png": "1264e47fe008a9c0f9f1eb44dd4e40cfc1d193d0d99c6a664e9538b336e7d043",
+        ".claude-plugin/plugin.json": "d3b4aea44f7a9a1684305c85d2ddf728f436c5d50e2f70621402088c486e66c8",
+        "hooks/hooks.json": "39f0f7a05b6abc016e34869f3988922e59655d1032636bbe9cfb6a65c0beef58",
+        "hooks/inject-context.js": "56f1a8fd5136b38b238da527a7b132aecafce7c6bbceeb69c9f269f3f7323ae6",
+        "hooks/lib/map-documents.js": "bbcfd6c78d2ea5ad33f7a8bad19d42d1a1c0835b9f8d6eaf646f3442a94444f6",
+        "hooks/lib/migration-lock.js": "7bf5ce65d4b250fee380f50dcc41c8814e4c660cc40eaac9917695e942c953a3",
+        "hooks/lib/session-ledger.js": "0da5861d3da36356105c60db61a5eaa54d74faa05ae6be000dba87118ed0889f",
+        "hooks/remind.js": "6b2f664821a13607781aec86128dac41de29a526184bdfb82c18b687cfe7c530"
+      },
+      "id": "codebase-mapper@eigenwise-toolshed",
+      "scope": "project",
+      "version": "2.15.10"
+    },
+    {
+      "commit": null,
+      "definitions": {
+        ".claude-plugin/plugin.json": "9c61f72909301338f08025cafa67a7055e55572ba1bb76ba68f74d4d21c9c682"
+      },
+      "id": "context7@claude-plugins-official",
+      "scope": "project",
+      "version": "d1adba47161a"
+    },
+    {
+      "commit": null,
+      "definitions": {
+        ".claude-plugin/marketplace.json": "491418fbd2d5416ba24956ed5b67e3ce7eb639cac0d7df302dc0a580a54cbb6a",
+        ".claude-plugin/plugin.json": "1279f7ff5a1ab11e00e5865bb4f7048acb247223f2490b51b074d1a6cb5759bd",
+        "agents/gradle-agent.md": "850038b630fdb96ce419240dd2f9dff6e2c10cb1afa85cb05110e0811e43ba2c",
+        "agents/release-agent.md": "49a3614cbc1c41924477699f3f75482caf8e046f8ecdd6c202106f91a09cab8d",
+        "agents/setup-agent.md": "b8865550d715ddc9d62061f1c26bd29036d9c50737f6f86f21397a757de62706",
+        "commands/gradle-update.md": "69e02f8f5730495f503d7047c4ea1d071dbddcdb9afbd2524b7926e4e7d0be68",
+        "commands/keystore.md": "d767d439ee0aa58371df5672b8ff2567f191dc5b94b383d93d2e5d351e0fb9f2",
+        "commands/new-app.md": "79a57c2171a3ad7854961546b63c6587b3dd4a41d23890d9fb86ba5c7eb3aac1",
+        "commands/release-checklist.md": "ae1d57ef144e5fb6aad78a9795e7a63931d535548a39075f4681793fc6307818",
+        "commands/setup.md": "1171df161b695862b13be097d2b76c5bc7e660994f75172c4ba308c472344840",
+        "commands/signing-config.md": "e256ebdd519d43b7642db02aa6165016fc37f06662b7535881ec780b23d675cb",
+        "commands/version-bump.md": "71b349014ecb4fdeb1664a14c3f5642f5a33353d4e7404dc5edae1042b134b3c",
+        "hooks/post-version-bump.md": "d6730157252b15ac2885eb302ec77ad962dab45bd7208c8058bd597910a85a70",
+        "hooks/pre-build-check.md": "ac7dc1da08bb1bef194d7cfd4f06f6eb70bd6a5bd3f2f91be723e1421583025e"
+      },
+      "id": "droidforge@android-claude-max",
+      "scope": "project",
+      "version": "1.0.0"
+    },
+    {
+      "commit": null,
+      "definitions": {
+        ".claude-plugin/marketplace.json": "491418fbd2d5416ba24956ed5b67e3ce7eb639cac0d7df302dc0a580a54cbb6a",
+        ".claude-plugin/plugin.json": "1279f7ff5a1ab11e00e5865bb4f7048acb247223f2490b51b074d1a6cb5759bd",
+        "agents/gradle-agent.md": "850038b630fdb96ce419240dd2f9dff6e2c10cb1afa85cb05110e0811e43ba2c",
+        "agents/release-agent.md": "49a3614cbc1c41924477699f3f75482caf8e046f8ecdd6c202106f91a09cab8d",
+        "agents/setup-agent.md": "b8865550d715ddc9d62061f1c26bd29036d9c50737f6f86f21397a757de62706",
+        "commands/gradle-update.md": "69e02f8f5730495f503d7047c4ea1d071dbddcdb9afbd2524b7926e4e7d0be68",
+        "commands/keystore.md": "d767d439ee0aa58371df5672b8ff2567f191dc5b94b383d93d2e5d351e0fb9f2",
+        "commands/new-app.md": "79a57c2171a3ad7854961546b63c6587b3dd4a41d23890d9fb86ba5c7eb3aac1",
+        "commands/release-checklist.md": "ae1d57ef144e5fb6aad78a9795e7a63931d535548a39075f4681793fc6307818",
+        "commands/setup.md": "1171df161b695862b13be097d2b76c5bc7e660994f75172c4ba308c472344840",
+        "commands/signing-config.md": "e256ebdd519d43b7642db02aa6165016fc37f06662b7535881ec780b23d675cb",
+        "commands/version-bump.md": "71b349014ecb4fdeb1664a14c3f5642f5a33353d4e7404dc5edae1042b134b3c",
+        "hooks/post-version-bump.md": "d6730157252b15ac2885eb302ec77ad962dab45bd7208c8058bd597910a85a70",
+        "hooks/pre-build-check.md": "ac7dc1da08bb1bef194d7cfd4f06f6eb70bd6a5bd3f2f91be723e1421583025e"
+      },
+      "id": "droidforge@android-claude-max-hybrid",
+      "scope": "project",
+      "version": "1.0.0"
+    },
+    {
+      "commit": null,
+      "definitions": {
+        ".claude-plugin/plugin.json": "1d0ac5c5130445ef678225003ec569ce6f0ceb2d90f3ef14a93531a8aa01017c"
+      },
+      "id": "kotlin-lsp-android@android-claude-max",
+      "scope": "project",
+      "version": "1.0.0"
+    },
+    {
+      "commit": null,
+      "definitions": {
+        ".claude-plugin/plugin.json": "1d0ac5c5130445ef678225003ec569ce6f0ceb2d90f3ef14a93531a8aa01017c"
+      },
+      "id": "kotlin-lsp-android@android-claude-max-hybrid",
+      "scope": "project",
+      "version": "1.0.0"
+    },
+    {
+      "commit": null,
+      "definitions": {
+        ".claude-plugin/plugin.json": "994c85e04983b1c5149226ffc293bf7a1ba7bc33d1208f820b7be04b51dec90f",
+        "hooks/hooks.json": "a5008faf912297d3909e98aca2f9d8b060aa842c949bd52e02c91bfb4cd695a9",
+        "hooks/inject-edit-rules.js": "ebf9d7fef945b9fcf7f0a4835503ebb591dc7e6c2fa51832115f96b6b7ba8d73",
+        "hooks/inject-prompt-rules.js": "f34799b0bafecc95707443342f120828f3d86bc88a0460f9f503ff887333d235",
+        "hooks/lib/canonical-path.js": "a0f1fa05f1258e0e7ce430da9f02f73a5348b1225aff18946487671a264c4494",
+        "hooks/lib/migration-lock.js": "c86da06338d1bf3810c8c4565966f07e19aa29a5fe927074be049349bd365be7",
+        "hooks/lib/rules.js": "e1684855d71f132495d7e08258f6910beab4d1cc5649b51fbf3f0bf34fa8df56",
+        "hooks/lib/session-ledger.js": "cb4e125b60ea69f2fa427e9d2eb22cb45efdf4df731bd7bedf4e30f995c220f1",
+        "hooks/session-start-rules.js": "e21283a096532f455073786f772c53d9b20d7ce346127f0344ff35a722725344"
+      },
+      "id": "live-rules@eigenwise-toolshed",
+      "scope": "project",
+      "version": "2.11.2"
+    },
+    {
+      "commit": null,
+      "definitions": {
+        ".claude-plugin/plugin.json": "8d57114e0004f386a745efc4d8ace239e61b5ff528bf4d085c1cd560cfca80c9",
+        "hooks/hooks.json": "20ef02614f87b9fa13f124e4d0f3fdca42bae63f4f968c6970fe86908889a266",
+        "hooks/registry-writer.js": "771b04c1fad6d3c039e457654411cbc1416cf9176c19486b9046f2fa13da6305"
+      },
+      "id": "model-gateway@eigenwise-toolshed",
+      "scope": "project",
+      "version": "0.54.5"
+    },
+    {
+      "commit": null,
+      "definitions": {
+        ".claude-plugin/plugin.json": "4d430125a07978c27f46fe0c7b57f77fdc8d86a272f53d0bd650d95fa49747af",
+        "hooks/hooks.json": "4430bf8c3fc36d2d74bf3144a7c1e09e359b351169bab16a3cf7f6e9366abc43",
+        "hooks/ledger.ts": "b835248623d6cc8489f5309197ec364d2b2ddec29061fb4ae1d5cd0e2afc8914",
+        "hooks/register.ts": "16ab9527b58a1cc6d79e4965e7f84bc4fb911b17747f3d0d1545076f6ea54b8f"
+      },
+      "id": "observability@eigenwise-toolshed",
+      "scope": "project",
+      "version": "1.1.0"
+    },
+    {
+      "commit": null,
+      "definitions": {
+        ".claude-plugin/plugin.json": "03e4f69721b54a1d49dd347f0b91a7b0e1936c23bcdb4258799eb70c99e8d776",
+        "hooks/billing-path-check.js": "6f13ed55600216847b2ea52ddb5e2464130ce98d516cfdc4257592b099af8bef",
+        "hooks/freshness-helpers.js": "2a46dc28b623d9b772a9f86eabe2ab15afd6e7452568952c5ab1fe7b460b16a1",
+        "hooks/hooks.json": "4f79b305e19421591f14409a1d00262e295800b8c1a7b46b75af5cb571f35b1d",
+        "hooks/marketplace-freshness-cache.js": "ffc0bb2f858f479eb7825cdcab50778257fd9d46365acde9026a014f8153674e",
+        "hooks/session-end-tally.js": "4f80ebee4e6fbe9803c824b64f3a171082a65a9c44e7cfe2450d6308c85961c2",
+        "hooks/session-start-auto-allowlist.js": "f6229fd9482c62e4636da185be676c8c86d1239a8373478d2e57a84157c96d9c",
+        "hooks/session-start-freshness.js": "746967d2f7b8971126c182043b25d8acef4d13e148514231a6d82729ae4f880e",
+        "hooks/session-start-nudge.js": "16080a4e9265137523dd6c14533f7819ddee0a4a348a641c9ae8bbec3931c557",
+        "hooks/stop-resupply-offer.js": "32ebf9e232b1cf2df4d1382c0c6900722cb7d0a2dc338b7f70224f8f35aa2f67",
+        "hooks/stop-update-check.js": "5db181a133b7f6e550fcc4bbbc948231cff7ee3bac925e82ca1546e6497522f0",
+        "hooks/user-prompt-freshness.js": "881f835c8179fa35026fdcf3939bd596d27beba7b690e7e6edf0c8b35391f412"
+      },
+      "id": "quartermaster@eigenwise-toolshed",
+      "scope": "project",
+      "version": "1.0.1"
+    },
+    {
+      "commit": null,
+      "definitions": {
+        ".claude-plugin/plugin.json": "28e2ec31f82268679baef06776a6975b56146a0be8ddf2d4f84f8f7e8bad4337",
+        "hooks/__pycache__/_base.cpython-314.pyc": "f2dc990aeec1503976607ac39d6e1ebf60cc0775857b5079fd21bf6fcd716bab",
+        "hooks/__pycache__/diffstate.cpython-314.pyc": "0336f8bef4eca0903d34df11b08795e81972e2951d7d62913d90c1e836a24a58",
+        "hooks/__pycache__/extensibility.cpython-314.pyc": "f7ddd3727bc45fbd14a2dbaba8078c634a9bb0a1e121dcf431ec90054bbed0a3",
+        "hooks/__pycache__/gitutil.cpython-314.pyc": "f2dc4486a40ef782dc3b2a2fcd901d71461d2c10f995b7ef942f2d7f4d696429",
+        "hooks/__pycache__/llm.cpython-314.pyc": "6a234d40d90e7173187ca76b2a298474ecfa0cb62ac4b25f1a69d7f453d0154a",
+        "hooks/__pycache__/patterns.cpython-314.pyc": "45a2e4711d33507f0efdd402a5e1f89c14c2e81f6a704d79965daceb3ffbefee",
+        "hooks/__pycache__/reporesolve.cpython-314.pyc": "b3bde0e7cd5bd222d0dc10f23abd556df32873b2c01b80d6e3c8f80a12a9c338",
+        "hooks/__pycache__/review_api.cpython-314.pyc": "cc62bf63e04ac5b37c5c0f65508207f7a04b12ac558c8ee7791da7c1751bff7a",
+        "hooks/__pycache__/session_state.cpython-314.pyc": "f1e847a7d0aa3a5d58ca6f911585ffc08284189ef8d5b138eccadc523fb09ec8",
+        "hooks/_base.py": "8b1198a8193808f000040bd1ebaea89acc3335dd8b83178e4faf843bdfe2036f",
+        "hooks/diffstate.py": "9a7a27a6a0f2510e2facf52809885f588324a25dce080857b02802242c413ab4",
+        "hooks/ensure_agent_sdk.py": "c3ff1aa84b752df04a8da238af17cb6b02746091c1ed6e843a0e045ec781d28a",
+        "hooks/extensibility.py": "ec9874eeb614cbce94cd8423619d0445400c2e9887785618ee61b168a5e4a26b",
+        "hooks/gitutil.py": "fbccc5c1c8ac5da7840f185144e82fdc7b1f079caac739471e57ef19e2134db3",
+        "hooks/hooks.json": "7bdf841282224a822745faa00c32f567afd0ab5439abb20acd62831b00bc5ad3",
+        "hooks/llm.py": "4605f56c9c934be72a094fecef3e3ff8c20b3b53153d7f234e183bd6f91b41e7",
+        "hooks/patterns.py": "8cd874aa113801f869679045e0b38b669988b6a7d33b611b10ef01f474ca1eef",
+        "hooks/reporesolve.py": "cc751cf63524b8d8ce255715bb188a123e68b8d4a5cbf12ab28f58a20849f7fd",
+        "hooks/review_api.py": "b5e5ee59787e174998adb70a53e0b06252449c6e96f2d52e735f8ad5cbe4e319",
+        "hooks/security_reminder_hook.py": "cd890ec4a41430d19601bfa61488fda24d87ac2dcdaf83e961602536c81ace3e",
+        "hooks/session_state.py": "5228eed24bdb743af3c84fce73a13b0abaae426f6eb9d278763dc20304308630",
+        "hooks/sg-python.sh": "9ddf7e920e5f3f6e53604b844fe4f5de41b92f94864e678aebf9a776bf7680b9"
+      },
+      "id": "security-guidance@claude-plugins-official",
+      "scope": "project",
+      "version": "2.0.15"
+    },
+    {
+      "commit": null,
+      "definitions": {},
+      "id": "session-report@claude-plugins-official",
+      "scope": "project",
+      "version": "d1adba47161a"
+    },
+    {
+      "commit": null,
+      "definitions": {
+        ".claude-plugin/plugin.json": "a9bad67c9f1e494c8cb2f788d42711b610cfca3bda86b4457d0bd84b97c4d09d",
+        "agents/sidequest-diagnostic-probe.md": "d3b394c3bc8f21259b0ee680c273e04f86362e30ed7ffdef617a0c9a950ca89d",
+        "agents/sidequest-exec-dispatch-evidence.md": "0784a8b200036da7bab6f2fdecc0017e9a785ca442969e4d80c8ab5dc1a41c60",
+        "agents/sidequest-exec-dispatch-readonly.md": "63fa04bc4aabb5dc5965cf72659706fdfccf3f54141e4d0e79561d0dcc654319",
+        "agents/sidequest-exec-dispatch.md": "856266d8b7adf693fdaeb10eb7d26694c42f6e21d53325849e8f18430df059e7",
+        "agents/sidequest-exec-evidence-high.md": "163c7f648c1ea9fbfff7d08e57e8587c1fe68dc42b17f8c796f053de8c559289",
+        "agents/sidequest-exec-evidence-low.md": "99d9eb0ec7d7ad3e8eeb77713197e2322f83650bd02a0f2bf2c8e4c113020436",
+        "agents/sidequest-exec-evidence-max.md": "4efdef9b2a1b5da3e9529c1848abea8d289ca1c2fb318bbdb1b8c8e1ce9f42ec",
+        "agents/sidequest-exec-evidence-medium.md": "ad67df3d2750dd7456bea3c54d040c1f23863c4de52a408f8d0347b670e85e92",
+        "agents/sidequest-exec-evidence-xhigh.md": "d6feebf6e574f224a64216edc7ab50233fd0a62fb38d522fad4ebcf5ac183b86",
+        "agents/sidequest-exec-high.md": "130f836264c8aa1dfb9aa266a55d3577a3304c0d4c73b77640883f6dd1b1953d",
+        "agents/sidequest-exec-low.md": "dfc0d152c2abf0089d596f15d41988a77f928ea34f7957d147aa2f6663993134",
+        "agents/sidequest-exec-max.md": "85256d77c0b278347c50e21b491cbcc9ac24a87873a9912b01450a317bf7ef03",
+        "agents/sidequest-exec-medium.md": "8869cab3630754df259f705c5b8ce72bade090d3fe1740d4a7545c2cc2063dbb",
+        "agents/sidequest-exec-readonly-high.md": "0a13c332b3ff9831f3db36b285868755c81b1d09d7cb784a97b578bbfe69a156",
+        "agents/sidequest-exec-readonly-low.md": "9325683d09b5797dbf5905286be6ff6cc541714322bde38de969b74e9ed0c444",
+        "agents/sidequest-exec-readonly-max.md": "d065080733fbc81791c0866cde981db58bc17ce84cedeb3f96cbd2c8bdcfdd54",
+        "agents/sidequest-exec-readonly-medium.md": "31f2185111d4fa03245357459b7be153e69a96e992e727ada01ea3d884007789",
+        "agents/sidequest-exec-readonly-xhigh.md": "736ad8dc825822730ba892d6eb553ff2a3798489da9a3c9bc9266206bdcc2648",
+        "agents/sidequest-exec-xhigh.md": "f522a656b8dd0f6294afe2c41c169e722d202116513638b09b150d0afdf82210",
+        "hooks/agent-dispatch-state.js": "fb01b0071218ddbc406eb6c6c9429dfaa55e0fbdc5855e72b17b7f29cde629b4",
+        "hooks/bind-runtime-identity.js": "9232d8f6bc9e663d32475acde6f51beb65796c08b3edbb55b7eface4cb43b2af",
+        "hooks/board-first-reminder.js": "c66e1f34b5ddb80b803097422d8df016e685d0abecd639b109cc8079b1a7dfc8",
+        "hooks/board-reconciliation-reminder.js": "c7cab9e0f5f6759326838480d1bc5cea79e046a7ceba4dafd657c54b787f5320",
+        "hooks/compaction-policy.js": "db41c01b3afc7bb0a4c760d715e83e5b94c47deb243e20008ba7357bfdc57ed1",
+        "hooks/compaction-suggestion.js": "cd91441a4fa332b92852d3e84de8e2183cbe91d1d0100e29155fe1dbbd2a66f7",
+        "hooks/diagnostic-worktree-warning.js": "d2c5f8237ce9a4aa62c30d9b77532fbf68beba77adbc97472202da4c0a74f452",
+        "hooks/force-exec-bypass.js": "09c5222dfe62baa717560b65fd7fc2d2482d102ce10f12282d0a9d4e55d57668",
+        "hooks/guard-evidence-write.js": "c7dc26311599c7260d808361f4d0df76c58f0d8786ca150c283962509b7b267e",
+        "hooks/guard-worktree-isolation.js": "a255d1afc24dbfac034c4b2729c1c1d96b1118412088047a57fa3ee990e4c9d4",
+        "hooks/guards/context-guards.ts": "86a507e854668d90a4716a7597f1b137e63446b9d797bfc633ca6a32771ba4e1",
+        "hooks/guards/executor-admission.test.ts": "9018112a8d1e9dbf18dfe1da5b011b27f4707f55c0cec07b15451c10587867f3",
+        "hooks/guards/executor-admission.ts": "559ff65e7e0a10c9829f39a2bbcd0bd937e7ae8178619df5273da12d6933a295",
+        "hooks/guards/git-command.ts": "0c2a8a7f9bfd58ae1e0648ccf25bee58fd77bfa63a9f28dd79fee8fa56ec7369",
+        "hooks/guards/git-guards.test.ts": "9b3c869a45859c9fff6b8775ade6059391dbeb8e7213f63e45f2a10c662e0d33",
+        "hooks/guards/git-guards.ts": "a4a9cfb086f18fb2e2a63583efcb63de58f9c97f3823c9779facd57cfab37122",
+        "hooks/guards/guards.test.ts": "47074eebe0b6df319ff96549c85c0ed7bacdf8e4deccf54cd0e589455455165f",
+        "hooks/guards/heredocs.ts": "c69a72f0ece19b1ab6fd93d4516005b176059f4d7f9cf5b34c117e2fcf337880",
+        "hooks/guards/readonly-mcp.test.ts": "34e4031c4190c24fb315a8f9b597903ca4b861433e08382465ba55b5efa034b8",
+        "hooks/guards/register.ts": "6cd1105e9e06daca037eec5b14aa7ac7607fc8aa01bc28a4fb92dcae59763905",
+        "hooks/guards/snapshot.ts": "87bbbfacbbdd9a6cd34c352a6a3450570ae20773efe602e7ea023566c9c75e4b",
+        "hooks/guards/text-guards.ts": "40ab7865d1c4a64e6c907bad097a0918372289567ebecc8792eda0e795981f07",
+        "hooks/hooks.json": "d640a5315a0bbccabbcfecc55e6ea4c7a544b59562930fb90d1a005035f8a712",
+        "hooks/post-compact.js": "ce9fd27205831f15cd0d9bec2c4408ae7f2111b1079d4f409abe8a9648715d36",
+        "hooks/quota-fallback.js": "9f57403e48849a70d6828e1b1729b8a596202ba4fd8ecc81c600e3431afbdefa",
+        "hooks/registry-writer.js": "0a4c221dc9c36dc0285e67cb47425a36efc43cc279da9f022603396f2b2b7a19",
+        "hooks/session-end.js": "ab35fe0388ed0ac79bbdf28e24e03342001b80b0dcddc71e6471c35b8c66bb23",
+        "hooks/session-start.js": "91b587a918189d831470e2abd6282a358d533da67330dcf380cea57359674ecf",
+        "hooks/stop.js": "a832cdb582acc4ed43661d8e7124492755462ead79dac113175c9cbed954a7db",
+        "hooks/subagent-start.js": "c390efcea50c0de325dd7e0d9cbeca44b3d1a52f6fc4b09aac77dd265f97021c",
+        "hooks/subagent-stop.js": "4b5018a65d0350b05eb511841183cd2b8d863b7d8b0bcdafaef1cb6b770addbc",
+        "hooks/sweep-worktrees.js": "919f33d931ad99dd95506f0d6f7f567055b50e713db57899bcdc3ad45cc241c7",
+        "hooks/teammate-idle.js": "90bc7d7fc340ba8088731bce845e3ce44633069f536d51a5c6b128bb781e094c",
+        "hooks/worktree-create.js": "765d362b51ad80f5b5dc2a25e75c105f4d14f87ba911e693bfad2652908d0ef1"
+      },
+      "id": "sidequest@eigenwise-toolshed",
+      "scope": "project",
+      "version": "6.1.1"
+    }
+  ],
+  "policy": "Drift record; not a package resolver or shared-cache downgrade.",
+  "recorded": "20261021T163610.174862Z"
+}
