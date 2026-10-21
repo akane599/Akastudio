@@ -6,6 +6,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performTouchInput
@@ -16,6 +19,7 @@ import com.akane.akastudio.core.color.api.Rect4f
 import com.akane.akastudio.core.color.api.RenderScene
 import com.akane.akastudio.core.color.api.SceneBackground
 import com.akane.akastudio.core.color.api.SceneLayer
+import com.akane.akastudio.core.composer.api.CellOverride
 import com.akane.akastudio.feature.studio.R
 import com.akane.akastudio.feature.studio.mvi.StudioIntent
 import com.akane.akastudio.feature.studio.ui.theme.DarkroomTheme
@@ -109,5 +113,33 @@ class StoryCanvasDeviceTest {
         editable.value = false
         compose.waitForIdle()
         assertFalse(customActions().any { it.label == swap })
+    }
+
+    /** Runs the custom action labelled by [labelRes] on the UI thread and returns its result. */
+    private fun runAction(labelRes: Int): Boolean {
+        val label = resources.getString(labelRes)
+        val action = customActions().single { it.label == label }
+        var handled = false
+        compose.runOnIdle { handled = action.action() }
+        compose.waitForIdle()
+        return handled
+    }
+
+    @Test
+    fun cropActionsEditTheSelectedCell() {
+        setCanvas(editable = true)
+        assertTrue(runAction(R.string.canvas_action_select_next))
+        assertTrue(runAction(R.string.canvas_action_select_next))
+        assertTrue(runAction(R.string.canvas_action_zoom_in))
+        assertEquals(listOf<StudioIntent>(StudioIntent.SetCellOverride("b", CellOverride(zoom = 1.25f))), intents)
+
+        val state = resources.getQuantityString(R.plurals.canvas_state_selected, 2, 2, 2)
+        canvas().assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, state))
+    }
+
+    @Test
+    fun lockedCanvasOffersOnlySelection() {
+        setCanvas(editable = false)
+        assertEquals(listOf(resources.getString(R.string.canvas_action_select_next)), customActions().map { it.label })
     }
 }

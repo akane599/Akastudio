@@ -102,6 +102,8 @@ internal data class SlotDrag(val from: Int, val start: Offset, val current: Offs
  * - Two-finger pinch or pan zooms (1..4) and pans (-1..1) the cell under the fingers, or the selected cell, sending
  *   at most one [StudioIntent.SetCellOverride] per display frame.
  * - With [compare] set, a draggable split handle sends [StudioIntent.SetCompare]; "Before"/"After" mark each side.
+ * - Accessibility services get custom actions for the same edits: select next cell, swap with next cell, zoom in,
+ *   zoom out and reset crop (see [CanvasActions]); the editing ones only while [editable].
  *
  * With a null [renderer] (previews, screenshot tests) the canvas draws the scene's cell layout as hairline outlines
  * instead of a GPU surface.
@@ -113,8 +115,8 @@ internal data class SlotDrag(val from: Int, val start: Offset, val current: Offs
  * @param overrides The current per-photo overrides; a pinch starts from the cell's current override.
  * @param scope The scope to dock at the top-right of the canvas, or [ScopeMode.OFF].
  * @param scopePixels The scope readback for [scope].
- * @param editable Whether the studio accepts edits now (its Ready phase); when false the swap gesture and the swap
- *   accessibility action are off, so neither reports a swap the studio would reject.
+ * @param editable Whether the studio accepts edits now (its Ready phase); when false the swap gesture and the editing
+ *   accessibility actions are off, so none reports an edit the studio would reject.
  */
 @Composable
 fun StoryCanvas(
@@ -190,7 +192,7 @@ internal fun StoryCanvasLayout(
         Box(
             Modifier
                 .size(viewSize)
-                .canvasSemantics(cellCount, selected, editable, onSelect, onIntent)
+                .canvasSemantics(cellCount, selected, editable, photoIds, overrides, onSelect, onIntent)
                 .canvasGestures(
                     transform = transform,
                     scene = scene,
@@ -242,11 +244,17 @@ internal fun StoryCanvasLayout(
     }
 }
 
+/**
+ * The canvas's accessibility node: its description, the selection as state, and the [CanvasActions] custom actions
+ * that stand in for the gestures (select, swap, zoom and reset crop).
+ */
 @Composable
 private fun Modifier.canvasSemantics(
     cellCount: Int,
     selected: Int?,
     editable: Boolean,
+    photoIds: ImmutableList<String>,
+    overrides: ImmutableMap<String, CellOverride>,
     onSelect: (Int?) -> Unit,
     onIntent: (StudioIntent) -> Unit,
 ): Modifier {
@@ -256,22 +264,31 @@ private fun Modifier.canvasSemantics(
     } else {
         pluralStringResource(R.plurals.canvas_state_cells, cellCount, cellCount)
     }
-    val swapLabel = stringResource(R.string.canvas_action_swap_next)
+    val labels = CanvasAction.entries.associateWith { stringResource(it.labelRes()) }
+    val actions = CanvasActions.available(cellCount, selected, editable, photoIds, overrides)
     return semantics {
         contentDescription = description
         stateDescription = state
-        if (editable && cellCount >= 2) {
-            customActions = listOf(
-                CustomAccessibilityAction(swapLabel) {
-                    val from = selected ?: 0
-                    val to = (from + 1) % cellCount
-                    onIntent(StudioIntent.SwapSlots(from, to))
-                    onSelect(to)
+        if (actions.isNotEmpty()) {
+            customActions = actions.map { action ->
+                CustomAccessibilityAction(labels.getValue(action)) {
+                    val result = CanvasActions.perform(action, cellCount, selected, photoIds, overrides)
+                        ?: return@CustomAccessibilityAction false
+                    result.intent?.let(onIntent)
+                    onSelect(result.select)
                     true
-                },
-            )
+                }
+            }
         }
     }
+}
+
+private fun CanvasAction.labelRes(): Int = when (this) {
+    CanvasAction.SELECT_NEXT -> R.string.canvas_action_select_next
+    CanvasAction.SWAP_NEXT -> R.string.canvas_action_swap_next
+    CanvasAction.ZOOM_IN -> R.string.canvas_action_zoom_in
+    CanvasAction.ZOOM_OUT -> R.string.canvas_action_zoom_out
+    CanvasAction.RESET_CROP -> R.string.canvas_action_reset_crop
 }
 
 /** Adds the pointer input for tap, double-tap, long-press drag and two-finger transform. */
