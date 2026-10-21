@@ -1,5 +1,7 @@
 package com.akane.akastudio.core.ingestion
 
+import android.os.Process
+import android.os.SystemClock
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
@@ -11,7 +13,8 @@ import org.junit.runner.RunWith
 
 /**
  * On-device smoke: a real session owns a fresh work dir under the target's noBackupFilesDir/ingest (not the evictable
- * cacheDir) and deletes it on close; the startup purge sweeps stale sessions there and the legacy cacheDir/ingest root.
+ * cacheDir) and deletes it on close; the startup purge sweeps orphans from before process start and the legacy
+ * cacheDir/ingest root.
  */
 @RunWith(AndroidJUnit4::class)
 class IngestionDeviceSmokeTest {
@@ -40,10 +43,13 @@ class IngestionDeviceSmokeTest {
     }
 
     @Test
-    fun purgeRemovesStaleSessionsAndTheLegacyCacheRoot() {
+    fun purgeRemovesOrphansFromBeforeProcessStartAndTheLegacyCacheRoot() {
+        // An orphan from a process killed an hour before this one started: well inside the old 24h grace period.
+        val sinceStart = SystemClock.elapsedRealtime() - Process.getStartElapsedRealtime()
+        val processStart = System.currentTimeMillis() - sinceStart
         val stale = File(context.noBackupFilesDir, "ingest/qa-stale").apply { mkdirs() }
         File(stale, "0001.bin").writeBytes(ByteArray(8))
-        assertTrue(stale.setLastModified(System.currentTimeMillis() - 2 * DAY_MILLIS))
+        assertTrue(stale.setLastModified(processStart - HOUR_MILLIS))
         val legacyRoot = File(context.cacheDir, "ingest")
         val legacySession = File(legacyRoot, "qa-legacy").apply { mkdirs() }
         File(legacySession, "0001.bin").writeBytes(ByteArray(8))
@@ -62,6 +68,6 @@ class IngestionDeviceSmokeTest {
     }
 
     private companion object {
-        const val DAY_MILLIS = 24L * 60 * 60 * 1000
+        const val HOUR_MILLIS = 60L * 60 * 1000
     }
 }

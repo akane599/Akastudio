@@ -2,6 +2,8 @@ package com.akane.akastudio.core.ingestion
 
 import android.content.ContentResolver
 import android.content.Context
+import android.os.Process
+import android.os.SystemClock
 import android.provider.OpenableColumns
 import androidx.core.net.toUri
 import com.akane.akastudio.core.ingestion.api.AnalysisDecoder
@@ -20,7 +22,8 @@ import java.io.IOException
 import java.io.InputStream
 import java.util.UUID
 
-private const val DEFAULT_STALE_MILLIS = 24L * 60 * 60 * 1000
+/** Slack below process start for the orphan cutoff, so mtime rounding or a tiny clock step never hits a live dir. */
+private const val ORPHAN_MARGIN_MILLIS = 10_000L
 private const val INGEST_DIR = "ingest"
 
 internal class ContentSourceOpener(private val resolver: ContentResolver) : SourceOpener {
@@ -83,20 +86,34 @@ fun createAnalysisDecoder(context: Context): AnalysisDecoder {
 }
 
 /**
- * Deletes crash-leftover session dirs under noBackupFilesDir/ingest older than [olderThanMillis], and the whole legacy
- * cacheDir/ingest root that builds before N-06 staged into, so an upgrade leaves no orphaned photos behind.
+ * Deletes orphaned session dirs under noBackupFilesDir/ingest, and the whole legacy cacheDir/ingest root that builds
+ * before N-06 staged into, so an upgrade leaves no orphaned photos behind. Sessions never survive process death, so
+ * every dir last modified before this process started belongs to a dead process; nothing evicts noBackupFilesDir and
+ * Clear cache leaves it alone, so waiting (each orphan can be gigabytes) would only hold space and fail later imports'
+ * free-space check. A session created by this process is modified after its start and is kept. Dirs modified before
+ * [cutoffMillis] (wall clock) go; the default is process start minus [ORPHAN_MARGIN_MILLIS].
  */
-fun purgeStaleIngestionDirs(context: Context, olderThanMillis: Long = DEFAULT_STALE_MILLIS) {
+fun purgeStaleIngestionDirs(context: Context, cutoffMillis: Long = processStartWallMillis() - ORPHAN_MARGIN_MILLIS) {
     val app = context.applicationContext
-    purgeIngestionRoots(ingestRoot(app), legacyIngestRoot(app), System.currentTimeMillis(), olderThanMillis)
+    purgeIngestionRoots(ingestRoot(app), legacyIngestRoot(app), cutoffMillis)
 }
 
-/** Pure part of [purgeStaleIngestionDirs]: stale session dirs under [root] go, and [legacyRoot] goes entirely. */
-internal fun purgeIngestionRoots(root: File, legacyRoot: File, now: Long, olderThan: Long) {
+/**
+ * This process's start in wall-clock millis: the time since start, measured on the monotonic clock, back from now. The
+ * result is on today's wall clock, the one dir mtimes are stamped with, even if the wall clock was set since start.
+ */
+private fun processStartWallMillis(): Long =
+    processStartWallMillis(System.currentTimeMillis(), SystemClock.elapsedRealtime(), Process.getStartElapsedRealtime())
+
+internal fun processStartWallMillis(nowWall: Long, nowElapsed: Long, startElapsed: Long): Long =
+    nowWall - (nowElapsed - startElapsed)
+
+/** Pure part of [purgeStaleIngestionDirs]: dirs under [root] modified before [cutoff] go, [legacyRoot] goes whole. */
+internal fun purgeIngestionRoots(root: File, legacyRoot: File, cutoff: Long) {
     if (legacyRoot.exists()) legacyRoot.deleteRecursively()
     val dirs = root.listFiles { f -> f.isDirectory }?.toList() ?: return
-    staleDirs(dirs, now, olderThan).forEach { it.deleteRecursively() }
+    orphanDirs(dirs, cutoff).forEach { it.deleteRecursively() }
 }
 
-internal fun staleDirs(dirs: List<File>, now: Long, olderThan: Long): List<File> =
-    dirs.filter { it.isDirectory && now - it.lastModified() > olderThan }
+internal fun orphanDirs(dirs: List<File>, cutoff: Long): List<File> =
+    dirs.filter { it.isDirectory && it.lastModified() < cutoff }

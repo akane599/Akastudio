@@ -9,32 +9,57 @@ import org.junit.Test
 
 class IngestionFactoryTest {
     @Test
-    fun staleDirsSelectsOnlyDirectoriesOlderThanThreshold() {
+    fun orphanDirsSelectsOnlyDirectoriesModifiedBeforeTheCutoff() {
         val root = Files.createTempDirectory("ingest-test").toFile()
         try {
             val old = File(root, "old").apply { mkdirs(); setLastModified(1_000L) }
             val fresh = File(root, "fresh").apply { mkdirs(); setLastModified(9_500L) }
             val file = File(root, "f.txt").apply { writeText("x"); setLastModified(1_000L) }
-            val result = staleDirs(listOf(old, fresh, file), now = 10_000L, olderThan = 5_000L)
-            assertEquals(listOf(old), result)
+            assertEquals(listOf(old), orphanDirs(listOf(old, fresh, file), cutoff = 5_000L))
         } finally {
             root.deleteRecursively()
         }
     }
 
     @Test
-    fun staleDirsBoundaryIsExclusive() {
+    fun orphanDirsBoundaryIsExclusive() {
         val root = Files.createTempDirectory("ingest-test").toFile()
         try {
             val d = File(root, "d").apply { mkdirs(); setLastModified(5_000L) }
-            assertEquals(emptyList<File>(), staleDirs(listOf(d), now = 10_000L, olderThan = 5_000L))
+            assertEquals(emptyList<File>(), orphanDirs(listOf(d), cutoff = 5_000L))
         } finally {
             root.deleteRecursively()
         }
     }
 
+    /** Regression: an orphan from a process killed an hour ago goes now, not after the old 24h wait. */
     @Test
-    fun purgeRemovesStaleSessionsUnderTheRootAndTheWholeLegacyRoot() {
+    fun purgeRemovesAnHourOldOrphanAndKeepsADirModifiedAfterTheCutoff() {
+        val base = Files.createTempDirectory("ingest-test").toFile()
+        try {
+            val root = File(base, "no_backup/ingest")
+            val cutoff = 100L * HOUR
+            val orphan = File(root, "orphan").apply { mkdirs(); File(this, "0001.bin").writeText("x") }
+            orphan.setLastModified(cutoff - HOUR)
+            val live = File(root, "live").apply { mkdirs(); setLastModified(cutoff + 1_000L) }
+
+            purgeIngestionRoots(root, File(base, "cache/ingest"), cutoff)
+
+            assertFalse("hour-old orphan purged", orphan.exists())
+            assertTrue("dir modified after the cutoff kept", live.isDirectory)
+        } finally {
+            base.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun processStartWallMillisSubtractsTheElapsedTimeSinceStartFromNow() {
+        val start = processStartWallMillis(nowWall = 1_000_000L, nowElapsed = 5_000L, startElapsed = 2_000L)
+        assertEquals(997_000L, start)
+    }
+
+    @Test
+    fun purgeRemovesOrphansUnderTheRootAndTheWholeLegacyRoot() {
         val base = Files.createTempDirectory("ingest-test").toFile()
         try {
             val root = File(base, "no_backup/ingest")
@@ -45,7 +70,7 @@ class IngestionFactoryTest {
             // Legacy sessions go regardless of age: no current build stages there.
             val legacyFresh = File(legacyRoot, "fresh").apply { mkdirs(); setLastModified(9_500L) }
 
-            purgeIngestionRoots(root, legacyRoot, now = 10_000L, olderThan = 5_000L)
+            purgeIngestionRoots(root, legacyRoot, cutoff = 5_000L)
 
             assertFalse("stale session purged", stale.exists())
             assertTrue("live session kept", live.isDirectory)
@@ -62,10 +87,14 @@ class IngestionFactoryTest {
         val base = Files.createTempDirectory("ingest-test").toFile()
         try {
             val root = File(base, "no_backup/ingest")
-            purgeIngestionRoots(root, File(base, "cache/ingest"), now = 10_000L, olderThan = 5_000L)
+            purgeIngestionRoots(root, File(base, "cache/ingest"), cutoff = 5_000L)
             assertTrue(base.listFiles().orEmpty().isEmpty())
         } finally {
             base.deleteRecursively()
         }
+    }
+
+    private companion object {
+        const val HOUR = 60L * 60 * 1000
     }
 }
