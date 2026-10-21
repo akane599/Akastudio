@@ -7,7 +7,9 @@ import com.akane.akastudio.core.color.api.OkLab
 import com.akane.akastudio.core.color.api.OverlayAlign
 import com.akane.akastudio.core.color.api.OverlayFont
 import com.akane.akastudio.core.color.api.PaletteSwatch
+import com.akane.akastudio.core.color.api.Rect4f
 import com.akane.akastudio.core.color.api.SceneBackground
+import com.akane.akastudio.core.color.api.TextOverlay
 import com.akane.akastudio.core.color.math.ColorMath
 import com.akane.akastudio.core.composer.api.BackgroundStyle
 import com.akane.akastudio.core.composer.api.CanvasSize
@@ -143,21 +145,67 @@ class DefaultCollageComposerTest {
         assertEquals(OverlayFont.MONO, overlay.font)
         assertEquals(OverlayAlign.CENTER, overlay.align)
         assertEquals(0xFF2B2B2B.toInt(), overlay.argb)
+        assertEquals("a solid matte needs no halo", 0, overlay.haloArgb)
+        assertEquals(1080f - 48f, overlay.maxWidthPx)
         assertEquals(24f, scene.layers[0].cornerRadiusPx, 0f)
+        assertTrue("the caption lies on the matte, clear of the photo", captionBox(overlay).top > scene.layers[0].dst.bottom)
+        assertTrue("and inside the canvas", captionBox(overlay).bottom < scene.canvasHeight)
+
+        val anthracite = composer.compose(request(StoryTemplate.HERO_GALLERY_MATTE, style.copy(background = BackgroundStyle.Anthracite)))
+        assertEquals(0xFFD9D6CF.toInt(), anthracite.overlays.single().argb)
+        assertEquals(0, anthracite.overlays.single().haloArgb)
     }
 
     @Test
-    fun caption_otherTemplates_sitAboveTheBottomEdge_scaledFor4K_inLightInk() {
-        val style = LayoutStyle(background = BackgroundStyle.Anthracite, showExifCaption = true)
-        val overlay = composer.compose(request(StoryTemplate.QUAD_GRID, style, CanvasSize.STORY_4K)).overlays.single()
-        assertEquals(3840f - 128f, overlay.baselineY)
-        assertEquals(1080f, overlay.anchorX)
+    fun caption_onTheFrostedMatte_usesLightInkOnAHalo() {
+        val style = LayoutStyle(background = BackgroundStyle.FrostedGlass, showExifCaption = true)
+        val overlay = composer.compose(request(StoryTemplate.HERO_GALLERY_MATTE, style)).overlays.single()
+        assertEquals(0xFFD9D6CF.toInt(), overlay.argb)
+        assertEquals(0xB3000000.toInt(), overlay.haloArgb)
+    }
+
+    @Test
+    fun caption_otherTemplates_sitInsideTheAnchorCell_scaledFor4K_inLightInkOnAHalo() {
+        // OffWhite would give dark ink on the matte, but the text sits on a photo, so it must not follow the matte.
+        val style = LayoutStyle(background = BackgroundStyle.OffWhite, showExifCaption = true)
+        val scene = composer.compose(request(StoryTemplate.QUAD_GRID, style, CanvasSize.STORY_4K))
+        val overlay = scene.overlays.single()
+        val anchor = scene.layers[0].dst
+        assertEquals(anchor.bottom - 128f, overlay.baselineY)
+        assertEquals((anchor.left + anchor.right) / 2f, overlay.anchorX)
+        assertEquals(anchor.width - 96f, overlay.maxWidthPx)
         assertEquals(52f, overlay.sizePx)
         assertEquals(0xFFD9D6CF.toInt(), overlay.argb)
+        assertEquals(0xB3000000.toInt(), overlay.haloArgb)
 
-        val frosted = composer.compose(request(StoryTemplate.HERO_FULL_BLEED, style.copy(background = BackgroundStyle.FrostedGlass)))
-        assertEquals(1920f - 64f, frosted.overlays.single().baselineY)
-        assertEquals(0xFFD9D6CF.toInt(), frosted.overlays.single().argb)
+        val hero = composer.compose(request(StoryTemplate.HERO_FULL_BLEED, style.copy(background = BackgroundStyle.Anthracite)))
+        assertEquals("full bleed keeps its edge offset", 1920f - 64f, hero.overlays.single().baselineY)
+        assertEquals(540f, hero.overlays.single().anchorX)
+        assertEquals(0xB3000000.toInt(), hero.overlays.single().haloArgb)
+    }
+
+    @Test
+    fun caption_everyTemplate_describesThePhotoItSitsOn() {
+        val photos = List(4) { i -> photo(i, metadata = CaptureMetadata.EMPTY.copy(focalLength35mm = 20 + i, iso = 100 * (i + 1))) }
+        for (template in StoryTemplate.entries) for (gutter in floatArrayOf(0f, 12f, 48f)) for (canvas in CanvasSize.entries) {
+            val style = LayoutStyle(gutterPx = gutter, cornerRadiusPx = 64f, background = BackgroundStyle.PaletteDerived, showExifCaption = true)
+            val scene = composer.compose(request(template, style, canvas, photos.take(template.photoCount)))
+            val overlay = scene.overlays.single()
+            val box = captionBox(overlay)
+            val cells = scene.layers.map { it.dst }
+            val label = "$template gutter=$gutter $canvas"
+            assertEquals(label, "20mm · ISO 100", overlay.text)
+            if (template == StoryTemplate.HERO_GALLERY_MATTE) {
+                assertTrue("$label: under the photo", box.top > cells[0].bottom && box.bottom < scene.canvasHeight)
+            } else {
+                val a = cells[0]
+                assertTrue("$label: $box inside the anchor $a", box.left >= a.left && box.right <= a.right && box.top >= a.top && box.bottom <= a.bottom)
+            }
+            cells.drop(1).forEachIndexed { i, other ->
+                val overlaps = box.left < other.right && box.right > other.left && box.top < other.bottom && box.bottom > other.top
+                assertTrue("$label: caption overlaps slot ${i + 1}", !overlaps)
+            }
+        }
     }
 
     @Test
@@ -169,6 +217,21 @@ class DefaultCollageComposerTest {
             photos = listOf(photo(0, metadata = CaptureMetadata.EMPTY)),
         )
         assertTrue(composer.compose(unknown).overlays.isEmpty())
+    }
+
+    /**
+     * A generous bound on where the rasterizer can put ink for [overlay]: the run at most `maxWidthPx` wide, font
+     * extents of 1.2 em above and 0.35 em below the baseline, plus the halo (about 0.22 em + 1.5 px).
+     */
+    private fun captionBox(overlay: TextOverlay): Rect4f {
+        val halo = if (overlay.haloArgb ushr 24 != 0) 0.25f * overlay.sizePx + 2f else 0f
+        val half = overlay.maxWidthPx / 2f + halo
+        return Rect4f(
+            overlay.anchorX - half,
+            overlay.baselineY - 1.2f * overlay.sizePx - halo,
+            overlay.anchorX + half,
+            overlay.baselineY + 0.35f * overlay.sizePx + halo,
+        )
     }
 
     @Test

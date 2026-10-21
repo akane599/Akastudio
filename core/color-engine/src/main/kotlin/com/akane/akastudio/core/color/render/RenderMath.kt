@@ -404,6 +404,27 @@ internal object RenderMath {
         )
     }
 
+    /** Halo stroke width around each glyph, in ems of the run's text size. */
+    const val HALO_STROKE_EM = 0.16f
+
+    /** Blur radius softening the halo's outer edge, in ems of the run's text size. */
+    const val HALO_BLUR_EM = 0.08f
+
+    /**
+     * How far a halo for text of [sizePx] reaches past the glyph outline, in pixels: half the stroke plus about
+     * three standard deviations of the edge blur (Skia maps a blur radius r to σ ≈ 0.577·r + 0.5).
+     */
+    fun haloExtentPx(sizePx: Float): Float =
+        sizePx * HALO_STROKE_EM / 2f + 3f * (0.577f * sizePx * HALO_BLUR_EM + 0.5f)
+
+    /**
+     * The text size at which a run measured [textWidth] wide at [sizePx] fits within [maxWidthPx]. Returns [sizePx]
+     * when the run already fits or the limit is not positive and finite. Width scales linearly with size (letter
+     * spacing is in ems), up to hinting, so callers re-measure and may apply it again.
+     */
+    fun fittedTextSize(sizePx: Float, textWidth: Float, maxWidthPx: Float): Float =
+        if (maxWidthPx.isFinite() && maxWidthPx > 0f && textWidth > maxWidthPx) sizePx * (maxWidthPx / textWidth) else sizePx
+
     private fun log2(x: Double): Double = ln(x) / LN2
 
     private const val LN2 = 0.6931471805599453
