@@ -40,6 +40,10 @@ class DefaultPhotoPreparerTest {
         val failDecode = mutableSetOf<String>()
         val failRegister = mutableSetOf<String>()
         val failAnalysis = mutableSetOf<String>()
+        val failUnregister = mutableSetOf<String>()
+
+        /** How long [register] suspends before recording the registration. */
+        var registerDelayMs = 0L
         var inFlight = 0
         var maxInFlight = 0
 
@@ -59,6 +63,7 @@ class DefaultPhotoPreparerTest {
         }
 
         override suspend fun register(key: String, image: FullResolutionImage) {
+            if (registerDelayMs > 0) delay(registerDelayMs)
             if (key in failRegister) throw IllegalArgumentException("too large")
             registry[key] = image as FakeImage
         }
@@ -66,6 +71,7 @@ class DefaultPhotoPreparerTest {
         override suspend fun unregister(key: String) {
             unregistered += key
             registry.remove(key)
+            if (key in failUnregister) throw IllegalStateException("unregister $key failed")
         }
 
         override suspend fun analysisPixels(candidate: PhotoCandidate, maxEdgePx: Int): ImagePixels {
@@ -136,6 +142,20 @@ class DefaultPhotoPreparerTest {
         preparer.release(listOf("a"))
         assertEquals(listOf("a"), backend.unregistered)
         assertEquals(1, backend.images.single { it.candidateId == "a" }.freed)
+    }
+
+    @Test
+    fun releaseFreesEveryImageWhenAnUnregisterFailsAndThenRethrows() = runTest {
+        preparer.prepare(listOf(a, b), analyses, hero = false)
+        backend.failUnregister += "a"
+        try {
+            preparer.release(listOf("a", "bb"))
+            fail("expected IllegalStateException")
+        } catch (e: IllegalStateException) {
+            assertEquals("unregister a failed", e.message)
+        }
+        assertEquals(listOf("a", "bb"), backend.unregistered)
+        assertTrue(backend.images.all { it.freed == 1 })
     }
 
     @Test

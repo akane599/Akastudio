@@ -22,13 +22,13 @@ import com.akane.akastudio.feature.studio.domain.FakeStudioDependencies
 import com.akane.akastudio.feature.studio.domain.StudioError
 import com.akane.akastudio.feature.studio.domain.StudioErrorMapper
 import com.akane.akastudio.feature.studio.domain.TestData
+import com.akane.akastudio.feature.studio.domain.studioTestDispatchers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
@@ -72,10 +72,12 @@ class StudioViewModelTest {
     }
 
     private fun TestScope.harness(errors: StudioErrorMapper = DefaultStudioErrorMapper()): Harness {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        val deps = FakeStudioDependencies(dispatcher, FakeCurationEngine(result), errors)
+        val deps = FakeStudioDependencies(studioTestDispatchers(testScheduler), FakeCurationEngine(result), errors)
         deps.ingestScripts += TestData.ingestion(listOf(a, b, c), skipped = 1)
-        val vm = StudioViewModel(deps, CoroutineScope(SupervisorJob(backgroundScope.coroutineContext.job) + dispatcher))
+        val vm = StudioViewModel(
+            deps,
+            CoroutineScope(SupervisorJob(backgroundScope.coroutineContext.job) + deps.dispatchers.main),
+        )
         val phases = mutableListOf<StudioPhase>()
         val effects = mutableListOf<StudioEffect>()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
