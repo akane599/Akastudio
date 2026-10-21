@@ -2,6 +2,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <!-- No media permissions: photos come from the system photo picker (images only), archives from the document picker. -->
+    <!-- No network: everything runs on-device. MediaPipe's data-transport telemetry (CCT backend) brings INTERNET and
+         ACCESS_NETWORK_STATE; its backend is removed below so events are dropped instead of queued for upload.
+         `check<Variant>NoInternetPermission` (app/build.gradle.kts) fails the build if INTERNET comes back. -->
+    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
+    <!-- Dormant transitive plumbing: WorkManager (never initialised, see the provider below) wants WAKE_LOCK and
+         RECEIVE_BOOT_COMPLETED; LiteRT / Play Asset Delivery want the dataSync foreground service for AI-pack downloads,
+         whose service ships disabled. Models load from APK assets, so none of it runs. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" tools:node="remove" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" tools:node="remove" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" tools:node="remove" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" tools:node="remove" />
     <application
         android:name=".AkaStudioApp"
         android:allowBackup="true"
@@ -34,5 +46,16 @@
                 android:value="androidx.startup"
                 tools:node="remove" />
         </provider>
+        <!-- MediaPipe's TaskRunner always builds a data-transport logger, so the runtime stays (excluding it crashes task
+             creation). With no backend registered, the scheduler rejects each event instead of storing it.
+             MissingClass is the same transitive-runtime-classpath false positive as on the startup provider. -->
+        <service
+            android:name="com.google.android.datatransport.runtime.backends.TransportBackendDiscovery"
+            tools:ignore="MissingClass"
+            tools:node="merge">
+            <meta-data
+                android:name="backend:com.google.android.datatransport.cct.CctBackendFactory"
+                tools:node="remove" />
+        </service>
     </application>
 </manifest>
