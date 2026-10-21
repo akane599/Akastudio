@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
@@ -43,6 +44,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -54,6 +56,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.akane.akastudio.core.color.api.ImagePixels
 import com.akane.akastudio.core.color.api.RenderScene
@@ -107,6 +110,10 @@ internal data class SlotDrag(val from: Int, val start: Offset, val current: Offs
  *
  * With a null [renderer] (previews, screenshot tests) the canvas draws the scene's cell layout as hairline outlines
  * instead of a GPU surface.
+ *
+ * The canvas is image space, so it lays out left to right even in a right-to-left locale: the render, the compare
+ * split (ungraded on the left) and the scope traces are drawn in unmirrored image coordinates, and the frame, the
+ * compare handle and labels and the docked scope must not mirror around them.
  *
  * @param scene The preview scene, or null before a story exists.
  * @param revision The scene revision; each new value (or [compare] change) triggers one render.
@@ -178,65 +185,69 @@ internal fun StoryCanvasLayout(
     val spacing = DarkroomTheme.spacing
     val dragState = remember { mutableStateOf<SlotDrag?>(null) }
 
-    BoxWithConstraints(modifier.background(DarkroomTheme.colors.canvasBackdrop)) {
-        val viewWidth = if (constraints.hasBoundedWidth) constraints.maxWidth.toFloat() else 0f
-        val viewHeight = if (constraints.hasBoundedHeight) {
-            constraints.maxHeight.toFloat()
-        } else {
-            viewWidth * canvasHeight / canvasWidth
-        }
-        val transform = remember(viewWidth, viewHeight, canvasWidth, canvasHeight) {
-            CanvasTransform(viewWidth, viewHeight, canvasWidth, canvasHeight)
-        }
-        val viewSize = with(density) { DpSize(viewWidth.toDp(), viewHeight.toDp()) }
-        Box(
-            Modifier
-                .size(viewSize)
-                .canvasSemantics(cellCount, selected, editable, photoIds, overrides, onSelect, onIntent)
-                .canvasGestures(
-                    transform = transform,
-                    scene = scene,
-                    selectedSlot = selected,
-                    onSelect = onSelect,
-                    onIntent = onIntent,
-                    hitTest = hitTest,
-                    photoIds = photoIds,
-                    overrides = overrides,
-                    editable = editable,
-                    dragState = dragState,
-                ),
-        ) {
-            val frame = transform.frame ?: return@Box
-            val frameSize = with(density) { DpSize(frame.width.toDp(), frame.height.toDp()) }
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        BoxWithConstraints(modifier.background(DarkroomTheme.colors.canvasBackdrop)) {
+            val viewWidth = if (constraints.hasBoundedWidth) constraints.maxWidth.toFloat() else 0f
+            val viewHeight = if (constraints.hasBoundedHeight) {
+                constraints.maxHeight.toFloat()
+            } else {
+                viewWidth * canvasHeight / canvasWidth
+            }
+            val transform = remember(viewWidth, viewHeight, canvasWidth, canvasHeight) {
+                CanvasTransform(viewWidth, viewHeight, canvasWidth, canvasHeight)
+            }
+            val viewSize = with(density) { DpSize(viewWidth.toDp(), viewHeight.toDp()) }
             Box(
                 Modifier
-                    .offset { IntOffset(frame.left.roundToInt(), frame.top.roundToInt()) }
-                    .size(frameSize)
-                    .clipToBounds(),
+                    .size(viewSize)
+                    .canvasSemantics(cellCount, selected, editable, photoIds, overrides, onSelect, onIntent)
+                    .canvasGestures(
+                        transform = transform,
+                        scene = scene,
+                        selectedSlot = selected,
+                        onSelect = onSelect,
+                        onIntent = onIntent,
+                        hitTest = hitTest,
+                        photoIds = photoIds,
+                        overrides = overrides,
+                        editable = editable,
+                        dragState = dragState,
+                    ),
             ) {
-                if (renderer != null) {
-                    PreviewSurface(scene, revision, compare, renderer, Modifier.fillMaxSize())
-                }
-                if (renderer == null || scene == null) {
-                    PlaceholderScene(scene, canvasWidth, canvasHeight, Modifier.fillMaxSize())
-                }
-                SelectionOverlay(scene, canvasWidth, canvasHeight, selected, dragState.value, Modifier.fillMaxSize())
-                if (compare != null) {
-                    CompareHandle(compare, { onIntent(StudioIntent.SetCompare(it)) }, Modifier.fillMaxSize())
-                    CompareLabel(before = true, modifier = Modifier.align(Alignment.TopStart).padding(spacing.s))
-                }
-                Column(
-                    modifier = Modifier.align(Alignment.TopEnd).padding(spacing.s),
-                    horizontalAlignment = Alignment.End,
-                    verticalArrangement = Arrangement.spacedBy(spacing.s),
+                val frame = transform.frame ?: return@Box
+                val frameSize = with(density) { DpSize(frame.width.toDp(), frame.height.toDp()) }
+                Box(
+                    Modifier
+                        .offset { IntOffset(frame.left.roundToInt(), frame.top.roundToInt()) }
+                        .size(frameSize)
+                        .clipToBounds(),
                 ) {
-                    if (compare != null) CompareLabel(before = false)
-                    if (scope != ScopeMode.OFF) {
-                        ScopeOverlay(
-                            pixels = scopePixels,
-                            mode = scope,
-                            modifier = Modifier.width(scopePanelWidth(frameSize.width, spacing.s)),
-                        )
+                    if (renderer != null) {
+                        PreviewSurface(scene, revision, compare, renderer, Modifier.fillMaxSize())
+                    }
+                    if (renderer == null || scene == null) {
+                        PlaceholderScene(scene, canvasWidth, canvasHeight, Modifier.fillMaxSize())
+                    }
+                    SelectionOverlay(
+                        scene, canvasWidth, canvasHeight, selected, dragState.value, Modifier.fillMaxSize(),
+                    )
+                    if (compare != null) {
+                        CompareHandle(compare, { onIntent(StudioIntent.SetCompare(it)) }, Modifier.fillMaxSize())
+                        CompareLabel(before = true, modifier = Modifier.align(Alignment.TopStart).padding(spacing.s))
+                    }
+                    Column(
+                        modifier = Modifier.align(Alignment.TopEnd).padding(spacing.s),
+                        horizontalAlignment = Alignment.End,
+                        verticalArrangement = Arrangement.spacedBy(spacing.s),
+                    ) {
+                        if (compare != null) CompareLabel(before = false)
+                        if (scope != ScopeMode.OFF) {
+                            ScopeOverlay(
+                                pixels = scopePixels,
+                                mode = scope,
+                                modifier = Modifier.width(scopePanelWidth(frameSize.width, spacing.s)),
+                            )
+                        }
                     }
                 }
             }

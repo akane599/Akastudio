@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
@@ -35,6 +36,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -47,6 +49,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.toSize
 import com.akane.akastudio.core.color.api.ImagePixels
@@ -144,6 +147,9 @@ fun ScopeOverlay(pixels: ImagePixels?, mode: ScopeMode, modifier: Modifier = Mod
  * The R / G / B identity sits on the caption row, which falls back to the short caption to make room for it, or else
  * on its own row above the plot; a label that would leave the panel or touch another label or the plot is left out
  * (see [ScopeLabelLayout.layout]), so no text overlaps, clips or covers a trace at any panel size.
+ *
+ * The panel lays out left to right in every locale: its traces run from code 0 on the left, and the label positions
+ * from [ScopeLabelLayout] are in the same unmirrored coordinates.
  */
 @Composable
 internal fun ScopePanel(data: ScopeData?, mode: ScopeMode, modifier: Modifier = Modifier) {
@@ -175,36 +181,40 @@ internal fun ScopePanel(data: ScopeData?, mode: ScopeMode, modifier: Modifier = 
         measurer.measure(shortCaption, labelStyle, maxLines = 1).size.toSize()
     }
     val tick = scheme.outline
-    BoxWithConstraints(
-        modifier = modifier
-            .aspectRatio(SCOPE_ASPECT)
-            .background(scheme.surfaceContainerLowest.copy(alpha = PANEL_ALPHA), MaterialTheme.shapes.small)
-            .border(Dp.Hairline, scheme.outline, MaterialTheme.shapes.small)
-            .semantics { contentDescription = caption }
-            .padding(spacing.s),
-    ) {
-        val width = if (constraints.hasBoundedWidth) constraints.maxWidth else 0
-        val height = if (constraints.hasBoundedHeight) constraints.maxHeight else 0
-        val density = LocalDensity.current
-        val gap = with(density) { spacing.xs.roundToPx() }
-        val legend = with(density) { legendSize(channelLabels, spacing.s.roundToPx(), spacing.xs.roundToPx()) }
-        val plot = remember(mode, width, height, captionSize, shortSize, tickLabels, channelLabels, legend, gap) {
-            val content = Size(width.toFloat(), height.toFloat())
-            ScopeLabelLayout.layout(mode, content, captionSize, shortSize, tickLabels, channelLabels, legend, gap.toFloat())
-        }
-        val area = plot.plot
-        Canvas(
-            Modifier
-                .offset { area.at() }
-                .size(with(density) { DpSize(area.width.toDp(), area.height.toDp()) })
-                .testTag(SCOPE_PLOT_TAG),
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        BoxWithConstraints(
+            modifier = modifier
+                .aspectRatio(SCOPE_ASPECT)
+                .background(scheme.surfaceContainerLowest.copy(alpha = PANEL_ALPHA), MaterialTheme.shapes.small)
+                .border(Dp.Hairline, scheme.outline, MaterialTheme.shapes.small)
+                .semantics { contentDescription = caption }
+                .padding(spacing.s),
         ) {
-            translate(-area.left, -area.top) { drawPlot(mode, data, plot, tick, colors) }
+            val width = if (constraints.hasBoundedWidth) constraints.maxWidth else 0
+            val height = if (constraints.hasBoundedHeight) constraints.maxHeight else 0
+            val density = LocalDensity.current
+            val gap = with(density) { spacing.xs.roundToPx() }
+            val legend = with(density) { legendSize(channelLabels, spacing.s.roundToPx(), spacing.xs.roundToPx()) }
+            val plot = remember(mode, width, height, captionSize, shortSize, tickLabels, channelLabels, legend, gap) {
+                val content = Size(width.toFloat(), height.toFloat())
+                ScopeLabelLayout.layout(
+                    mode, content, captionSize, shortSize, tickLabels, channelLabels, legend, gap.toFloat(),
+                )
+            }
+            val area = plot.plot
+            Canvas(
+                Modifier
+                    .offset { area.at() }
+                    .size(with(density) { DpSize(area.width.toDp(), area.height.toDp()) })
+                    .testTag(SCOPE_PLOT_TAG),
+            ) {
+                translate(-area.left, -area.top) { drawPlot(mode, data, plot, tick, colors) }
+            }
+            ScopeText(if (plot.shortCaption) shortCaption else caption, labelStyle, plot.caption.at())
+            plot.tickLabels.forEachIndexed { i, rect -> rect?.let { ScopeText(TICK_LABELS[i], labelStyle, it.at()) } }
+            plot.channelLabels.forEachIndexed { i, rect -> rect?.let { ScopeText(CHANNEL_LABELS[i], labelStyle, it.at()) } }
+            plot.legend?.let { ChannelLegend(Modifier.offset { it.at() }.testTag(SCOPE_LABEL_TAG)) }
         }
-        ScopeText(if (plot.shortCaption) shortCaption else caption, labelStyle, plot.caption.at())
-        plot.tickLabels.forEachIndexed { i, rect -> rect?.let { ScopeText(TICK_LABELS[i], labelStyle, it.at()) } }
-        plot.channelLabels.forEachIndexed { i, rect -> rect?.let { ScopeText(CHANNEL_LABELS[i], labelStyle, it.at()) } }
-        plot.legend?.let { ChannelLegend(Modifier.offset { it.at() }.testTag(SCOPE_LABEL_TAG)) }
     }
 }
 
