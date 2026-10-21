@@ -384,6 +384,36 @@ class StudioViewModelTest {
     }
 
     @Test
+    fun cell_override_is_ignored_while_preparing_or_exporting() = runTest {
+        val h = harness()
+        ready(h)
+        val override = CellOverride(zoom = 2f, panX = 0.1f)
+        h.deps.preparer.delayMs = 10_000
+
+        h.vm.onIntent(StudioIntent.ForceMode(StoryMode.COLLAGE_3))
+        runCurrent()
+        assertEquals(StudioPhase.Preparing, h.state.phase)
+        h.vm.onIntent(StudioIntent.SetCellOverride("a", override))
+        assertTrue("a pinch while preparing is dropped", h.state.overrides.isEmpty())
+        advanceUntilIdle()
+        assertEquals(StudioPhase.Ready, h.state.phase)
+        assertTrue("the prepared story has no crop from the pinch", h.state.overrides.isEmpty())
+        assertTrue(h.deps.composer.requests.last().overrides.isEmpty())
+
+        h.vm.onIntent(StudioIntent.Export(share = false))
+        runCurrent()
+        assertEquals(StudioPhase.Exporting, h.state.phase)
+        val revision = h.state.sceneRevision
+        h.vm.onIntent(StudioIntent.SetCellOverride("a", override))
+        assertTrue("a pinch while exporting is dropped", h.state.overrides.isEmpty())
+        assertEquals(revision, h.state.sceneRevision)
+        advanceUntilIdle()
+        assertEquals(StudioPhase.Ready, h.state.phase)
+        assertTrue(h.state.overrides.isEmpty())
+        assertTrue("no Busy message per pinch frame", h.effects.none { it == StudioEffect.ShowMessage(StudioMessage.Busy) })
+    }
+
+    @Test
     fun harmonization_strength_flows_to_per_layer_harmonization() = runTest {
         val h = harness()
         ready(h)

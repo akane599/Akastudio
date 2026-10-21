@@ -122,6 +122,8 @@ class StudioViewModel(
             is StudioIntent.ForceMode -> forceMode(intent.mode)
             is StudioIntent.SwapCandidate -> swapCandidate(intent.slot, intent.candidateId)
             is StudioIntent.SwapSlots -> if (requireReady()) applyPure(intent)
+            // Crop edits wait for Ready like swaps, but silently: a pinch sends one per frame, so no Busy per frame.
+            is StudioIntent.SetCellOverride -> if (_state.value.phase == StudioPhase.Ready) applyPure(intent)
             is StudioIntent.Export -> export(intent.share)
             StudioIntent.Reset -> resetToEmpty(error = null)
             else -> applyPure(intent)

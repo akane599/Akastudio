@@ -99,11 +99,12 @@ internal data class SlotDrag(val from: Int, val start: Offset, val current: Offs
  * The live 9:16 story canvas: the scene aspect-fit and centred on the canvas backdrop, rendered by [renderer] into a
  * GPU surface, with direct-manipulation gestures on top.
  *
- * - Tap selects a cell (outlined); double-tap selects it and resets its crop override.
+ * - Tap selects a cell (outlined); double-tap selects it and, while [editable], resets its crop override.
  * - Long-press then drag swaps the picked cell with the one it is dropped on ([StudioIntent.SwapSlots]); only while
  *   [editable], since the studio rejects a swap outside its Ready phase.
  * - Two-finger pinch or pan zooms (1..4) and pans (-1..1) the cell under the fingers, or the selected cell, sending
- *   at most one [StudioIntent.SetCellOverride] per display frame.
+ *   at most one [StudioIntent.SetCellOverride] per display frame; it starts only while [editable], since the studio
+ *   ignores crop edits outside its Ready phase.
  * - With [compare] set, a draggable split handle sends [StudioIntent.SetCompare]; "Before"/"After" mark each side.
  * - Accessibility services get custom actions for the same edits: select next cell, swap with next cell, zoom in,
  *   zoom out and reset crop (see [CanvasActions]); the editing ones only while [editable].
@@ -122,8 +123,8 @@ internal data class SlotDrag(val from: Int, val start: Offset, val current: Offs
  * @param overrides The current per-photo overrides; a pinch starts from the cell's current override.
  * @param scope The scope to dock at the top-right of the canvas, or [ScopeMode.OFF].
  * @param scopePixels The scope readback for [scope].
- * @param editable Whether the studio accepts edits now (its Ready phase); when false the swap gesture and the editing
- *   accessibility actions are off, so none reports an edit the studio would reject.
+ * @param editable Whether the studio accepts edits now (its Ready phase); when false the swap, pinch and double-tap
+ *   reset gestures and the editing accessibility actions are off, so none reports an edit the studio would reject.
  */
 @Composable
 fun StoryCanvas(
@@ -341,6 +342,7 @@ private fun Modifier.canvasGestures(
                 onDoubleTap = { point ->
                     val slot = slotAt(point) ?: return@detectTapGestures
                     currentOnSelect(slot)
+                    if (!currentEditable) return@detectTapGestures
                     currentPhotoIds.getOrNull(slot)?.let { currentOnIntent(StudioIntent.SetCellOverride(it, null)) }
                 },
             )
@@ -378,7 +380,7 @@ private fun Modifier.canvasGestures(
             detectTwoFingerTransform(
                 onStart = { centroid ->
                     tracker = null
-                    if (dragState.value != null) return@detectTwoFingerTransform false
+                    if (!currentEditable || dragState.value != null) return@detectTwoFingerTransform false
                     val slot = slotAt(centroid) ?: currentSelected ?: return@detectTwoFingerTransform false
                     val cell = currentScene?.layers?.getOrNull(slot)?.dst ?: return@detectTwoFingerTransform false
                     val photoId = currentPhotoIds.getOrNull(slot) ?: return@detectTwoFingerTransform false
