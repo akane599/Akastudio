@@ -24,17 +24,24 @@ import com.akane.akastudio.core.composer.layout.TemplateGeometry
  * photo's EXIF caption in MONO type: dark `#2B2B2B` ink on light mattes (OffWhite, or a light PaletteDerived
  * matte), light `#D9D6CF` ink otherwise.
  *
+ * Solved smart crops are memoised (see [SolvedCropCache]), so rebuilding a scene whose layout inputs did not change,
+ * for example on every grade slider tick, does not search again. The cache is thread-safe and bounded.
+ *
  * Every entry point throws [IllegalArgumentException] when `photos.size != template.photoCount` or a photo has no
  * pixels.
  */
-class DefaultCollageComposer : CollageComposer {
+class DefaultCollageComposer internal constructor(solver: CropSolver) : CollageComposer {
+
+    constructor() : this(SmartCropSolver::solve)
+
+    private val crops = SolvedCropCache(solver)
 
     override fun layout(request: CompositionRequest): List<CellPlacement> {
         val cells = cellsOf(request)
         return request.photos.mapIndexed { slot, photo ->
             val dst = cells[slot]
             val rotation = photo.horizonTiltDegrees.takeIf { it.isFinite() } ?: 0f
-            val solved = SmartCropSolver.solve(photo, dst.width / dst.height, rotation)
+            val solved = crops.solve(photo, dst.width / dst.height, rotation)
             val crop = CropOverrides.apply(photo.widthPx, photo.heightPx, solved, request.overrides[photo.id], rotation)
             CellPlacement(photo.id, dst, crop, rotation)
         }
