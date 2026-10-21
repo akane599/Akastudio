@@ -97,7 +97,8 @@ internal data class SlotDrag(val from: Int, val start: Offset, val current: Offs
  * GPU surface, with direct-manipulation gestures on top.
  *
  * - Tap selects a cell (outlined); double-tap selects it and resets its crop override.
- * - Long-press then drag swaps the picked cell with the one it is dropped on ([StudioIntent.SwapSlots]).
+ * - Long-press then drag swaps the picked cell with the one it is dropped on ([StudioIntent.SwapSlots]); only while
+ *   [editable], since the studio rejects a swap outside its Ready phase.
  * - Two-finger pinch or pan zooms (1..4) and pans (-1..1) the cell under the fingers, or the selected cell, sending
  *   at most one [StudioIntent.SetCellOverride] per display frame.
  * - With [compare] set, a draggable split handle sends [StudioIntent.SetCompare]; "Before"/"After" mark each side.
@@ -112,6 +113,8 @@ internal data class SlotDrag(val from: Int, val start: Offset, val current: Offs
  * @param overrides The current per-photo overrides; a pinch starts from the cell's current override.
  * @param scope The scope to dock at the top-right of the canvas, or [ScopeMode.OFF].
  * @param scopePixels The scope readback for [scope].
+ * @param editable Whether the studio accepts edits now (its Ready phase); when false the swap gesture and the swap
+ *   accessibility action are off, so neither reports a swap the studio would reject.
  */
 @Composable
 fun StoryCanvas(
@@ -121,6 +124,7 @@ fun StoryCanvas(
     compare: Float?,
     onIntent: (StudioIntent) -> Unit,
     hitTest: (Float, Float) -> Int?,
+    editable: Boolean,
     modifier: Modifier = Modifier,
     photoIds: ImmutableList<String> = persistentListOf(),
     overrides: ImmutableMap<String, CellOverride> = persistentMapOf(),
@@ -141,6 +145,7 @@ fun StoryCanvas(
         overrides = overrides,
         scope = scope,
         scopePixels = scopePixels,
+        editable = editable,
         modifier = modifier,
     )
 }
@@ -160,6 +165,7 @@ internal fun StoryCanvasLayout(
     overrides: ImmutableMap<String, CellOverride>,
     scope: ScopeMode,
     scopePixels: ImagePixels?,
+    editable: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val cellCount = scene?.layers?.size ?: 0
@@ -184,7 +190,7 @@ internal fun StoryCanvasLayout(
         Box(
             Modifier
                 .size(viewSize)
-                .canvasSemantics(cellCount, selected, onSelect, onIntent)
+                .canvasSemantics(cellCount, selected, editable, onSelect, onIntent)
                 .canvasGestures(
                     transform = transform,
                     scene = scene,
@@ -194,6 +200,7 @@ internal fun StoryCanvasLayout(
                     hitTest = hitTest,
                     photoIds = photoIds,
                     overrides = overrides,
+                    editable = editable,
                     dragState = dragState,
                 ),
         ) {
@@ -239,6 +246,7 @@ internal fun StoryCanvasLayout(
 private fun Modifier.canvasSemantics(
     cellCount: Int,
     selected: Int?,
+    editable: Boolean,
     onSelect: (Int?) -> Unit,
     onIntent: (StudioIntent) -> Unit,
 ): Modifier {
@@ -252,7 +260,7 @@ private fun Modifier.canvasSemantics(
     return semantics {
         contentDescription = description
         stateDescription = state
-        if (cellCount >= 2) {
+        if (editable && cellCount >= 2) {
             customActions = listOf(
                 CustomAccessibilityAction(swapLabel) {
                     val from = selected ?: 0
@@ -277,6 +285,7 @@ private fun Modifier.canvasGestures(
     hitTest: (Float, Float) -> Int?,
     photoIds: ImmutableList<String>,
     overrides: ImmutableMap<String, CellOverride>,
+    editable: Boolean,
     dragState: MutableState<SlotDrag?>,
 ): Modifier {
     val haptics = LocalHapticFeedback.current
@@ -289,6 +298,7 @@ private fun Modifier.canvasGestures(
     val currentHitTest by rememberUpdatedState(hitTest)
     val currentPhotoIds by rememberUpdatedState(photoIds)
     val currentOverrides by rememberUpdatedState(overrides)
+    val currentEditable by rememberUpdatedState(editable)
 
     fun slotAt(point: Offset): Int? {
         val cells = currentScene?.layers?.size ?: return null
@@ -310,6 +320,7 @@ private fun Modifier.canvasGestures(
         .pointerInput(Unit) {
             detectDragGesturesAfterLongPress(
                 onDragStart = { point ->
+                    if (!currentEditable) return@detectDragGesturesAfterLongPress
                     val slot = slotAt(point) ?: return@detectDragGesturesAfterLongPress
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                     dragState.value = SlotDrag(from = slot, start = point, current = point, target = null)
@@ -323,7 +334,7 @@ private fun Modifier.canvasGestures(
                     val active = dragState.value
                     dragState.value = null
                     val target = active?.let { slotAt(it.current) }
-                    if (active != null && target != null && target != active.from) {
+                    if (currentEditable && active != null && target != null && target != active.from) {
                         currentOnIntent(StudioIntent.SwapSlots(active.from, target))
                         currentOnSelect(target)
                         haptics.performHapticFeedback(HapticFeedbackType.Confirm)

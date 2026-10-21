@@ -278,6 +278,7 @@ private fun StudioWorkspace(
                     compare = state.compare,
                     onIntent = onIntent,
                     hitTest = hitTest,
+                    editable = state.phase == StudioPhase.Ready,
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(vertical = DarkroomTheme.spacing.s),

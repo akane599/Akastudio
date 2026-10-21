@@ -56,6 +56,7 @@ private fun CanvasShot(compare: Float?, selectedSlot: Int?) = DarkroomTheme {
         overrides = persistentMapOf(),
         scope = ScopeMode.OFF,
         scopePixels = null,
+        editable = true,
         modifier = Modifier.fillMaxSize(),
     )
 }
