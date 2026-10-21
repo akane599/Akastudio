@@ -13,6 +13,7 @@ import com.akane.akastudio.core.export.store.PlatformUltraHdrEncoder
 import com.akane.akastudio.core.export.store.PlatformWebpLosslessEncoder
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -26,11 +27,12 @@ import org.junit.runner.RunWith
 class MediaStoreRoundTripDeviceTest {
 
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
-    private val qa = MediaStoreQa(context.contentResolver)
+    private val qa = MediaStoreQa(context)
 
     @After
     fun deleteRows() {
         assertEquals("rows left behind in ${qa.relativePath}", 0, qa.cleanUp())
+        assertFalse("run folder left behind: ${qa.relativePath}", qa.runFolderExists())
     }
 
     @Test

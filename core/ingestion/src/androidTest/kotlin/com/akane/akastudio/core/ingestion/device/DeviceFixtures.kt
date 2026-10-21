@@ -10,6 +10,7 @@ import android.graphics.Shader
 import android.media.ExifInterface
 import android.net.Uri
 import android.os.Environment
+import android.os.storage.StorageManager
 import android.provider.MediaStore
 import android.util.Log
 import androidx.test.platform.app.InstrumentationRegistry
@@ -99,12 +100,18 @@ internal fun List<IngestionEvent>.failures(): List<IngestionEvent.SourceFailed> 
 
 /**
  * Rows this test run inserted into the shared MediaStore, all under `Pictures/AkaStudioQA/<runId>` or
- * `Download/AkaStudioQA/<runId>`. [deleteAll] removes every one of them.
+ * `Download/AkaStudioQA/<runId>`. [deleteAll] removes every one of them, then those run folders.
  */
 internal class QaMediaStore {
     val runId: String = "run-" + UUID.randomUUID().toString().take(8)
     private val resolver = targetContext.contentResolver
     private val inserted = mutableListOf<Uri>()
+
+    /** The run folders on shared storage: MediaStore creates them on the first insert but never removes them. */
+    private val runFolders: List<File> =
+        targetContext.getSystemService(StorageManager::class.java).primaryStorageVolume.directory?.let { root ->
+            listOf(Environment.DIRECTORY_PICTURES, Environment.DIRECTORY_DOWNLOADS).map { File(root, "$it/AkaStudioQA/$runId") }
+        }.orEmpty()
 
     fun insertImage(displayName: String, bytes: ByteArray, dateTakenMillis: Long? = null): Uri =
         insert(
@@ -138,10 +145,16 @@ internal class QaMediaStore {
         return uri
     }
 
-    /** Returns how many rows were actually deleted. */
+    /**
+     * Deletes every inserted row, then each run folder if it is empty, and returns how many rows were actually
+     * deleted. Throws when a run folder is still on shared storage afterwards.
+     */
     fun deleteAll(): Int {
         val deleted = inserted.sumOf { resolver.delete(it, null, null) }
         inserted.clear()
+        runFolders.forEach(File::delete)
+        val left = runFolders.filter(File::exists)
+        check(left.isEmpty()) { "QA run folders left behind: $left" }
         return deleted
     }
 }

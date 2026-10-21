@@ -9,7 +9,9 @@ import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Shader
 import android.net.Uri
+import android.os.storage.StorageManager
 import android.provider.MediaStore
+import java.io.File
 import kotlin.random.Random
 
 /**
@@ -30,16 +32,25 @@ internal object QaPhotos {
     fun insert(context: Context, runId: String, count: Int): List<Uri> = (0 until count).map { index ->
         val bitmap = scene(index)
         try {
-            write(context, "akastudio_qa_${runId}_$index.jpg", "Pictures/AkaStudioQA/$runId", bitmap)
+            write(context, "akastudio_qa_${runId}_$index.jpg", relativePath(runId), bitmap)
         } finally {
             bitmap.recycle()
         }
     }
 
-    /** Deletes rows this process inserted; missing rows are ignored. */
-    fun delete(context: Context, uris: List<Uri>) {
+    /**
+     * Deletes rows this process inserted (missing rows are ignored), then the run's folder if it is empty: MediaStore
+     * creates `Pictures/AkaStudioQA/<runId>` on the first insert but never removes it. Throws when it is still there.
+     */
+    fun delete(context: Context, runId: String, uris: List<Uri>) {
         uris.forEach { uri -> runCatching { context.contentResolver.delete(uri, null, null) } }
+        val root = context.getSystemService(StorageManager::class.java).primaryStorageVolume.directory ?: return
+        val folder = File(root, relativePath(runId))
+        folder.delete()
+        check(!folder.exists()) { "QA run folder left behind: $folder" }
     }
+
+    private fun relativePath(runId: String): String = "Pictures/AkaStudioQA/$runId"
 
     private fun write(context: Context, name: String, relativePath: String, bitmap: Bitmap): Uri {
         val resolver = context.contentResolver

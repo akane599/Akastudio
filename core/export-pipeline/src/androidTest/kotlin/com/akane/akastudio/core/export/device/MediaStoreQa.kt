@@ -2,9 +2,12 @@ package com.akane.akastudio.core.export.device
 
 import android.content.ContentResolver
 import android.content.ContentValues
+import android.content.Context
 import android.net.Uri
 import android.os.Bundle
+import android.os.storage.StorageManager
 import android.provider.MediaStore
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -24,15 +27,21 @@ internal data class MediaRow(
 
 /**
  * MediaStore bookkeeping for one test run: exported rows are moved into `Pictures/AkaStudioQA/<run-id>/` and every
- * row this run created is deleted by [cleanUp], so QA files never mix with real exports.
+ * row this run created, and then that folder, is deleted by [cleanUp], so QA files never mix with real exports.
  */
-internal class MediaStoreQa(private val resolver: ContentResolver) {
+internal class MediaStoreQa(context: Context) {
+
+    private val resolver: ContentResolver = context.contentResolver
 
     val runId: String = "run-" + SimpleDateFormat("yyyyMMdd-HHmmss", Locale.ROOT).format(Date()) + "-" +
         Random.nextInt(0x10000).toString(16)
 
     /** `Pictures/AkaStudioQA/<run-id>/`, in MediaStore's RELATIVE_PATH form (trailing slash). */
     val relativePath: String = "Pictures/AkaStudioQA/$runId/"
+
+    /** The run folder on shared storage: MediaStore creates it for the first row moved in but never removes it. */
+    private val runFolder: File? =
+        context.getSystemService(StorageManager::class.java).primaryStorageVolume.directory?.let { File(it, relativePath) }
 
     private val created = mutableListOf<Uri>()
 
@@ -54,12 +63,20 @@ internal class MediaStoreQa(private val resolver: ContentResolver) {
         arrayOf(relativePath),
     )
 
-    /** Deletes every tracked row and returns how many rows of this run are left (tracked or in the QA folder). */
+    /**
+     * Deletes every tracked row, then the run folder if it is empty, and returns how many rows of this run are left
+     * (tracked or in the QA folder).
+     */
     fun cleanUp(): Int {
         for (uri in created) resolver.delete(uri, null, null)
         val leftTracked = created.count { row(it) != null }
-        return leftTracked + rowsInRunFolder().size
+        val left = leftTracked + rowsInRunFolder().size
+        runFolder?.delete()
+        return left
     }
+
+    /** True while the run folder is still on shared storage (an empty folder left behind counts). */
+    fun runFolderExists(): Boolean = runFolder?.exists() == true
 
     private fun query(uri: Uri, selection: String?, args: Array<String>?): List<MediaRow> {
         val queryArgs = Bundle().apply {

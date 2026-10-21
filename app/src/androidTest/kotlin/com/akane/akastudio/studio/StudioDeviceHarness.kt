@@ -40,7 +40,8 @@ internal const val UI_TIMEOUT_MS = 30_000L
  * Drives the real studio: [MainActivity] on the real `AkaStudioApp` container, fed photos the way the picker result
  * is (`StudioIntent.ImportPhotos` with content uris, sent to the activity's own [StudioViewModel]).
  *
- * The activity is launched with a plain explicit intent. Photos inserted for the run are deleted on [close].
+ * The activity is launched with a plain explicit intent. Photos inserted for the run, and their folder, are deleted
+ * on [close].
  */
 internal class StudioDeviceHarness(private val compose: ComposeTestRule) : Closeable {
 
@@ -138,7 +139,7 @@ internal class StudioDeviceHarness(private val compose: ComposeTestRule) : Close
         try {
             launched?.close()
         } finally {
-            QaPhotos.delete(context, photos)
+            QaPhotos.delete(context, runId, photos)
         }
     }
 }
