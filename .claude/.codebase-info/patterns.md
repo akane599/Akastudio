@@ -1,0 +1,13 @@
+# Patterns & Conventions
+*Last Updated: 2026-10-21*
+
+- **Frozen `api/` packages.** Each core module exposes its seams in one `api/` package (`core/ingestion/api`, `core/curator/api`, `core/color/api`, `core/composer/api`, `core/export/api`). Other modules and `:feature:studio` consume only these plus the factory functions; changing them is a cross-module change.
+- **Pure Kotlin logic, thin Android adapters.** Algorithms (metrics, decision, colour math, encoders, Lanczos, crop, horizon, reducer) are plain Kotlin with no Android types; adapters (`MediaPickerIngestor`, `ml/MediaPipeAdapters`, `LiteRtNimaScorer`, `MediaStoreSink`, `PlatformEncoders`, `AndroidPreparerBackend`) wrap the platform behind small interfaces (`*Seams.kt`, `PreparerBackend`).
+- **No DI framework.** Constructor injection; `StudioContainer` is the only composition root. Lazy construction keeps startup cheap.
+- **JVM tests, no Robolectric.** Tests live in `<module>/src/test/kotlin` and run with `testDebugUnitTest`; Android-dependent code is tested through fakes of the seams. UI is covered by screenshot tests in `feature/studio/src/screenshotTest` and `app/src/screenshotTest` (`@PreviewTest @Preview`), refs under `screenshotTestDebug/reference`.
+- **MVI.** `StudioState` (immutable, kotlinx persistent collections) ← `StudioReducer.reduce(state, intent)` (pure); side work and one-shot `StudioEffect`s live in `StudioViewModel`. Work jobs are tracked and cancelled via `launchWork`/`cancelWork`.
+- **Graceful degradation.** Model load failure → `CuratorModels.degraded` with heuristic fallbacks; weak GL → reduced/identity grader (`GraderSelection.kt`); Ultra HDR without headroom or below API 34 → Social JPEG.
+- **NIMA single-thread confinement.** `ml/LiteRtNimaScorer.kt` compiles and runs the LiteRT model on one daemon executor thread named `nima-litert`; tests compare thread-name prefixes (coroutine debug appends a suffix).
+- **CPU reference vs GPU parity.** `core/color/grade/CpuGradingPipeline` is the reference; `ShaderLayerGrader` must match within 2/255. `GradingParityFixtures` (JVM-tested by `GradingParityFixturesTest`) builds expected tables; `GradingParityProbe` is a device-only harness (needs GLES 3, logs under tag `GradingParity`).
+- **Process-wide, never-closed heavies.** Renderer, models and container live for the process; the preparer recycles bitmaps only after `unregisterImage`.
+- Decisions and numeric constants: `PROGRESS.md`.

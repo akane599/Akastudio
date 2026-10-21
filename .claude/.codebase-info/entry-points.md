@@ -1,0 +1,32 @@
+# Entry Points
+*Last Updated: 2026-10-21*
+
+Paths relative to `<module>/src/main/kotlin/com/akane/akastudio/`.
+
+## App launch
+`app/src/main/AndroidManifest.xml` → `AkaStudioApp.kt` (`onCreate` builds `StudioContainer(this)`, starts a thread running `purgeStaleIngestionDirs`) → `MainActivity.kt` (edge-to-edge, `DarkroomTheme { StudioRoute(container) }`).
+
+## UI
+`feature/studio/ui/StudioRoute.kt` — `StudioRoute(container: StudioDependencies)`: builds `StudioViewModel` via `studioViewModelFactory`, collects `state`, handles `StudioEffect.ShareExport` (chooser) and `ShowMessage` (snackbar), renders `StudioScreen`. Intents flow `StudioScreen` → `viewModel.onIntent(StudioIntent)`.
+
+`feature/studio/mvi/StudioViewModel.kt` — `onIntent`: pure intents go through `StudioReducer.reduce`; async intents launch work: `runIngestion` → `startCuration`/`curate` → `prepareAndShow` → (`reprepare`/`forceMode`/`swapCandidate`) → `export`/`runExport`; `runScopePipeline` feeds the waveform. `onCleared` unregisters photos.
+
+## Wiring
+`feature/studio/di/StudioContainer.kt` implements `StudioDependencies` with lazily built parts:
+- `newIngestionSession()` → `createIngestionSession(app)`; `analysisDecoder` → `createAnalysisDecoder(app)`
+- `curation` → `DefaultCurationEngine(pixels, models = LazyAnalysisModels { CuratorModelsFactory.create(app) })`
+- `composer` → `DefaultCollageComposer()`
+- `renderer` → `createStoryRenderer(app)`; `exporter` → `createStoryExporter(app, renderer)`
+- `preparer` → `DefaultPhotoPreparer(AndroidPreparerBackend(FullResolutionDecoder, renderer, analysisDecoder))`
+- `harmonizer` → `Harmonizer.forCollage`; `errors` → `StudioContainerErrorMapper`
+
+## Factories
+| Factory | File |
+|---|---|
+| `createIngestionSession`, `createAnalysisDecoder`, `purgeStaleIngestionDirs` (`IngestionFactory.kt`) | `core/ingestion/IngestionFactory.kt` |
+| `CuratorModelsFactory.create(context)` | `core/curator/ml/CuratorModels.kt` |
+| `createStoryRenderer(context)` | `core/color/render/StoryRendererFactory.kt` |
+| `createStoryExporter(context, renderer)` | `core/export/store/StoryExporterFactory.kt` |
+
+## Debug-only
+`core/color/render/grade/GradingParityProbe.run(assets)`: no production caller; see patterns.md.
