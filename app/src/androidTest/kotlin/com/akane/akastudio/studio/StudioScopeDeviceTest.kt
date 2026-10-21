@@ -21,6 +21,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.math.ceil
 
 /** SQ-65: the docked scope on the device's real canvas, sized to be readable, with no text touching in any mode. */
 @RunWith(AndroidJUnit4::class)
@@ -71,8 +72,13 @@ class StudioScopeDeviceTest {
 
             val captionNode = labels.single { it.text() == caption }
             val layout = textLayout(captionNode)
-            assertFalse("$mode: caption \"$caption\" is clipped", layout.hasVisualOverflow)
-            assertFalse("$mode: caption \"$caption\" is ellipsized", layout.isLineEllipsized(0))
+            // hasVisualOverflow is no use here: the paragraph is laid out at the panel's full width, wider than the node.
+            val fullWidth = ceil(layout.multiParagraph.intrinsics.maxIntrinsicWidth)
+            val metrics = "size=${layout.size} full text=$fullWidth lines=${layout.lineCount}"
+            assertEquals("$mode: caption \"$caption\" wraps ($metrics)", 1, layout.lineCount)
+            assertFalse("$mode: caption \"$caption\" is ellipsized ($metrics)", layout.isLineEllipsized(0))
+            assertFalse("$mode: caption \"$caption\" is cut at the bottom ($metrics)", layout.didOverflowHeight)
+            assertTrue("$mode: caption \"$caption\" is cut at the end ($metrics)", fullWidth <= layout.size.width)
         }
     }
 
