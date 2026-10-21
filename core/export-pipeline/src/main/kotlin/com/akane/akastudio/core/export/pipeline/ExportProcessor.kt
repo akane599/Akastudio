@@ -18,7 +18,6 @@ import com.akane.akastudio.core.export.encode.SrgbIccProfile
 import com.akane.akastudio.core.export.encode.WebpContainer
 import com.akane.akastudio.core.export.process.Dither
 import com.akane.akastudio.core.export.process.GainMapMath
-import com.akane.akastudio.core.export.process.GainMapResult
 import com.akane.akastudio.core.export.process.Lanczos3
 import com.akane.akastudio.core.export.process.LumaSharpen
 import kotlinx.coroutines.Dispatchers
@@ -42,8 +41,9 @@ import kotlin.math.pow
  *   dither / 16-bit rounding) is fused into the encoder's row pulls and reported as ENCODE; a separate dithered frame
  *   would exceed the memory budget.
  * - SOCIAL_STORY_JPEG adds RESAMPLE (only when the render is larger than the target) and SHARPEN before ENCODE.
- * - ULTRA_HDR_JPEG reports the optional highlight boost and the gain-map computation inside RENDER (they produce the
- *   HDR/SDR pair), then SHARPEN (after RESAMPLE if the render is larger), ENCODE.
+ * - ULTRA_HDR_JPEG reports the optional highlight boost and the headroom decision inside RENDER, then SHARPEN of the
+ *   HDR frame (after RESAMPLE if the render is larger), then ENCODE, which derives the gain map and its SDR base
+ *   from the sharpened HDR frame before the platform encode, so the encoded base is the one the gain describes.
  * - WEBP_LOSSLESS dithers into the platform bitmap (DITHER), lays out the ICC + EXIF container (ENCODE), then streams
  *   it into the sink (WRITE).
  * - WRITE reaches 1 once the sink has published the entry.
@@ -52,7 +52,7 @@ import kotlin.math.pow
  * target size and reports SOCIAL_STORY_JPEG. So does an ULTRA_HDR_JPEG export without hdrBoost whose render has no
  * perceptible HDR headroom (gain-map ratioMax below [MIN_HDR_RATIO], a third of a stop): an SDR source whose grade only
  * nudges highlights a few percent past SDR white would get a gain map nobody can see, on a 4:2:0 platform base instead
- * of the 4:4:4 Social one, so the gain-map RENDER steps are followed by the plain Social Story JPEG stages. With
+ * of the 4:4:4 Social one, so the headroom-decision RENDER steps are followed by the plain Social Story JPEG stages. With
  * hdrBoost the same happens when the boosted render has no headroom at all ([MIN_BOOSTED_HDR_RATIO]). The fallback
  * encodes the render itself, not the gain map's tone-mapped base, so it matches an explicit Social export of the same
  * render.
@@ -230,25 +230,26 @@ class ExportProcessor(
             return lossless
         }
 
+        /**
+         * The headroom decision (RENDER), RESAMPLE when larger than the target, SHARPEN on the HDR frame, then ENCODE:
+         * the gain map is derived from the sharpened HDR frame and its base is what the encoder receives. Sharpening
+         * the tone-mapped base after the gain was computed would encode a base the gain was never measured against
+         * (and could push its channels past SDR white, where the encoder clips them).
+         */
         private suspend fun writeUltraHdr(frame: Frame, encoder: UltraHdrEncoder) {
-            var gainMap = gainMapWithHeadroom(frame) ?: run {
+            if (!hasHeadroom(frame)) {
                 format = ExportFormat.SOCIAL_STORY_JPEG
                 return writeSocialJpeg(frame)
             }
-            if (gainMap.sdr.width > target.width || gainMap.sdr.height > target.height) {
-                progress.stage(ExportStage.RESAMPLE, 0f)
-                gainMap = gainMap.copy(sdr = Lanczos3.resample(gainMap.sdr, target.width, target.height))
-                frame.image = gainMap.sdr
-                progress.stage(ExportStage.RESAMPLE, 1f)
-            }
+            resampleIfLarger(frame)
             progress.stage(ExportStage.SHARPEN, 0f)
-            gainMap = gainMap.copy(sdr = LumaSharpen.apply(gainMap.sdr))
-            frame.image = gainMap.sdr
-            val gain = gainMap
+            frame.image = LumaSharpen.apply(frame.image)
             progress.stage(ExportStage.SHARPEN, 1f)
+            progress.stage(ExportStage.ENCODE, 0f)
+            val gain = GainMapMath.compute(frame.image)
+            frame.image = gain.sdr
             val sdr = gain.sdr
             val exif = exif(sdr.width, sdr.height)
-            progress.stage(ExportStage.ENCODE, 0f)
             publish(sdr.width, sdr.height) { out ->
                 encoder.encode(sdr, gain, out, JPEG_QUALITY, exif)
                 progress.stage(ExportStage.ENCODE, 1f)
@@ -257,32 +258,27 @@ class ExportProcessor(
         }
 
         /**
-         * Finishes RENDER for Ultra HDR: the optional highlight boost, then the gain map, whose SDR base replaces the
-         * frame. Returns `null` when there is no headroom worth encoding: ratioMax below [MIN_HDR_RATIO] without
-         * hdrBoost, or below [MIN_BOOSTED_HDR_RATIO] (an all-zero gain map, a scene with no highlights to boost) with
-         * it. The frame then still holds the render, so the fallback writes exactly what SOCIAL_STORY_JPEG would.
+         * Finishes RENDER for Ultra HDR: the optional highlight boost and the headroom decision. Returns `false` when
+         * there is no headroom worth encoding: ratioMax below [MIN_HDR_RATIO] without hdrBoost, or below
+         * [MIN_BOOSTED_HDR_RATIO] (an all-zero gain map, a scene with no highlights to boost) with it. The frame then
+         * still holds the render, so the fallback writes exactly what SOCIAL_STORY_JPEG would. Otherwise the frame
+         * holds the HDR image to encode (the boosted render with hdrBoost). [GainMapMath.ratioMax] equals the
+         * ratioMax [GainMapMath.compute] reports for the same frame without allocating the SDR base, so the
+         * render, the boosted frame and the base are never all held.
          */
-        private fun gainMapWithHeadroom(frame: Frame): GainMapResult? {
+        private fun hasHeadroom(frame: Frame): Boolean {
             progress.stage(ExportStage.RENDER, 0.5f)
             if (!request.hdrBoost) {
-                val gainMap = GainMapMath.compute(frame.image)
+                val ratioMax = GainMapMath.ratioMax(frame.image)
                 progress.stage(ExportStage.RENDER, 1f)
-                if (gainMap.ratioMax < MIN_HDR_RATIO) return null
-                frame.image = gainMap.sdr
-                return gainMap
+                return ratioMax >= MIN_HDR_RATIO
             }
             val boosted = GainMapMath.boostHighlights(frame.image)
             progress.stage(ExportStage.RENDER, 0.75f)
-            // Decided before the SDR base exists, so the render, the boosted frame and the base are never all held.
-            if (GainMapMath.ratioMax(boosted) < MIN_BOOSTED_HDR_RATIO) {
-                progress.stage(ExportStage.RENDER, 1f)
-                return null
-            }
-            frame.image = boosted
-            val gainMap = GainMapMath.compute(boosted)
-            frame.image = gainMap.sdr
+            val keep = GainMapMath.ratioMax(boosted) >= MIN_BOOSTED_HDR_RATIO
+            if (keep) frame.image = boosted
             progress.stage(ExportStage.RENDER, 1f)
-            return gainMap
+            return keep
         }
 
         /** Closes a streaming ENCODE inside the sink block: everything is encoded, the sink is about to publish. */
@@ -333,6 +329,13 @@ class ExportProcessor(
          * near-zero cut-off (ratioMax above 1 + 1e-4). hdrBoost adds 2 stops to the highlights, so it uses
          * [MIN_BOOSTED_HDR_RATIO] instead. Deliberate brightening of an SDR source past a third of a stop (exposure, a
          * strong harmonization lift) reaches the threshold and keeps the gain map too.
+         *
+         * AUD-03: the base is also bounded per channel, so a saturated colour graded past SDR white counts as headroom
+         * as well (the luminance-only base clipped it and reported none). On a CPU-graded copy of
+         * SdrOnlyUltraHdrDeviceTest's SDR photo (sky to white, saturated patches, grey ramp; no JPEG round trip),
+         * default looks give 0 to 0.20 stop and MEDITERRANEAN_AZURE with contrast 1 gives 0.29, all still below the
+         * threshold, while saturation +1 (0.56, 0.73 with AZURE), temperature -1 (0.56) or halation 1 (0.37) now keep
+         * the gain map.
          */
         val MIN_HDR_RATIO = 2f.pow(1f / 3f)
 

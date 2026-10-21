@@ -73,8 +73,11 @@ object GainMapMath {
 
     /**
      * Tone-maps [hdr] to an SDR base with extended Reinhard on luminance (`Y' = Y (1 + Y / Lw^2) / (1 + Y)`, Lw the
-     * peak luminance, at least 1) and encodes `g = log2((Y_hdr + eps) / (Y_sdr + eps))` on a grid downscaled by
-     * [gainDownscale] (box-averaged luminances per cell).
+     * peak luminance, at least 1), scaling RGB by `min(Y' / Y, 1 / max(1, maxChannel))` so every base channel also
+     * stays within SDR white (the encoder clamps channels to [0, 1]; a saturated highlight would otherwise be clipped
+     * after its gain was measured), and encodes `g = log2((Y_hdr + eps) / (Y_sdr + eps))` on a grid downscaled by
+     * [gainDownscale] (box-averaged luminances per cell). Neutral pixels are unaffected by the channel bound, since
+     * `Y' <= 1` there already.
      */
     fun compute(hdr: HalfFloatImage, gainDownscale: Int = 4): GainMapResult {
         require(gainDownscale >= 1) { "gainDownscale must be >= 1, was $gainDownscale" }
@@ -138,8 +141,8 @@ object GainMapMath {
     }
 
     /**
-     * Tone-maps against [hdr]'s peak luminance, writes the SDR base into [sdrOut] (when given) and fills [log2Gain]
-     * cell by cell. Luminance sums for one band of [cell] rows are kept per gain column and flushed when the band (or
+     * Tone-maps against [hdr]'s peak luminance (see [compute] for the per-pixel factor), writes the SDR base into
+     * [sdrOut] (when given) and fills [log2Gain] cell by cell. Luminance sums for one band of [cell] rows are kept per gain column and flushed when the band (or
      * the image) ends; edge cells average over the pixels they cover.
      */
     private fun toneMap(hdr: HalfFloatImage, cell: Int, gainWidth: Int, log2Gain: FloatArray, sdrOut: ShortArray?) {
@@ -153,11 +156,18 @@ object GainMapMath {
             HalfRows.read(hdr, y, row)
             for (x in 0 until w) {
                 val p = x * 4
-                val yHdr = luminance(row, p)
-                val factor = (1f + yHdr * invPeak2) / (1f + yHdr)
-                row[p] = HalfRows.finite(row[p]) * factor
-                row[p + 1] = HalfRows.finite(row[p + 1]) * factor
-                row[p + 2] = HalfRows.finite(row[p + 2]) * factor
+                val r = HalfRows.finite(row[p])
+                val g = HalfRows.finite(row[p + 1])
+                val b = HalfRows.finite(row[p + 2])
+                val yHdr = max(0f, ColorMath.relativeLuminance(r, g, b))
+                val luminanceFactor = (1f + yHdr * invPeak2) / (1f + yHdr)
+                // The encoder clamps each channel to SDR white, so the base must already fit there per channel: a
+                // clipped channel would no longer be the base the gain below was measured against.
+                val channelFactor = 1f / max(1f, max(r, max(g, b)))
+                val factor = min(luminanceFactor, channelFactor)
+                row[p] = r * factor
+                row[p + 1] = g * factor
+                row[p + 2] = b * factor
                 sumHdr[x / cell] += yHdr.toDouble()
                 sumSdr[x / cell] += (yHdr * factor).toDouble()
             }
