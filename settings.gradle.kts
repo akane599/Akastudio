@@ -14,3 +14,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "AkaStudio"
 include(":app")
+include(":core:ingestion")
