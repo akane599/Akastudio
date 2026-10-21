@@ -6,4 +6,9 @@
     <string name="studio_share_chooser">Hikâyeyi paylaş</string>
     <string name="studio_action_dismiss">Kapat</string>
     <string name="studio_preparing">Tam çözünürlüklü fotoğraflar hazırlanıyor</string>
+    <string name="studio_discard_title">Bu hikâye silinsin mi?</string>
+    <string name="studio_discard_body">Seçkiniz ve yaptığınız düzenlemeler kaybolacak.</string>
+    <string name="studio_discard_exporting">Dışa aktarma sürüyor. Bitince hikâyeyi silebilirsiniz.</string>
+    <string name="studio_discard_keep">Düzenlemeye devam et</string>
+    <string name="studio_discard_confirm">Sil</string>
 </resources>

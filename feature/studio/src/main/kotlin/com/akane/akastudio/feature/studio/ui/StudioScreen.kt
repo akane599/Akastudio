@@ -2,6 +2,7 @@ package com.akane.akastudio.feature.studio.ui
 
 import android.content.Context
 import android.text.format.Formatter
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -11,21 +12,29 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -45,7 +54,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.window.Dialog
 import com.akane.akastudio.core.color.api.StoryRenderer
 import com.akane.akastudio.core.export.api.ExportFormat
 import com.akane.akastudio.core.ingestion.model.IngestionError
@@ -72,7 +83,7 @@ private const val SHIMMER_ALPHA = 0.10f
  * The studio, assembled by phase. Empty, Ingesting and Curating show the [DropzoneScreen] (which shows its own error
  * card); Preparing, Ready and Exporting show the workspace: [StudioTopBar], the [StoryCanvas] with its scope overlay
  * and the [ModeDrawer] over it, the bottom [ControlPanel], and the modal export sheet. Workspace errors and the
- * view model's messages appear in one snackbar host.
+ * view model's messages appear in one snackbar host. System BACK follows [studioBackAction].
  *
  * @param renderer The preview renderer, or null for a placeholder canvas (screenshots).
  * @param hitTest Slot index under a canvas point for the current composition, or null.
@@ -88,6 +99,20 @@ fun StudioScreen(
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
 ) {
     val workspace = showsWorkspace(state.phase)
+    // Both reset whenever the studio leaves or enters the workspace.
+    var exportOpen by rememberSaveable(workspace) { mutableStateOf(false) }
+    var confirmDiscard by rememberSaveable(workspace) { mutableStateOf(false) }
+    val exportShown = exportOpen && state.phase != StudioPhase.Preparing
+    val backAction = studioBackAction(state.phase, exportShown, state.modeDrawerOpen)
+    BackHandler(enabled = backAction != StudioBackAction.NOT_HANDLED) {
+        when (backAction) {
+            StudioBackAction.CLOSE_EXPORT_SHEET -> exportOpen = false
+            StudioBackAction.CLOSE_MODE_DRAWER -> onIntent(StudioIntent.ToggleModeDrawer)
+            StudioBackAction.CONFIRM_DISCARD -> confirmDiscard = true
+            StudioBackAction.CANCEL_WORK -> onIntent(StudioIntent.CancelWork)
+            StudioBackAction.NOT_HANDLED -> Unit
+        }
+    }
     if (workspace) WorkspaceErrorSnackbar(state.error, snackbarHostState, onIntent)
     Box(
         modifier = modifier
@@ -95,7 +120,26 @@ fun StudioScreen(
             .background(MaterialTheme.colorScheme.background),
     ) {
         if (workspace) {
-            StudioWorkspace(state, onIntent, renderer, hitTest, snackbarHostState)
+            StudioWorkspace(
+                state = state,
+                onIntent = onIntent,
+                renderer = renderer,
+                hitTest = hitTest,
+                snackbarHostState = snackbarHostState,
+                exportShown = exportShown,
+                onExportOpenChange = { exportOpen = it },
+            )
+            if (confirmDiscard) {
+                DiscardStoryDialog(
+                    exporting = state.phase == StudioPhase.Exporting,
+                    onKeepEditing = { confirmDiscard = false },
+                    onDiscard = {
+                        confirmDiscard = false
+                        // Never cancel a running MediaStore write from here; the button is disabled meanwhile.
+                        if (state.phase != StudioPhase.Exporting) onIntent(StudioIntent.Reset)
+                    },
+                )
+            }
         } else {
             DropzoneScreen(state = state, onIntent = onIntent)
             SnackbarHost(
@@ -114,6 +158,40 @@ internal fun showsWorkspace(phase: StudioPhase): Boolean = when (phase) {
     StudioPhase.Preparing, StudioPhase.Ready, StudioPhase.Exporting -> true
 }
 
+/** What system BACK does in the studio; see [studioBackAction]. */
+internal enum class StudioBackAction {
+    /** Close the export sheet and nothing else. */
+    CLOSE_EXPORT_SHEET,
+
+    /** Collapse the story-mode drawer and nothing else. */
+    CLOSE_MODE_DRAWER,
+
+    /** Ask before discarding the story on screen. */
+    CONFIRM_DISCARD,
+
+    /** Cancel the running import or curation, back to the empty studio. */
+    CANCEL_WORK,
+
+    /** Not intercepted: the activity finishes as usual. */
+    NOT_HANDLED,
+}
+
+/**
+ * The BACK decision for [phase]: in the workspace, an open overlay closes first ([exportSheetOpen] before
+ * [modeDrawerOpen]), otherwise the user confirms before the story is discarded; while importing or curating BACK
+ * cancels the work; the empty studio lets the activity finish.
+ */
+internal fun studioBackAction(phase: StudioPhase, exportSheetOpen: Boolean, modeDrawerOpen: Boolean): StudioBackAction =
+    when (phase) {
+        StudioPhase.Empty -> StudioBackAction.NOT_HANDLED
+        StudioPhase.Ingesting, StudioPhase.Curating -> StudioBackAction.CANCEL_WORK
+        StudioPhase.Preparing, StudioPhase.Ready, StudioPhase.Exporting -> when {
+            exportSheetOpen -> StudioBackAction.CLOSE_EXPORT_SHEET
+            modeDrawerOpen -> StudioBackAction.CLOSE_MODE_DRAWER
+            else -> StudioBackAction.CONFIRM_DISCARD
+        }
+    }
+
 @Composable
 private fun StudioWorkspace(
     state: StudioState,
@@ -121,8 +199,9 @@ private fun StudioWorkspace(
     renderer: StoryRenderer?,
     hitTest: (Float, Float) -> Int?,
     snackbarHostState: SnackbarHostState,
+    exportShown: Boolean,
+    onExportOpenChange: (Boolean) -> Unit,
 ) {
-    var exportOpen by rememberSaveable { mutableStateOf(false) }
     val sideInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -132,7 +211,7 @@ private fun StudioWorkspace(
             StudioTopBar(
                 state = state,
                 onIntent = onIntent,
-                onOpenExport = { exportOpen = true },
+                onOpenExport = { onExportOpenChange(true) },
                 modifier = Modifier
                     .background(MaterialTheme.colorScheme.background)
                     .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)),
@@ -189,8 +268,80 @@ private fun StudioWorkspace(
             }
         }
     }
-    if (exportOpen && state.phase != StudioPhase.Preparing) {
-        ExportModalSheet(state = state, onIntent = onIntent, onDismissRequest = { exportOpen = false })
+    if (exportShown) {
+        ExportModalSheet(state = state, onIntent = onIntent, onDismissRequest = { onExportOpenChange(false) })
+    }
+}
+
+/**
+ * Asks before BACK discards the story: "Keep editing" closes the dialog, "Discard" empties the studio. While
+ * [exporting], Discard is disabled and the dialog says why, so a MediaStore write is never cancelled silently.
+ */
+@Composable
+private fun DiscardStoryDialog(exporting: Boolean, onKeepEditing: () -> Unit, onDiscard: () -> Unit) {
+    Dialog(onDismissRequest = onKeepEditing) {
+        DiscardStoryCard(exporting = exporting, onKeepEditing = onKeepEditing, onDiscard = onDiscard)
+    }
+}
+
+/** The discard dialog's surface, drawn without its window so screenshots can render it inline. */
+@Composable
+internal fun DiscardStoryCard(
+    exporting: Boolean,
+    onKeepEditing: () -> Unit,
+    onDiscard: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val spacing = DarkroomTheme.spacing
+    val title = stringResource(R.string.studio_discard_title)
+    Surface(
+        modifier = modifier.semantics { paneTitle = title },
+        shape = MaterialTheme.shapes.extraLarge,
+        color = scheme.surfaceContainerHigh,
+        contentColor = scheme.onSurface,
+    ) {
+        Column(Modifier.padding(start = spacing.xl, top = spacing.xl, end = spacing.l, bottom = spacing.l)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(end = spacing.s),
+            )
+            Spacer(Modifier.height(spacing.l))
+            Text(
+                text = stringResource(R.string.studio_discard_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = scheme.onSurfaceVariant,
+                modifier = Modifier.padding(end = spacing.s),
+            )
+            if (exporting) {
+                Spacer(Modifier.height(spacing.s))
+                Text(
+                    text = stringResource(R.string.studio_discard_exporting),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = scheme.secondary,
+                    modifier = Modifier
+                        .padding(end = spacing.s)
+                        .semantics { liveRegion = LiveRegionMode.Polite },
+                )
+            }
+            Spacer(Modifier.height(spacing.xl))
+            Row(
+                modifier = Modifier.align(Alignment.End),
+                horizontalArrangement = Arrangement.spacedBy(spacing.s),
+            ) {
+                TextButton(onClick = onKeepEditing) {
+                    Text(stringResource(R.string.studio_discard_keep))
+                }
+                TextButton(
+                    onClick = onDiscard,
+                    enabled = !exporting,
+                    colors = ButtonDefaults.textButtonColors(contentColor = scheme.error),
+                ) {
+                    Text(stringResource(R.string.studio_discard_confirm))
+                }
+            }
+        }
     }
 }
 

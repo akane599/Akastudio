@@ -9,4 +9,10 @@
     <string name="studio_share_chooser">Share story</string>
     <string name="studio_action_dismiss">Dismiss</string>
     <string name="studio_preparing">Preparing full-resolution photos</string>
+    <!-- Confirmation shown when system BACK would discard the story on screen -->
+    <string name="studio_discard_title">Discard this story?</string>
+    <string name="studio_discard_body">Your curated selection and edits will be lost.</string>
+    <string name="studio_discard_exporting">Export in progress. You can discard the story when it finishes.</string>
+    <string name="studio_discard_keep">Keep editing</string>
+    <string name="studio_discard_confirm">Discard</string>
 </resources>
