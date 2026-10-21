@@ -157,6 +157,20 @@ class DefaultCollageComposerTest {
     }
 
     @Test
+    fun caption_onAPaletteDerivedMatte_followsTheMatteLightness() {
+        val style = LayoutStyle(background = BackgroundStyle.PaletteDerived, showExifCaption = true)
+        fun ink(lab: OkLab) = composer.compose(
+            request(StoryTemplate.HERO_GALLERY_MATTE, style, photos = listOf(photo(0, listOf(PaletteSwatch(lab, 1f))))),
+        ).overlays.single()
+        val onLight = ink(OkLab(0.8f, 0.03f, 0.05f))
+        assertEquals(0xFF2B2B2B.toInt(), onLight.argb)
+        assertEquals(0, onLight.haloArgb)
+        val onDark = ink(OkLab(0.3f, 0.03f, 0.05f))
+        assertEquals(0xFFD9D6CF.toInt(), onDark.argb)
+        assertEquals(0, onDark.haloArgb)
+    }
+
+    @Test
     fun caption_onTheFrostedMatte_usesLightInkOnAHalo() {
         val style = LayoutStyle(background = BackgroundStyle.FrostedGlass, showExifCaption = true)
         val overlay = composer.compose(request(StoryTemplate.HERO_GALLERY_MATTE, style)).overlays.single()

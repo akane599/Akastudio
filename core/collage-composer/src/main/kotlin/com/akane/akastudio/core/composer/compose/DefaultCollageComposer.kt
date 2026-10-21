@@ -76,7 +76,7 @@ class DefaultCollageComposer internal constructor(solver: CropSolver) : CollageC
         return RenderScene(
             canvasWidth = request.canvas.width,
             canvasHeight = request.canvas.height,
-            background = background.background,
+            background = background,
             layers = layers,
             overlays = overlays ?: emptyList(),
         )
@@ -101,17 +101,17 @@ class DefaultCollageComposer internal constructor(solver: CropSolver) : CollageC
         return TemplateGeometry.cells(request.template, request.canvas, request.style, aspects)
     }
 
-    private fun captionOverlay(text: String, request: CompositionRequest, anchorDst: Rect4f, background: ResolvedBackground): TextOverlay {
+    private fun captionOverlay(text: String, request: CompositionRequest, anchorDst: Rect4f, background: SceneBackground): TextOverlay {
         val scale = TemplateGeometry.scaleOf(request.canvas).toFloat()
         val margin = CAPTION_SIDE_MARGIN * scale
         val onMatte = request.template == StoryTemplate.HERO_GALLERY_MATTE
-        val solidMatte = onMatte && background.background is SceneBackground.Solid
+        val solidMatte = onMatte && background is SceneBackground.Solid
         return TextOverlay(
             text = text,
             anchorX = (anchorDst.left + anchorDst.right) / 2f,
             baselineY = if (onMatte) anchorDst.bottom + GALLERY_CAPTION_OFFSET * scale else anchorDst.bottom - EDGE_CAPTION_OFFSET * scale,
             sizePx = CAPTION_SIZE * scale,
-            argb = if (solidMatte && background.isLight) CAPTION_DARK else CAPTION_LIGHT,
+            argb = if (onMatte && SceneBackgrounds.isLightMatte(background)) CAPTION_DARK else CAPTION_LIGHT,
             align = OverlayAlign.CENTER,
             letterSpacingEm = CAPTION_LETTER_SPACING_EM,
             font = OverlayFont.MONO,
