@@ -44,11 +44,19 @@ internal class ShaderProgram private constructor(val id: Int, private val label:
     companion object {
         private const val SHADER_DIR = "shaders"
 
-        fun load(assets: AssetManager, vertexName: String, fragmentName: String): ShaderProgram {
+        fun load(assets: AssetManager, vertexName: String, fragmentName: String): ShaderProgram =
+            load(assets, vertexName, fragmentName, fragmentPrelude = "")
+
+        /**
+         * Same as [load], with [fragmentPrelude] (declarations such as generated `const` matrices) inserted into
+         * the fragment source right after its first line, which must be the `#version` directive.
+         */
+        fun load(assets: AssetManager, vertexName: String, fragmentName: String, fragmentPrelude: String): ShaderProgram {
             val label = "$vertexName+$fragmentName"
             val vertex = compile(GLES20.GL_VERTEX_SHADER, vertexName, readSource(assets, vertexName))
             val fragment = try {
-                compile(GLES20.GL_FRAGMENT_SHADER, fragmentName, readSource(assets, fragmentName))
+                val source = withPrelude(fragmentName, readSource(assets, fragmentName), fragmentPrelude)
+                compile(GLES20.GL_FRAGMENT_SHADER, fragmentName, source)
             } catch (e: GlException) {
                 GLES20.glDeleteShader(vertex)
                 throw e
@@ -81,6 +89,15 @@ internal class ShaderProgram private constructor(val id: Int, private val label:
                 throw GlException("$name uses #include; shader sources must be self-contained")
             }
             return source
+        }
+
+        private fun withPrelude(name: String, source: String, prelude: String): String {
+            if (prelude.isEmpty()) return source
+            val firstLineEnd = source.indexOf('\n')
+            if (firstLineEnd < 0 || !source.substring(0, firstLineEnd).trimStart().startsWith("#version")) {
+                throw GlException("$name must start with a #version line to take a prelude")
+            }
+            return source.substring(0, firstLineEnd + 1) + prelude.trimEnd('\n') + "\n" + source.substring(firstLineEnd + 1)
         }
 
         private fun compile(type: Int, name: String, source: String): Int {
