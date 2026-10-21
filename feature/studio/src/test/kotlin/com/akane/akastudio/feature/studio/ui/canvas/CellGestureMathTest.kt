@@ -68,8 +68,7 @@ class CellGestureMathTest {
         assertTrue(throttle.tryAcquire())
         now = 9_000_000L
         assertFalse(throttle.tryAcquire())
-        throttle.reset()
-        assertTrue(throttle.tryAcquire())
+        assertTrue(FrameThrottle(intervalNanos = 8_000_000L) { now }.tryAcquire())
     }
 
     @Test

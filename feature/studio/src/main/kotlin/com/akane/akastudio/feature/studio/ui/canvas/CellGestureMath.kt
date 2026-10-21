@@ -89,11 +89,6 @@ internal class FrameThrottle(
         return true
     }
 
-    /** Forgets the last emission so the next [tryAcquire] passes. */
-    fun reset() {
-        lastNanos = null
-    }
-
     companion object {
         /** Nanoseconds per frame at [refreshRateHz]; a non-positive or non-finite rate falls back to 60 Hz. */
         fun frameIntervalNanos(refreshRateHz: Float): Long {
