@@ -2,7 +2,6 @@ package com.akane.akastudio.core.ingestion.device
 
 import android.graphics.Color
 import android.net.Uri
-import android.os.storage.StorageManager
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.akane.akastudio.core.ingestion.api.IngestionRequest
 import com.akane.akastudio.core.ingestion.api.ZipLimits
@@ -17,9 +16,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Case 5: the extractor's free-space provider in [createIngestionSession] is
- * `StorageManager.getAllocatableBytes(getUuidForPath(workDir))`. Its value is not exposed, so the test brackets it
- * through [ZipLimits.freeSpaceReserveBytes] (the guard compares provider − reserve against the entry estimate).
+ * Case 5: the extractor's free-space provider in [createIngestionSession] is the work dir volume's usable space.
+ * Its value is not exposed, so the test brackets it through [ZipLimits.freeSpaceReserveBytes] (the guard compares
+ * provider − reserve against the entry estimate).
  */
 @RunWith(AndroidJUnit4::class)
 class StorageGuardDeviceTest {
@@ -37,26 +36,25 @@ class StorageGuardDeviceTest {
     }
 
     @Test
-    fun allocatableBytesForTheIngestVolumeIsPositive() {
-        val allocatable = allocatableBytes()
-        val usable = targetContext.cacheDir.usableSpace
-        qaLog("getAllocatableBytes(cacheDir volume) = $allocatable; cacheDir.usableSpace = $usable")
-        assertTrue("allocatable bytes on device: $allocatable", allocatable > 0)
+    fun usableBytesForTheIngestVolumeIsPositive() {
+        val usable = usableBytes()
+        qaLog("cacheDir.usableSpace = $usable")
+        assertTrue("usable bytes on device: $usable", usable > 0)
     }
 
-    /** Leaving half of today's allocatable space as reserve still fits a small entry: the provider is not 0. */
+    /** Leaving half of today's usable space as reserve still fits a small entry: the provider is not 0. */
     @Test
-    fun reserveBelowAllocatable_extracts() {
-        val events = ingestWithReserve(allocatableBytes() / 2)
+    fun reserveBelowUsable_extracts() {
+        val events = ingestWithReserve(usableBytes() / 2)
 
         assertTrue("no failure: ${events.failures()}", events.failures().isEmpty())
         assertEquals(1, events.completed().candidates.size)
     }
 
-    /** Negative control: a reserve above the allocatable figure trips the guard with the documented error. */
+    /** Negative control: a reserve above the usable figure trips the guard with the documented error. */
     @Test
-    fun reserveAboveAllocatable_rejectsWithInsufficientStorage() {
-        val events = ingestWithReserve(allocatableBytes() * 2)
+    fun reserveAboveUsable_rejectsWithInsufficientStorage() {
+        val events = ingestWithReserve(usableBytes() * 2)
 
         val error = events.failures().single().error
         assertTrue("InsufficientStorage expected, got $error", error is IngestionError.InsufficientStorage)
@@ -72,8 +70,5 @@ class StorageGuardDeviceTest {
             it.collect(IngestionRequest.ZipArchive(zipUri, "one.zip"))
         }
 
-    private fun allocatableBytes(): Long {
-        val storage = targetContext.getSystemService(StorageManager::class.java)
-        return storage.getAllocatableBytes(storage.getUuidForPath(targetContext.cacheDir))
-    }
+    private fun usableBytes(): Long = targetContext.cacheDir.usableSpace
 }

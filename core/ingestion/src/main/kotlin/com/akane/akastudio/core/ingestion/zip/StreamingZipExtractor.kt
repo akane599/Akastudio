@@ -1,5 +1,7 @@
 package com.akane.akastudio.core.ingestion.zip
 
+import android.system.ErrnoException
+import android.system.OsConstants
 import com.akane.akastudio.core.ingestion.api.ArchiveExtractor
 import com.akane.akastudio.core.ingestion.api.IngestionException
 import com.akane.akastudio.core.ingestion.api.ZipExtractionEvent
@@ -41,22 +43,30 @@ import kotlinx.coroutines.flow.flowOn
  * Files already fully written are complete and belong to the consumer, which decides their fate (the session
  * deletes the staging folder of a rejected archive at once). Nothing this collection did not create is ever deleted.
  *
- * [freeSpaceProvider] reports the bytes still claimable on the destination's volume; on Android that is
- * `StorageManager.getAllocatableBytes` (see `createIngestionSession`). [ZipLimits.freeSpaceReserveBytes] is kept free
- * on top of it.
+ * [freeSpaceProvider] reports the bytes free on the destination's volume; on Android that is the volume's usable
+ * space (see `createIngestionSession`). It is read once per archive and debited by the bytes written since, with
+ * [ZipLimits.freeSpaceReserveBytes] kept free on top. A write that still runs out of space (another app filled the
+ * volume meanwhile) is reported as [IngestionError.InsufficientStorage], like the up-front check.
  */
-class StreamingZipExtractor(
-    private val limits: ZipLimits = ZipLimits(),
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+class StreamingZipExtractor internal constructor(
+    private val limits: ZipLimits,
+    private val ioDispatcher: CoroutineDispatcher,
     private val freeSpaceProvider: (File) -> Long,
+    private val openOutput: (Path) -> OutputStream,
 ) : ArchiveExtractor {
+
+    constructor(
+        limits: ZipLimits = ZipLimits(),
+        ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+        freeSpaceProvider: (File) -> Long,
+    ) : this(limits, ioDispatcher, freeSpaceProvider, { path -> Files.newOutputStream(path, CREATE_NEW, WRITE) })
 
     override fun extract(
         input: () -> InputStream,
         archiveIdentity: String,
         destinationDir: File,
     ): Flow<ZipExtractionEvent> = flow {
-        ExtractionRun(limits, freeSpaceProvider, input, archiveIdentity, destinationDir, this).execute()
+        ExtractionRun(limits, freeSpaceProvider, openOutput, input, archiveIdentity, destinationDir, this).execute()
     }.flowOn(ioDispatcher)
 }
 
@@ -66,6 +76,9 @@ private const val UNKNOWN_SIZE_ESTIMATE = 8L * 1024 * 1024
 private const val SPACE_CHECK_INTERVAL = 8L * 1024 * 1024
 private const val FALLBACK_NAME_CHARSET = "IBM437"
 
+private const val NO_SPACE_MESSAGE = "No space left on device"
+private const val MAX_CAUSE_DEPTH = 16
+
 /** Android's ZipPathValidator (targetSdk >= 34) rejects unsafe names before our own guard sees them. */
 private val unsafeEntryNameMessage = Regex("(?i)(invalid|unsafe)\\s+(zip\\s+)?entry\\s+(path|name)")
 
@@ -73,6 +86,7 @@ private val unsafeEntryNameMessage = Regex("(?i)(invalid|unsafe)\\s+(zip\\s+)?en
 private class ExtractionRun(
     private val limits: ZipLimits,
     private val freeSpaceProvider: (File) -> Long,
+    private val openOutput: (Path) -> OutputStream,
     private val input: () -> InputStream,
     private val archiveIdentity: String,
     private val destinationDir: File,
@@ -88,6 +102,12 @@ private class ExtractionRun(
 
     /** Bytes written to disk across all entries. */
     private var totalWritten = 0L
+
+    /** Free bytes on the volume, less the reserve, read once per archive; [totalWritten] is debited from it. */
+    private var spaceBudget: Long? = null
+
+    /** The latest space estimate, reported when a write fails with ENOSPC. */
+    private var lastSpaceNeeded = 0L
 
     /** Bytes inflated across all entries, written or drained; the ratio guard numerator. */
     private var totalInflated = 0L
@@ -169,7 +189,7 @@ private class ExtractionRun(
         if (!outFile.canonicalFile.toPath().startsWith(destinationRoot)) fail(IngestionError.ZipSlip(name))
         requireSpace(spaceEstimate(entry.size, written = 0))
         val path = outFile.toPath()
-        val bytes = Files.newOutputStream(path, CREATE_NEW, WRITE).use { out ->
+        val bytes = openOutput(path).use { out ->
             partialFile = path
             createdNames.add(outName)
             copyBounded(zip, out, entry)
@@ -248,7 +268,10 @@ private class ExtractionRun(
         if (declaredSize >= 0) maxOf(declaredSize - written, MIN_SPACE_ESTIMATE) else UNKNOWN_SIZE_ESTIMATE
 
     private fun requireSpace(needed: Long) {
-        val available = freeSpaceProvider(destinationDir) - limits.freeSpaceReserveBytes
+        lastSpaceNeeded = needed
+        val budget = spaceBudget
+            ?: (freeSpaceProvider(destinationDir) - limits.freeSpaceReserveBytes).also { spaceBudget = it }
+        val available = budget - totalWritten
         if (available < needed) fail(IngestionError.InsufficientStorage(needed, maxOf(0L, available)))
     }
 
@@ -268,6 +291,7 @@ private class ExtractionRun(
             failure is ZipException && unsafeEntryNameMessage.containsMatchIn(message) ->
                 IngestionError.ZipSlip(message.substringAfter(": ", message))
             failure is ZipException || failure is EOFException -> IngestionError.InvalidArchive(message)
+            isOutOfSpace(failure) -> IngestionError.InsufficientStorage(lastSpaceNeeded, 0L)
             else -> IngestionError.Io(message)
         }
         return IngestionException(error)
@@ -275,6 +299,17 @@ private class ExtractionRun(
 
     private fun fail(error: IngestionError): Nothing = throw IngestionException(error)
 }
+
+/**
+ * True when [failure] or any of its causes is ENOSPC. On Android the write throws an IOException whose cause is an
+ * [ErrnoException] and whose message reads "write failed: ENOSPC (No space left on device)"; a JVM reports only the
+ * strerror text.
+ */
+internal fun isOutOfSpace(failure: Throwable): Boolean =
+    generateSequence(failure) { it.cause.takeUnless { cause -> cause === it } }.take(MAX_CAUSE_DEPTH).any { cause ->
+        (cause is ErrnoException && cause.errno == OsConstants.ENOSPC) ||
+            cause.message?.let { "ENOSPC" in it || NO_SPACE_MESSAGE in it } == true
+    }
 
 /**
  * Counts bytes read from the raw archive stream. `InflaterInputStream.read` keeps pulling input for as long as
