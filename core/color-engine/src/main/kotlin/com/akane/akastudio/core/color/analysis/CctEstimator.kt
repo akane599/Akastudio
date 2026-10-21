@@ -32,8 +32,6 @@ internal object CctEstimator {
     private const val CLIP_CHANNEL = 0.98f
     private const val MIN_LUMINANCE = 0.02f
 
-    private val linearLut = FloatArray(256) { ColorMath.srgbToLinear(it / 255f) }
-
     /** Planckian locus in CIE 1960 uv at every whole mired from [MIN_MIRED] to [MAX_MIRED]. */
     private val locusU = DoubleArray(MAX_MIRED - MIN_MIRED + 1)
     private val locusV = DoubleArray(MAX_MIRED - MIN_MIRED + 1)
@@ -54,9 +52,9 @@ internal object CctEstimator {
         val argb = pixels.argb
         SampleGrid.forEachIndex(pixels.width, pixels.height, maxSamples) { index ->
             val c = argb[index]
-            val r = linearLut[(c ushr 16) and 0xFF]
-            val g = linearLut[(c ushr 8) and 0xFF]
-            val b = linearLut[c and 0xFF]
+            val r = ColorMath.srgb8ToLinear[(c ushr 16) and 0xFF]
+            val g = ColorMath.srgb8ToLinear[(c ushr 8) and 0xFF]
+            val b = ColorMath.srgb8ToLinear[c and 0xFF]
             val clipped = r > CLIP_CHANNEL || g > CLIP_CHANNEL || b > CLIP_CHANNEL
             if (!clipped && ColorMath.relativeLuminance(r, g, b) >= MIN_LUMINANCE) {
                 sumR += pow6(r.toDouble())

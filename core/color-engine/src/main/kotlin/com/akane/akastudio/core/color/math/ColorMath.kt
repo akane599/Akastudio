@@ -14,8 +14,8 @@ import kotlin.math.sin
 /** Pure-JVM colour conversions. Arithmetic runs in double precision and results are narrowed to Float. */
 object ColorMath {
 
-    /** Linear value of each 8-bit sRGB code. */
-    private val srgb8ToLinear = FloatArray(256) { srgbToLinear(it / 255f) }
+    /** Linear value of each 8-bit sRGB code. Shared read-only within the module; never write to it. */
+    internal val srgb8ToLinear = FloatArray(256) { srgbToLinear(it / 255f) }
 
     /** IEC 61966-2-1 piecewise decode, sign-preserving for out-of-range input. */
     fun srgbToLinear(c: Float): Float {
