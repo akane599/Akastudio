@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Live story canvas (ui/canvas) -->
+    <string name="canvas_description">Story preview</string>
+    <string name="canvas_state_selected">Cell %1$d of %2$d selected</string>
+    <string name="canvas_state_cells">%1$d cells</string>
+    <string name="canvas_action_swap_next">Swap with next cell</string>
+
+    <!-- Before/after compare -->
+    <string name="canvas_compare_before">Before</string>
+    <string name="canvas_compare_after">After</string>
+    <string name="canvas_compare_handle">Before and after split</string>
+
+    <!-- Scopes (ScopeMode) -->
+    <string name="canvas_scope_luma">Luma waveform</string>
+    <string name="canvas_scope_parade">RGB parade</string>
+    <string name="canvas_scope_histogram">Histogram</string>
+</resources>

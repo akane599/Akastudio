@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Live story canvas (ui/canvas) -->
+    <string name="canvas_description">Hikâye önizlemesi</string>
+    <string name="canvas_state_selected">%2$d hücreden %1$d. hücre seçili</string>
+    <string name="canvas_state_cells">%1$d hücre</string>
+    <string name="canvas_action_swap_next">Sonraki hücreyle yer değiştir</string>
+
+    <!-- Before/after compare -->
+    <string name="canvas_compare_before">Önce</string>
+    <string name="canvas_compare_after">Sonra</string>
+    <string name="canvas_compare_handle">Önce ve sonra ayırıcısı</string>
+
+    <!-- Scopes (ScopeMode) -->
+    <string name="canvas_scope_luma">Luma dalga formu</string>
+    <string name="canvas_scope_parade">RGB parade</string>
+    <string name="canvas_scope_histogram">Histogram</string>
+</resources>
