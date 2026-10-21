@@ -13,6 +13,7 @@ import com.akane.akastudio.core.curator.api.StoryMode
 import com.akane.akastudio.core.curator.api.Warmth
 import com.akane.akastudio.core.curator.decision.Clustering
 import com.akane.akastudio.core.curator.decision.DecisionConfig
+import com.akane.akastudio.core.curator.decision.DecisionEngine
 import com.akane.akastudio.core.curator.decision.Fixtures
 import com.akane.akastudio.core.curator.engine.EngineImages.noise
 import com.akane.akastudio.core.curator.engine.FakeWorld.Companion.face
@@ -31,6 +32,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -358,6 +360,77 @@ class DefaultCurationEngineTest {
         assertEquals(stopAt, probes.get())
         assertEquals((0..n).map { Analyzing(it, n) }, emissions)
         assertTrue(emissions.none { it is Clustered || it is Decided })
+    }
+
+    // ---- Capture times are owned by each result (AUD-06) ----
+
+    @Test
+    fun curate_failedRunsLeaveNoEngineState_aLaterResultCarriesExactlyItsOwnCaptureTimes() = runBlocking {
+        val failing = (0 until 20).flatMap { batch ->
+            (0 until 5).map { k -> "fail$batch-$k" to Shot(noise(500 + 5 * batch + k), captureMillis = T0 + batch, failLoad = true) }
+        }
+        val world = FakeWorld(
+            linkedMapOf(*failing.toTypedArray()) + linkedMapOf(
+                "good1" to Shot(noise(91), captureMillis = T0 + 5_000),
+                "good2" to Shot(noise(92), captureMillis = null),
+            ),
+        )
+        val engine = engine(world)
+        val byId = world.candidates.associateBy { it.id }
+        for (batch in 0 until 20) {
+            val candidates = (0 until 5).map { byId.getValue("fail$batch-$it") }
+            assertThrows(NoUsablePhotosException::class.java) { runBlocking { engine.curate(candidates).toList() } }
+        }
+
+        val result = decided(engine.curate(listOf(byId.getValue("good1"), byId.getValue("good2"))).toList())
+
+        assertEquals(mapOf("good1" to T0 + 5_000, "good2" to null), result.captureTimes)
+        // An unknown capture time stays an explicit null entry, never a borrowed or default timestamp.
+        assertTrue(result.captureTimes.containsKey("good2"))
+        assertNull(result.captureTimes.getValue("good2"))
+        assertEquals(result.captureTimes, engine.decide(result, null).captureTimes)
+    }
+
+    @Test
+    fun decide_reDecidesWithTheResultsOwnCaptureTimes_notThoseOfALaterRunWithTheSameIds() = runBlocking {
+        // Three weak frames (NIMA 1), so no collage is offered and a forced COLLAGE_2 searches every champion pair
+        // with the capture-time term. Run A shoots x and y together; run B, same ids and pixels, shoots x and z
+        // together.
+        val world = FakeWorld(
+            linkedMapOf(
+                "x" to Shot(noise(81), nima = 1f),
+                "y" to Shot(noise(82), nima = 1f),
+                "z" to Shot(noise(83), nima = 1f),
+            ),
+        )
+        val day = 24 * 3_600_000L
+        val timesA = mapOf("x" to T0, "y" to T0 + 60_000, "z" to T0 + day)
+        val timesB = mapOf("x" to T0, "y" to T0 + day, "z" to T0 + 60_000)
+        fun run(times: Map<String, Long>) = world.candidates.map {
+            it.copy(metadata = it.metadata.copy(captureEpochMillis = times.getValue(it.id)))
+        }
+        val engine = engine(world)
+
+        val a = decided(engine.curate(run(timesA)).toList())
+        val b = decided(engine.curate(run(timesB)).toList())
+
+        assertEquals(timesA, a.captureTimes)
+        assertEquals(timesB, b.captureTimes)
+        assertEquals(setOf(StoryMode.HERO), a.alternatives.keys)
+        val previous = CurationResults.decisionOf(a)
+        val analyses = a.analyses.values.toList()
+        val withA = DecisionEngine.redecide(previous, analyses, timesA, StoryMode.COLLAGE_2).chosen
+        val withB = DecisionEngine.redecide(previous, analyses, timesB, StoryMode.COLLAGE_2).chosen
+        assertNotEquals("the capture-time term must decide the pair in this setup", withA, withB)
+
+        val forced = engine.decide(a, StoryMode.COLLAGE_2)
+
+        assertEquals(withA, forced.chosen)
+        assertEquals(timesA, forced.captureTimes)
+        // Every redecision path keeps the result's timestamps: an offered mode and the automatic re-decision.
+        assertEquals(timesA, engine.decide(forced, StoryMode.HERO).captureTimes)
+        assertEquals(timesA, engine.decide(forced, null).captureTimes)
+        assertEquals(a.chosen, engine.decide(forced, null).chosen)
     }
 
     @Test

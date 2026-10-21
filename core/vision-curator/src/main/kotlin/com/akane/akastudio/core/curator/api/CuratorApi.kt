@@ -81,6 +81,11 @@ data class CurationResult(
     val rejectedIds: List<String>,
     val note: CuratorNote,
     val suggestedLook: MasterLook,
+    /**
+     * Capture epoch millis by analyzed candidate id; a null value or a missing id means unknown. Owned by this
+     * result (not by the engine), so a mode switch re-decides with this run's timestamps.
+     */
+    val captureTimes: Map<String, Long?> = emptyMap(),
 )
 
 sealed interface CurationProgress {

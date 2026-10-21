@@ -21,7 +21,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Thrown by [DefaultCurationEngine.curate] after its `Clustered` emission when every candidate was rejected at the
@@ -44,7 +43,8 @@ class NoUsablePhotosException(val rejectedCount: Int) :
  * The aesthetic formula is all-or-nothing per curation: when NIMA gave no score for any readable candidate, every
  * analysis uses the no-NIMA formula (see [PhotoAnalyzer.uniformAesthetic]), and the downgrade is logged with counts.
  *
- * Capture times are kept per candidate id so [decide] can rebuild the decision for a mode switch.
+ * Each run's capture times travel on its [CurationResult.captureTimes], so [decide] rebuilds a mode switch with that
+ * result's timestamps; the engine keeps no per-batch state between runs.
  *
  * The decision stage is synchronous CPU work (all-pairs clustering, subset enumeration); [curate] runs it with a
  * cancellation checkpoint bound to the collecting coroutine, so cancelling the collector stops it promptly.
@@ -73,9 +73,6 @@ class DefaultCurationEngine internal constructor(
 
     private val analyzer = PhotoAnalyzer(pixels, models)
 
-    /** Known capture epoch millis by candidate id; an id with an unknown capture time has no entry. */
-    private val captureTimes = ConcurrentHashMap<String, Long>()
-
     /**
      * Cold flow over [candidates]. Collection throws IllegalArgumentException for an empty list or duplicate ids,
      * and [NoUsablePhotosException] when every candidate is rejected. Cancelling the collector cancels every
@@ -87,7 +84,7 @@ class DefaultCurationEngine internal constructor(
         require(candidates.mapTo(HashSet()) { it.id }.size == candidates.size) { "candidate ids must be distinct" }
         val total = candidates.size
         val collector = currentCoroutineContext()
-        rememberCaptureTimes(candidates)
+        val captureTimes = candidates.associate { it.id to it.metadata.captureEpochMillis }
         emit(CurationProgress.Analyzing(0, total))
 
         val analyzed = coroutineScope {
@@ -121,17 +118,18 @@ class DefaultCurationEngine internal constructor(
             emit(CurationProgress.Clustered(clusterCount = 0, rejectedCount = rejectedCount))
             throw NoUsablePhotosException(rejectedCount)
         }
-        val decision = DecisionEngine.decide(analyzed, captureTimesOf(analyses.keys), config) {
+        val decision = DecisionEngine.decide(analyzed, captureTimes, config) {
             onDecisionCheckpoint()
             collector.ensureActive()
         }
         emit(CurationProgress.Clustered(decision.clusters.size, decision.rejectedIds.size))
-        emit(CurationProgress.Decided(CurationResults.build(decision, analyses)))
+        emit(CurationProgress.Decided(CurationResults.build(decision, analyses, captureTimes)))
     }
 
     /**
      * Re-decides [result] for [forcedMode] (null = automatic) with [DecisionEngine.redecide], keeping its analyses,
-     * clusters and rejections, and rebuilds the note and suggested look for the new chosen option.
+     * clusters, rejections and capture times ([CurationResult.captureTimes]), and rebuilds the note and suggested
+     * look for the new chosen option.
      *
      * Non-suspending, so it runs the decision with the default no-op checkpoint. That is acceptable: the production
      * caller (the studio's mode switch) already runs it on the default dispatcher, and a forced mode the result
@@ -142,21 +140,12 @@ class DefaultCurationEngine internal constructor(
         val decision = DecisionEngine.redecide(
             previous = CurationResults.decisionOf(result),
             analyses = result.analyses.values.toList(),
-            captureTimes = captureTimesOf(result.analyses.keys),
+            captureTimes = result.captureTimes,
             forcedMode = forcedMode,
             config = config,
         )
-        return CurationResults.build(decision, result.analyses)
+        return CurationResults.build(decision, result.analyses, result.captureTimes)
     }
-
-    private fun rememberCaptureTimes(candidates: List<PhotoCandidate>) {
-        for (candidate in candidates) {
-            val time = candidate.metadata.captureEpochMillis
-            if (time == null) captureTimes.remove(candidate.id) else captureTimes[candidate.id] = time
-        }
-    }
-
-    private fun captureTimesOf(ids: Collection<String>): Map<String, Long?> = ids.associateWith { captureTimes[it] }
 
     private companion object {
         const val TAG = "CurationEngine"
