@@ -32,6 +32,18 @@ class WhiteBalanceTest {
     }
 
     @Test
+    fun kelvinShift_isTheSourceWhiteOfSixtyMiredPerUnitAroundD65() {
+        assertEquals(0.0, WhiteBalance.kelvinShift(0f), 1e-9)
+        assertEquals(4162.49, WhiteBalance.kelvinShift(1f), 0.01)
+        assertEquals(-1825.67, WhiteBalance.kelvinShift(-1f), 0.01)
+        assertEquals(862.40, WhiteBalance.kelvinShift(0.3f), 0.01)
+        // Clamped like matrix(): beyond ±1 reads as ±1.
+        assertEquals(WhiteBalance.kelvinShift(1f), WhiteBalance.kelvinShift(5f), 0.0)
+        assertEquals(WhiteBalance.kelvinShift(-1f), WhiteBalance.kelvinShift(-5f), 0.0)
+        assertThrows(IllegalArgumentException::class.java) { WhiteBalance.kelvinShift(Float.NaN) }
+    }
+
+    @Test
     fun tint_shiftsGreyTowardMagentaOrGreen() {
         val magenta = apply(WhiteBalance.matrix(0f, 1f), 0.18f, 0.18f, 0.18f)
         assertTrue("magenta ratio", (magenta[0] + magenta[2]) / 2f / magenta[1] > 1.02f)
