@@ -57,9 +57,12 @@ internal object DropzoneModel {
     fun canAddMore(state: StudioState): Boolean =
         state.phase == StudioPhase.Ingesting && state.telemetry.accepted > 0
 
-    /** Cancel is offered while there is cancellable work in the dropzone's phases. */
+    /**
+     * Cancel is offered only while the dropzone is still reading or curating. Once the story is chosen
+     * (Preparing and later) it is hidden, because "Cancel" there would read as discarding the result.
+     */
     fun canCancel(phase: StudioPhase): Boolean =
-        phase == StudioPhase.Ingesting || phase == StudioPhase.Curating || phase == StudioPhase.Preparing
+        phase == StudioPhase.Ingesting || phase == StudioPhase.Curating
 
     /** Retry reopens the last picker only when an import would be accepted; otherwise it just clears the error. */
     fun retryReopensPicker(phase: StudioPhase): Boolean =

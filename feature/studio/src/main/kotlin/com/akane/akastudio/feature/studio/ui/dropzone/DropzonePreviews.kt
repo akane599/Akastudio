@@ -107,6 +107,9 @@ internal object DropzoneSamples {
     val error: StudioState = StudioState(
         error = StudioError.Ingestion(IngestionError.InvalidArchive("central directory missing")),
     )
+
+    /** The curator discarded every photo: back to the empty phase with the count-bearing error. */
+    val noUsablePhotos: StudioState = StudioState(error = StudioError.NoUsablePhotos(rejectedCount = 12))
 }
 
 /** An activity-result registry that never launches anything, so previews can host the real pickers. */

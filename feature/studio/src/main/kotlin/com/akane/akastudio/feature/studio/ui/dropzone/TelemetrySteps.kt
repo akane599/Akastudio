@@ -58,7 +58,6 @@ private val DotSize = 8.dp
 private val PulseDepth = 2.dp
 private val CheckSize = 16.dp
 private const val PULSE_MILLIS = 900
-private const val PENDING_ALPHA = 0.55f
 private const val MAX_PERCENT = 100
 private const val NO_BREAK_SPACE = ' '
 
@@ -91,7 +90,8 @@ private fun StepRow(item: PipelineStepUi, telemetry: TelemetryUi, isLast: Boolea
     val style = MaterialTheme.typography.bodyMedium.tabularNumbers()
     val lineHeight = with(LocalDensity.current) { style.lineHeight.toDp() }
     val (main, detail) = stepText(item, telemetry)
-    val mainColor = if (item.status == StepStatus.PENDING) scheme.onSurfaceVariant.copy(alpha = PENDING_ALPHA) else scheme.onSurface
+    // Pending rows are content still to come, not disabled controls, so they keep AA contrast (tertiary).
+    val mainColor = if (item.status == StepStatus.PENDING) scheme.tertiary else scheme.onSurface
     val detailColor = scheme.onSurfaceVariant
     val label = buildAnnotatedString {
         withStyle(SpanStyle(color = mainColor)) { append(main) }
@@ -161,7 +161,7 @@ private fun StepMarker(status: StepStatus) {
         StepStatus.PENDING -> Box(
             modifier = Modifier
                 .size(DotSize)
-                .border(Dp.Hairline, scheme.onSurfaceVariant.copy(alpha = PENDING_ALPHA), CircleShape),
+                .border(Dp.Hairline, scheme.tertiary, CircleShape),
         )
         StepStatus.ACTIVE ->
             if (DarkroomTheme.motion.reducedMotion) StillDot(scheme.primary) else PulsingDot(scheme.primary)

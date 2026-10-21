@@ -21,6 +21,12 @@ import com.android.tools.screenshot.PreviewTest
 @PreviewTest @Preview(name = "error", widthDp = 360, heightDp = 760, showBackground = true, backgroundColor = 0xFF0B0C0E)
 @Composable fun DropzoneError() = DropzonePreviewHost(DropzoneSamples.error)
 
+@PreviewTest @Preview(name = "no-usable-photos", widthDp = 360, heightDp = 760, showBackground = true, backgroundColor = 0xFF0B0C0E)
+@Composable fun DropzoneNoUsablePhotos() = DropzonePreviewHost(DropzoneSamples.noUsablePhotos)
+
+@PreviewTest @Preview(name = "no-usable-photos-tr", locale = "tr", widthDp = 360, heightDp = 760, showBackground = true, backgroundColor = 0xFF0B0C0E)
+@Composable fun DropzoneNoUsablePhotosTurkish() = DropzonePreviewHost(DropzoneSamples.noUsablePhotos)
+
 @PreviewTest @Preview(name = "decided-tr", locale = "tr", widthDp = 360, heightDp = 760, showBackground = true, backgroundColor = 0xFF0B0C0E)
 @Composable fun DropzoneDecidedTurkish() = DropzonePreviewHost(DropzoneSamples.decided)
 
