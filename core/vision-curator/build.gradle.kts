@@ -24,7 +24,15 @@ android {
     testOptions {
         unitTests {
             isReturnDefaultValues = true
+            all { test ->
+                // ModelAssetsTest re-hashes the committed model files straight from the source tree.
+                test.systemProperty("akastudio.modelsDir", file("src/main/assets/models").absolutePath)
+            }
         }
+    }
+    androidResources {
+        // MediaPipe and LiteRT memory-map models from the APK, so they must be stored, not deflated.
+        noCompress += listOf("tflite", "task")
     }
 }
 
@@ -34,6 +42,8 @@ dependencies {
 
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.mediapipe.tasks.vision)
+    implementation(libs.litert)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
