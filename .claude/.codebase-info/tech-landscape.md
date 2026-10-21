@@ -13,7 +13,7 @@
 | Immutable collections | kotlinx-collections-immutable 0.5.2 (`:app`, `:feature:studio`) | catalog |
 | EXIF | androidx.exifinterface 1.4.2 (`:core:ingestion`, `:core:export-pipeline`) | catalog |
 | ML | MediaPipe tasks-vision 1.1.1, LiteRT 2.3.0 (`:core:vision-curator` only) | catalog |
-| Tests | JUnit 4, coroutines-test, Compose Preview Screenshot Testing 0.0.1-alpha16 | catalog |
+| Tests | JUnit 4, coroutines-test, Compose Preview Screenshot Testing 0.0.1-alpha16; device: androidx.test runner/core/rules 1.7.0, ext-junit 1.3.0, Compose ui-test-junit4 (BOM) | catalog (`bundles.androidx.test`) |
 
 Repositories locked to `google()` + `mavenCentral()` in `settings.gradle.kts`. No DI framework, no KSP, no Robolectric, no network, no database.
 
@@ -26,3 +26,8 @@ Repositories locked to `google()` + `mavenCentral()` in `settings.gradle.kts`. N
 
 ## Graphics
 OpenGL ES 3 via `EglCore` on a dedicated GL thread; RGBA16F FBOs, 3D LUT textures (tetrahedral sampling), GLSL assets loaded through `GradeShaderCatalog`/`ShaderCatalog`. Falls back to a reduced 8-bit shader or identity grader by `GraderSelection.kt`. AGSL was rejected (see PROGRESS.md). Ultra HDR `Gainmap` is a platform API (API 34+).
+
+## Release packaging (`app/build.gradle.kts`, `app/proguard-rules.pro`, `app/src/main/AndroidManifest.xml`)
+- Ships as an App Bundle (`bundleRelease`, `bundle { abi { enableSplit = true } }`); ABIs `arm64-v8a`, `armeabi-v7a`, `x86_64`. `-Pakastudio.abiSplits=true` emits per-ABI APKs instead of the universal APK.
+- R8 keeps: MediaPipe framework + protobuf lite, LiteRT, Flogger (`allowshrinking`; inlining broke MediaPipe's caller lookup, so every model fell back in release), and `RoomDatabase` constructors.
+- The manifest removes `androidx.work.WorkManagerInitializer` (WorkManager arrives only transitively via LiteRT → play:ai-delivery → asset-delivery).

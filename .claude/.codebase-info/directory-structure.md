@@ -24,4 +24,4 @@ feature/studio/
   res/values + res/values-tr     strings (en, tr)
   src/screenshotTest + screenshotTestDebug/reference   canvas, controls, dropzone, theme
 ```
-Each module's JVM tests: `<module>/src/test/kotlin/...` mirroring main packages. Build outputs (`*/build/`) are not mapped.
+Each module's JVM tests: `<module>/src/test/kotlin/...` mirroring main packages. Device (instrumented) tests: `<module>/src/androidTest/kotlin/...` in all seven modules; `app/src/androidTest/.../studio/` holds the end-to-end Studio flow suite (`StudioDeviceHarness`, `QaPhotos`). Build outputs (`*/build/`) are not mapped.

@@ -10,7 +10,7 @@ Host application. `AkaStudioApp.kt` (owns the one `StudioContainer`, purges stal
 Photos/zip → `PhotoCandidate`s with metadata and decoders.
 - `core/ingestion/api/`: `IngestionSession` (+`IngestionRequest`), `ArchiveExtractor`/`ZipLimits`, `ImageReading.kt` (`MetadataParser`, `AnalysisDecoder`, `SourceOpener`), `IngestionException`.
 - `model/`: `PhotoCandidate`, `PhotoSource`, `CaptureMetadata`, `ColorSpaceTag`, `IngestionEvent`, `IngestionError`, `SkipReason`.
-- `zip/StreamingZipExtractor` (zip-bomb limits), `metadata/ExifAndGainMapParser`, `decode/{SampledAnalysisDecoder,FullResolutionDecoder}`, `picker/MediaPickerIngestor`, `pipeline/DefaultIngestionSession`.
+- `zip/StreamingZipExtractor` (zip-bomb limits), `metadata/ExifAndGainMapParser`, `decode/{SampledAnalysisDecoder,FullResolutionDecoder}`, `picker/MediaPickerIngestor`, `pipeline/DefaultIngestionSession` (per-archive staging: an archive's files are published only after it ends cleanly), `pipeline/SkipLogger` (logs why a picked item was skipped).
 - Factory: `IngestionFactory.kt`. Deps: exifinterface, activity, coroutines; no project modules.
 
 ## :core:vision-curator
@@ -40,5 +40,5 @@ Compose UI, MVI state and DI.
 - `domain/StudioDependencies.kt` (`StudioDependencies`, `PhotoPreparer`, `HarmonizationPlanner`, `StudioDispatchers`), `StudioError`, `ExportCanvasPolicy`, `PreparedPhotoStore`.
 - `mvi/`: `StudioState`/`StudioPhase`, `StudioIntent`, `StudioEffect`, `StudioReducer`, `StudioViewModel`, `SceneBuilder`.
 - `di/`: `StudioContainer`, `DefaultPhotoPreparer`, `AndroidPreparerBackend`, `LazyAnalysisModels`, `StudioContainerErrorMapper`, `CanvasHitTest`.
-- `ui/`: `StudioRoute`, `StudioScreen`, `dropzone/`, `canvas/` (+`scope/` waveform), `controls/` (tabs, export sheet), `note/` (curator note text), `theme/` (Darkroom tokens). Strings in `res/values` and `values-tr`.
+- `ui/`: `StudioRoute`, `StudioScreen`, `dropzone/`, `canvas/` (+`scope/` waveform; `ScopeLabelLayout` clamps label placement), `controls/` (tabs, export sheet), `note/` (curator note text), `theme/` (Darkroom tokens). Strings in `res/values` and `values-tr`.
 - Deps: all five core modules (api), Compose BOM, lifecycle, activity-compose.
