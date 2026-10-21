@@ -166,6 +166,20 @@ internal object ControlsFixtures {
         ),
     )
 
+    /**
+     * The user forced Hero over the curator's 3-photo collage, drawer open. The curation is what `decide` returns
+     * for the forced mode (its note names Hero); the AI recommendation stays on the collage.
+     */
+    fun userPick(): StudioState = state(drawerOpen = true).copy(
+        curation = curation.copy(
+            chosen = options.getValue(StoryMode.HERO),
+            note = curation.note.copy(chosenMode = StoryMode.HERO),
+        ),
+        aiRecommendedMode = StoryMode.COLLAGE_3,
+        selection = SelectionUi(mode = StoryMode.HERO, photoIds = persistentListOf("p1")),
+        template = StoryTemplate.HERO_FULL_BLEED,
+    )
+
     /** An export running at the encode stage, 72% done. */
     fun exporting(): StudioState = state(ControlTab.EXPORT).let {
         it.copy(

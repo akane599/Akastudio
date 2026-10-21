@@ -81,7 +81,10 @@ internal object StudioReducer {
         ),
     )
 
-    /** Folds a non-terminal curation step into telemetry. */
+    /**
+     * Folds a curation step into telemetry. [CurationProgress.Decided] also records the curator's own pick as
+     * [StudioState.aiRecommendedMode], replacing any earlier run's; forced modes never pass through here.
+     */
     fun onCuration(state: StudioState, progress: CurationProgress): StudioState = when (progress) {
         is CurationProgress.Analyzing -> state.copy(
             telemetry = state.telemetry.copy(
@@ -98,6 +101,7 @@ internal object StudioReducer {
             ),
         )
         is CurationProgress.Decided -> state.copy(
+            aiRecommendedMode = progress.result.chosen.mode,
             telemetry = state.telemetry.copy(
                 clusters = progress.result.clusters.size,
                 rejected = progress.result.rejectedIds.size,
