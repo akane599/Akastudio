@@ -29,8 +29,11 @@ internal class AndroidPreparerBackend(
 
     override suspend fun maxTextureSize(): Int = renderer.maxTextureSize()
 
-    override suspend fun decodeFull(candidate: PhotoCandidate, maxLongEdge: Int): FullResolutionImage =
-        BitmapImage(decoder.decode(candidate, maxLongEdge))
+    override suspend fun decodeFull(
+        candidate: PhotoCandidate,
+        maxLongEdge: Int,
+        callerCancelled: () -> Boolean,
+    ): FullResolutionImage = BitmapImage(decoder.decode(candidate, maxLongEdge, callerCancelled))
 
     override suspend fun register(key: String, image: FullResolutionImage) {
         renderer.registerImage(key, (image as BitmapImage).bitmap)
