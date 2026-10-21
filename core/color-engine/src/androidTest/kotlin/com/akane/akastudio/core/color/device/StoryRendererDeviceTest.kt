@@ -120,14 +120,21 @@ class StoryRendererDeviceTest {
             report("context loss: re-render after destroy/recreate max |Δ| = $diff (linear), ${before.width}x${before.height}")
             assertEquals("post-recreation render must equal the pre-loss render", 0f, diff, 0f)
 
-            // Control: the match above depends on the re-upload. Drop the textures without re-uploading and the
-            // same scene can no longer render.
+            // A re-upload that failed part-way leaves the new context installed with textureless entries (F-22).
+            // Drop the textures without re-uploading: the next render must upload them again, not fail for the session.
             renderer.onGlThread { (privateField(renderer, "images") as ImageRegistry).releaseTextures() }
+            val retried = runBlocking { renderer.renderOffscreen(lossScene()) }
+            val retriedDiff = maxDiff(before, retried)
+            report("context loss: render after a failed re-upload max |Δ| = $retriedDiff (linear)")
+            assertEquals("textureless entries must be re-uploaded on use and reproduce the render", 0f, retriedDiff, 0f)
+
+            // Control: a key that is not registered still fails instead of sampling garbage.
+            runBlocking { renderer.unregisterImage("linear") }
             try {
                 runBlocking { renderer.renderOffscreen(lossScene()) }
-                fail("rendering with released, non-reuploaded textures must fail")
+                fail("rendering an unregistered image must fail")
             } catch (expected: IllegalArgumentException) {
-                report("context loss control: without re-upload -> ${expected.message}")
+                report("context loss control: unregistered key -> ${expected.message}")
             }
         } finally {
             renderer.close()
