@@ -1,0 +1,73 @@
+package com.akane.akastudio.core.ingestion
+
+import android.content.ContentResolver
+import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
+import com.akane.akastudio.core.ingestion.api.AnalysisDecoder
+import com.akane.akastudio.core.ingestion.api.IngestionSession
+import com.akane.akastudio.core.ingestion.api.SourceOpener
+import com.akane.akastudio.core.ingestion.api.ZipLimits
+import com.akane.akastudio.core.ingestion.decode.SampledAnalysisDecoder
+import com.akane.akastudio.core.ingestion.metadata.ExifAndGainMapParser
+import com.akane.akastudio.core.ingestion.model.PhotoSource
+import com.akane.akastudio.core.ingestion.picker.MediaPickerIngestor
+import com.akane.akastudio.core.ingestion.pipeline.DefaultIngestionSession
+import com.akane.akastudio.core.ingestion.zip.StreamingZipExtractor
+import java.io.File
+import java.io.FileInputStream
+import java.io.IOException
+import java.io.InputStream
+import java.util.UUID
+
+private const val DEFAULT_STALE_MILLIS = 24L * 60 * 60 * 1000
+private const val INGEST_DIR = "ingest"
+
+internal class ContentSourceOpener(private val resolver: ContentResolver) : SourceOpener {
+    override fun open(source: PhotoSource): InputStream = when (source) {
+        is PhotoSource.ContentUri ->
+            resolver.openInputStream(Uri.parse(source.uri)) ?: throw IOException("cannot open ${source.uri}")
+        is PhotoSource.ExtractedFile -> FileInputStream(source.path)
+    }
+}
+
+internal fun sourceSize(resolver: ContentResolver, source: PhotoSource): Long? = when (source) {
+    is PhotoSource.ExtractedFile -> File(source.path).length()
+    is PhotoSource.ContentUri -> try {
+        resolver.query(Uri.parse(source.uri), arrayOf(OpenableColumns.SIZE), null, null, null)?.use { c ->
+            val idx = c.getColumnIndex(OpenableColumns.SIZE)
+            if (idx >= 0 && c.moveToFirst() && !c.isNull(idx)) c.getLong(idx) else null
+        }
+    } catch (_: RuntimeException) {
+        null
+    }
+}
+
+fun createIngestionSession(context: Context, limits: ZipLimits = ZipLimits()): IngestionSession {
+    val app = context.applicationContext
+    val resolver = app.contentResolver
+    val opener = ContentSourceOpener(resolver)
+    val workDir = File(app.cacheDir, "$INGEST_DIR/${UUID.randomUUID()}").apply { mkdirs() }
+    return DefaultIngestionSession(
+        workDir = workDir,
+        extractor = StreamingZipExtractor(limits),
+        parser = ExifAndGainMapParser(opener, { sourceSize(resolver, it) }, contentResolver = resolver),
+        picker = MediaPickerIngestor(resolver)::resolve,
+        zipOpener = { uri -> opener.open(PhotoSource.ContentUri(uri, "")) },
+    )
+}
+
+fun createAnalysisDecoder(context: Context): AnalysisDecoder {
+    val resolver = context.applicationContext.contentResolver
+    return SampledAnalysisDecoder(ContentSourceOpener(resolver), resolver)
+}
+
+/** Deletes crash-leftover session dirs under cacheDir/ingest older than [olderThanMillis]. */
+fun purgeStaleIngestionDirs(context: Context, olderThanMillis: Long = DEFAULT_STALE_MILLIS) {
+    val root = File(context.applicationContext.cacheDir, INGEST_DIR)
+    val dirs = root.listFiles { f -> f.isDirectory }?.toList() ?: return
+    staleDirs(dirs, System.currentTimeMillis(), olderThanMillis).forEach { it.deleteRecursively() }
+}
+
+internal fun staleDirs(dirs: List<File>, now: Long, olderThan: Long): List<File> =
+    dirs.filter { it.isDirectory && now - it.lastModified() > olderThan }
