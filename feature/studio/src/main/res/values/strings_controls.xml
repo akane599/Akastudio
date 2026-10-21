@@ -115,4 +115,13 @@
     <string name="controls_stage_encode">Encoding</string>
     <string name="controls_stage_write">Saving</string>
     <string name="controls_export_saved">Saved to Pictures/AkaStudio</string>
+
+    <!-- Collapsible control panel and the first-use compare hint -->
+    <string name="controls_panel_handle">Controls panel</string>
+    <string name="controls_panel_expanded">Expanded</string>
+    <string name="controls_panel_collapsed">Collapsed</string>
+    <string name="controls_panel_expand">Expand</string>
+    <string name="controls_panel_collapse">Collapse</string>
+    <string name="controls_compare_hint">Drag to compare before/after</string>
+    <string name="controls_compare_hint_dismiss">Dismiss tip</string>
 </resources>

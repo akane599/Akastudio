@@ -105,4 +105,13 @@
     <string name="controls_stage_encode">Kodlanıyor</string>
     <string name="controls_stage_write">Kaydediliyor</string>
     <string name="controls_export_saved">Resimler/AkaStudio klasörüne kaydedildi</string>
+
+    <!-- Daraltılabilir kontrol paneli ve ilk kullanım karşılaştırma ipucu -->
+    <string name="controls_panel_handle">Kontrol paneli</string>
+    <string name="controls_panel_expanded">Genişletildi</string>
+    <string name="controls_panel_collapsed">Daraltıldı</string>
+    <string name="controls_panel_expand">Genişlet</string>
+    <string name="controls_panel_collapse">Daralt</string>
+    <string name="controls_compare_hint">Önce/sonra karşılaştırmak için sürükleyin</string>
+    <string name="controls_compare_hint_dismiss">İpucunu kapat</string>
 </resources>
