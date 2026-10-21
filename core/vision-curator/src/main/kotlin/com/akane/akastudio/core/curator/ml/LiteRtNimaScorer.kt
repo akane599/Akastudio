@@ -23,6 +23,12 @@ internal enum class NimaAccelerator { GPU, CPU }
  * LiteRT's GPU (OpenGL) path must run on the thread that initialised it.
  */
 internal interface NimaBackend {
+    /** Input tensor dimensions as the model declares them; the batch dimension may be dynamic (-1). */
+    val inputShape: List<Int>
+
+    /** Output tensor dimensions as the model declares them; the batch dimension may be dynamic (-1). */
+    val outputShape: List<Int>
+
     /** Runs one inference on [input] (NHWC 1×224×224×3 floats in [−1, 1]) and returns the raw output values. */
     fun run(input: FloatArray): FloatArray
 
@@ -127,7 +133,16 @@ internal class LiteRtNimaScorer private constructor(
         private const val INPUT_NAME = "keras_tensor"
         private const val OUTPUT_NAME = "output_0"
 
-        private val INPUT_SHAPE = listOf(1, NimaMath.INPUT_EDGE, NimaMath.INPUT_EDGE, 3)
+        /** Per-image tensor dimensions, i.e. everything after the leading batch dimension. */
+        private val INPUT_ITEM_SHAPE = listOf(NimaMath.INPUT_EDGE, NimaMath.INPUT_EDGE, 3)
+        private val OUTPUT_ITEM_SHAPE = listOf(NimaMath.BIN_COUNT)
+
+        /**
+         * Accepted batch dimensions: 1, or -1 for the dynamic batch the pinned model declares. LiteRT 2.3.0's
+         * CompiledModel has no input-resize API; it allocates a dynamic batch as 1, which the probe run's
+         * 10-value output check confirms.
+         */
+        private val ACCEPTED_BATCH = setOf(1, -1)
         private const val INPUT_FLOATS = NimaMath.INPUT_EDGE * NimaMath.INPUT_EDGE * 3
 
         /** Compiles the pinned model (GPU, then CPU) and verifies its tensor contract; throws when nothing usable loads. */
@@ -140,7 +155,8 @@ internal class LiteRtNimaScorer private constructor(
          * Starts the scorer thread and, on it, compiles and probes a backend per accelerator in [NimaAccelerator]
          * order until one works. Throws [IllegalStateException] (with the thread stopped) when none does.
          */
-        internal fun create(compile: (NimaAccelerator) -> NimaBackend): LiteRtNimaScorer {
+        internal fun create(compileUnchecked: (NimaAccelerator) -> NimaBackend): LiteRtNimaScorer {
+            val compile = { accelerator: NimaAccelerator -> compileVerified(compileUnchecked, accelerator) }
             val dispatcher = Executors.newSingleThreadExecutor { r ->
                 Thread(r, THREAD_NAME).apply { isDaemon = true }
             }.asCoroutineDispatcher()
@@ -181,6 +197,29 @@ internal class LiteRtNimaScorer private constructor(
                 }
             }
             throw IllegalStateException("NIMA model unavailable", lastFailure)
+        }
+
+        /**
+         * Compiles for [accelerator] and verifies the backend's tensor shapes; a mismatch closes the backend and
+         * fails like a compile error, so the initial compile and the CPU recompile apply the same contract.
+         */
+        private fun compileVerified(compile: (NimaAccelerator) -> NimaBackend, accelerator: NimaAccelerator): NimaBackend {
+            val backend = compile(accelerator)
+            try {
+                verifyShape("input", backend.inputShape, INPUT_ITEM_SHAPE)
+                verifyShape("output", backend.outputShape, OUTPUT_ITEM_SHAPE)
+            } catch (e: IllegalStateException) {
+                closeLogged(backend)
+                throw e
+            }
+            return backend
+        }
+
+        /** [dims] must be one accepted batch dimension followed by exactly [itemShape]. */
+        private fun verifyShape(role: String, dims: List<Int>, itemShape: List<Int>) {
+            check(dims.size == itemShape.size + 1 && dims[0] in ACCEPTED_BATCH && dims.drop(1) == itemShape) {
+                "$role shape $dims, expected [1 or -1, ${itemShape.joinToString()}]"
+            }
         }
 
         /** Queues the engine's release on the scorer thread, then shuts that thread down once the release ran. */
@@ -229,6 +268,8 @@ internal class LiteRtNimaScorer private constructor(
         private val model: CompiledModel,
         private val inputs: List<TensorBuffer>,
         private val outputs: List<TensorBuffer>,
+        override val inputShape: List<Int>,
+        override val outputShape: List<Int>,
     ) : NimaBackend {
 
         override fun run(input: FloatArray): FloatArray {
@@ -244,7 +285,10 @@ internal class LiteRtNimaScorer private constructor(
         }
 
         companion object {
-            /** Compiles the model for [accelerator] and verifies its tensor contract; closes everything it opened on failure. */
+            /**
+             * Compiles the model for [accelerator] and checks its tensors are FLOAT with a layout; closes everything it
+             * opened on failure. The shapes are verified by the scorer once the backend is returned.
+             */
             fun compile(assets: AssetManager, accelerator: NimaAccelerator): NimaBackend {
                 val model = CompiledModel.create(
                     assets,
@@ -254,14 +298,14 @@ internal class LiteRtNimaScorer private constructor(
                 var inputs: List<TensorBuffer> = emptyList()
                 var outputs: List<TensorBuffer> = emptyList()
                 try {
-                    verifyTensor("input", model.getInputTensorType(INPUT_NAME, SIGNATURE), INPUT_SHAPE)
-                    verifyTensor("output", model.getOutputTensorType(OUTPUT_NAME, SIGNATURE), null)
+                    val inputShape = floatDimensions("input", model.getInputTensorType(INPUT_NAME, SIGNATURE))
+                    val outputShape = floatDimensions("output", model.getOutputTensorType(OUTPUT_NAME, SIGNATURE))
                     inputs = model.createInputBuffers()
                     outputs = model.createOutputBuffers()
                     check(inputs.size == 1 && outputs.size == 1) {
                         "expected 1 input and 1 output buffer, got ${inputs.size} and ${outputs.size}"
                     }
-                    return LiteRtBackend(model, inputs, outputs)
+                    return LiteRtBackend(model, inputs, outputs, inputShape, outputShape)
                 } catch (e: Throwable) {
                     for (closeable in inputs + outputs) {
                         try {
@@ -284,18 +328,10 @@ internal class LiteRtNimaScorer private constructor(
                 NimaAccelerator.CPU -> Accelerator.CPU
             }
 
-            /** Element type must be FLOAT; shape must equal [expectedShape], or (output) hold exactly 10 values. */
-            private fun verifyTensor(role: String, type: TensorType, expectedShape: List<Int>?) {
+            /** Dimensions of a FLOAT tensor; throws when the element type differs or no layout is reported. */
+            private fun floatDimensions(role: String, type: TensorType): List<Int> {
                 check(type.elementType == TensorType.ElementType.FLOAT) { "$role tensor is ${type.elementType}, expected FLOAT" }
-                val dims = checkNotNull(type.layout) { "$role tensor reports no layout" }.dimensions
-                if (expectedShape != null) {
-                    check(dims == expectedShape) { "$role shape $dims, expected $expectedShape" }
-                } else {
-                    val count = dims.fold(1L) { acc, d -> acc * d }
-                    check(dims.isNotEmpty() && dims.all { it > 0 } && count == NimaMath.BIN_COUNT.toLong()) {
-                        "$role shape $dims does not hold ${NimaMath.BIN_COUNT} bins"
-                    }
-                }
+                return checkNotNull(type.layout) { "$role tensor reports no layout" }.dimensions
             }
         }
     }

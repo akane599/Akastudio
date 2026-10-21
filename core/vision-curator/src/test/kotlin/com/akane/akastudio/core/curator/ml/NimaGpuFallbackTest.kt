@@ -109,6 +109,8 @@ class NimaGpuFallbackTest {
         val compiler = RecordingCompiler { accelerator ->
             when (accelerator) {
                 NimaAccelerator.GPU -> object : NimaBackend {
+                    override val inputShape = listOf(1, NimaMath.INPUT_EDGE, NimaMath.INPUT_EDGE, 3)
+                    override val outputShape = listOf(1, NimaMath.BIN_COUNT)
                     private var runs = 0
                     override fun run(input: FloatArray): FloatArray =
                         if (++runs == 1) FloatArray(NimaMath.BIN_COUNT) else FloatArray(NimaMath.BIN_COUNT) { Float.NaN }
