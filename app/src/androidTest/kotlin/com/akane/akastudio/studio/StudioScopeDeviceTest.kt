@@ -7,12 +7,14 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.akane.akastudio.feature.studio.R
 import com.akane.akastudio.feature.studio.mvi.ScopeMode
 import com.akane.akastudio.feature.studio.mvi.StudioIntent
 import com.akane.akastudio.feature.studio.ui.canvas.scope.SCOPE_LABEL_TAG
+import com.akane.akastudio.feature.studio.ui.canvas.scope.SCOPE_PLOT_TAG
 import com.akane.akastudio.feature.studio.ui.canvas.scope.ScopeMinWidth
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -39,6 +41,7 @@ class StudioScopeDeviceTest {
      * On this device's ~195 dp canvas the 40% scope was 78 dp wide: the histogram's 0/50/100 labels sat on its R/G/B
      * legend and "Luma waveform" was cut off. Each mode must now be at least [ScopeMinWidth] wide and show all of its
      * text (caption, 0/50/100, and the R/G/B letters or legend) inside the panel, no two pieces overlapping.
+     * SQ-68: the legend and the parade letters were drawn over the traces; no text may touch the plot either.
      */
     @Test
     fun scopeIsAtLeastTheMinimumWidthAndItsLabelsNeverOverlapInAnyMode() {
@@ -51,8 +54,11 @@ class StudioScopeDeviceTest {
             studio.send(StudioIntent.SetScope(mode))
             compose.waitForIdle()
             val caption = studio.string(captionRes(mode))
+            val shortCaption = studio.string(shortCaptionRes(mode))
             val panel = compose.onNode(hasContentDescription(caption)).fetchSemanticsNode().boundsInRoot
             assertTrue("$mode: scope is ${panel.width} px wide, under the $floor px minimum", panel.width >= floor - 1f)
+            val plot = compose.onNodeWithTag(SCOPE_PLOT_TAG, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+            assertTrue("$mode: plot $plot is empty", plot.width > 0f && plot.height > 0f)
 
             val labels = compose.onAllNodesWithTag(SCOPE_LABEL_TAG, useUnmergedTree = true).fetchSemanticsNodes()
             assertEquals("$mode: scope text shown ${labels.map { it.describe() }}", count, labels.size)
@@ -60,6 +66,7 @@ class StudioScopeDeviceTest {
                 val b = label.boundsInRoot
                 val inside = b.left >= panel.left && b.top >= panel.top && b.right <= panel.right && b.bottom <= panel.bottom
                 assertTrue("$mode: ${label.describe()} at $b leaves the panel $panel", inside)
+                assertFalse("$mode: ${label.describe()} at $b is drawn over the plot $plot", b.overlapsArea(plot))
             }
             labels.forEachIndexed { i, a ->
                 labels.drop(i + 1).forEach { b ->
@@ -70,7 +77,8 @@ class StudioScopeDeviceTest {
                 }
             }
 
-            val captionNode = labels.single { it.text() == caption }
+            // The caption gives way to its short form to keep the R/G/B identity on its row.
+            val captionNode = labels.single { it.text() == caption || it.text() == shortCaption }
             val layout = textLayout(captionNode)
             // hasVisualOverflow is no use here: the paragraph is laid out at the panel's full width, wider than the node.
             val fullWidth = ceil(layout.multiParagraph.intrinsics.maxIntrinsicWidth)
@@ -86,6 +94,12 @@ class StudioScopeDeviceTest {
         ScopeMode.RGB_PARADE -> R.string.canvas_scope_parade
         ScopeMode.HISTOGRAM -> R.string.canvas_scope_histogram
         else -> R.string.canvas_scope_luma
+    }
+
+    private fun shortCaptionRes(mode: ScopeMode): Int = when (mode) {
+        ScopeMode.RGB_PARADE -> R.string.canvas_scope_parade_short
+        ScopeMode.HISTOGRAM -> R.string.canvas_scope_histogram_short
+        else -> R.string.canvas_scope_luma_short
     }
 
     private fun SemanticsNode.text(): String? =
