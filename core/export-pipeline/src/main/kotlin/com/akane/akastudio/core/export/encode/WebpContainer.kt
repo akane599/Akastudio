@@ -1,6 +1,7 @@
 package com.akane.akastudio.core.export.encode
 
 import java.io.ByteArrayOutputStream
+import java.io.OutputStream
 
 /**
  * Rewrites a WebP file into the extended (VP8X) layout carrying ICC and EXIF metadata.
@@ -19,13 +20,28 @@ object WebpContainer {
      *   `VP8 ` files are rejected), or when a metadata array is empty.
      */
     fun withMetadata(webp: ByteArray, icc: ByteArray?, exifTiff: ByteArray?): ByteArray {
+        val container = assemble(webp, icc, exifTiff)
+        require(container.size <= Int.MAX_VALUE) { "WebP output too large for one array: ${container.size} bytes" }
+        val out = ByteArrayOutputStream(container.size.toInt())
+        container.writeTo(out)
+        return out.toByteArray()
+    }
+
+    /**
+     * Validates and lays out the same file [withMetadata] returns without copying it: [Assembled.writeTo] streams the
+     * container (header, metadata and slices of [webp]) straight into a sink. [webp], [icc] and [exifTiff] must not
+     * change until it has been written.
+     *
+     * @throws IllegalArgumentException as [withMetadata].
+     */
+    internal fun assemble(webp: ByteArray, icc: ByteArray?, exifTiff: ByteArray?): Assembled {
         require(icc == null || icc.isNotEmpty()) { "ICC profile is empty" }
         require(exifTiff == null || exifTiff.isNotEmpty()) { "EXIF block is empty" }
-        val chunks = parseRiff(webp)
-        val first = chunks.first()
+        val parsed = parseRiff(webp)
+        val first = parsed.first()
         val layout = when (first.fourCc) {
-            VP8L -> simpleLossless(chunks)
-            VP8X -> extended(chunks)
+            VP8L -> simpleLossless(parsed)
+            VP8X -> extended(parsed)
             VP8 -> throw IllegalArgumentException("Simple lossy VP8 WebP is not supported; expected VP8L or VP8X")
             else -> throw IllegalArgumentException("Unexpected first WebP chunk '${first.fourCc}'")
         }
@@ -43,21 +59,31 @@ object WebpContainer {
         putUInt24(vp8x, 4, layout.canvasWidth - 1)
         putUInt24(vp8x, 7, layout.canvasHeight - 1)
 
-        val body = ByteArrayOutputStream(webp.size + (finalIcc?.size ?: 0) + (finalExif?.size ?: 0) + 64)
-        body.write(WEBP.toByteArray(Charsets.US_ASCII))
-        writeChunk(body, VP8X, vp8x, 0, vp8x.size)
-        if (finalIcc != null) writeChunk(body, ICCP, finalIcc, 0, finalIcc.size)
-        for (chunk in layout.imageChunks) writeChunk(body, chunk.fourCc, webp, chunk.offset, chunk.size)
-        if (finalExif != null) writeChunk(body, EXIF, finalExif, 0, finalExif.size)
-        layout.xmp?.let { writeChunk(body, XMP, webp, it.offset, it.size) }
-
-        val riffSize = body.size().toLong()
+        val output = buildList {
+            add(Chunk(VP8X, vp8x, 0, vp8x.size))
+            if (finalIcc != null) add(Chunk(ICCP, finalIcc, 0, finalIcc.size))
+            addAll(layout.imageChunks)
+            if (finalExif != null) add(Chunk(EXIF, finalExif, 0, finalExif.size))
+            layout.xmp?.let(::add)
+        }
+        val riffSize = WEBP.length + output.sumOf { CHUNK_HEADER_SIZE + it.size.toLong() + (it.size and 1) }
         require(riffSize <= MAX_RIFF_SIZE) { "WebP output too large: $riffSize bytes" }
-        val result = ByteArrayOutputStream(body.size() + 8)
-        result.write(RIFF.toByteArray(Charsets.US_ASCII))
-        result.write(uInt32Le(riffSize))
-        body.writeTo(result)
-        return result.toByteArray()
+        return Assembled(riffSize, output)
+    }
+
+    /** A laid-out extended WebP file of [size] bytes; see [assemble]. */
+    internal class Assembled internal constructor(private val riffSize: Long, private val chunks: List<Chunk>) {
+
+        /** Total file size in bytes, RIFF header included. */
+        val size: Long get() = riffSize + 8
+
+        /** Writes the whole file to [out] (not flushed or closed). */
+        fun writeTo(out: OutputStream) {
+            out.write(RIFF.toByteArray(Charsets.US_ASCII))
+            out.write(uInt32Le(riffSize))
+            out.write(WEBP.toByteArray(Charsets.US_ASCII))
+            for (chunk in chunks) writeChunk(out, chunk)
+        }
     }
 
     private fun simpleLossless(chunks: List<Chunk>): Layout {
@@ -143,11 +169,11 @@ object WebpContainer {
         return chunks
     }
 
-    private fun writeChunk(out: ByteArrayOutputStream, type: String, source: ByteArray, offset: Int, size: Int) {
-        out.write(type.toByteArray(Charsets.US_ASCII))
-        out.write(uInt32Le(size.toLong()))
-        out.write(source, offset, size)
-        if (size and 1 != 0) out.write(0)
+    private fun writeChunk(out: OutputStream, chunk: Chunk) {
+        out.write(chunk.fourCc.toByteArray(Charsets.US_ASCII))
+        out.write(uInt32Le(chunk.size.toLong()))
+        out.write(chunk.source, chunk.offset, chunk.size)
+        if (chunk.size and 1 != 0) out.write(0)
     }
 
     private fun fourCc(data: ByteArray, offset: Int): String = String(data, offset, 4, Charsets.ISO_8859_1)
@@ -171,7 +197,7 @@ object WebpContainer {
         byteArrayOf(value.toByte(), (value ushr 8).toByte(), (value ushr 16).toByte(), (value ushr 24).toByte())
 
     /** A chunk payload inside [source]: [size] bytes starting at [offset] (header and padding excluded). */
-    private class Chunk(val fourCc: String, val source: ByteArray, val offset: Int, val size: Int) {
+    internal class Chunk(val fourCc: String, val source: ByteArray, val offset: Int, val size: Int) {
         fun copy(): ByteArray = source.copyOfRange(offset, offset + size)
     }
 
@@ -202,6 +228,7 @@ object WebpContainer {
     private const val VP8L_SIGNATURE = 0x2F
     private const val VP8L_HEADER_SIZE = 5
     private const val VP8X_PAYLOAD_SIZE = 10
+    private const val CHUNK_HEADER_SIZE = 8
     private const val MAX_RIFF_SIZE = 0xFFFFFFFEL
 
     internal const val FLAG_ANIMATION = 0x02

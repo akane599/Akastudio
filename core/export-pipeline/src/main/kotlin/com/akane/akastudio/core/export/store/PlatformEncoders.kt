@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.Gainmap
 import android.os.Build
 import com.akane.akastudio.core.color.api.HalfFloatImage
+import com.akane.akastudio.core.export.encode.JpegSegments
 import com.akane.akastudio.core.export.encode.Rgba8Rows
 import com.akane.akastudio.core.export.pipeline.UltraHdrEncoder
 import com.akane.akastudio.core.export.pipeline.WebpLosslessEncoder
@@ -19,7 +20,11 @@ import kotlin.math.max
 /**
  * Ultra HDR JPEG through the platform: an sRGB ARGB_8888 base (blue-noise dithered), a single-channel ALPHA_8
  * [Gainmap] with the computed ratios, gamma and offsets, and `Bitmap.compress(JPEG)`, which writes the gain map
- * container on Android 14+.
+ * container on Android 14+. The compressed file is buffered and, when an EXIF block is given, an APP1 Exif segment is
+ * spliced in right after SOI ([JpegSegments.insertApp1AfterSoi]; the MPF offsets stay valid).
+ *
+ * Chroma subsampling is the platform default (4:2:0): `Bitmap.compress` exposes no way to change it, unlike the
+ * 4:4:4 [com.akane.akastudio.core.export.encode.JpegEncoder] used for SOCIAL_STORY_JPEG.
  *
  * Requires API 34 (`androidx.annotation` is not on this module's classpath, so the requirement is declared with
  * [TargetApi] and enforced at construction).
@@ -35,11 +40,18 @@ class PlatformUltraHdrEncoder : UltraHdrEncoder {
         }
     }
 
-    override fun encode(sdr: HalfFloatImage, gain: GainMapResult, out: OutputStream, quality: Int) {
+    override fun encode(sdr: HalfFloatImage, gain: GainMapResult, out: OutputStream, quality: Int, exifTiff: ByteArray?) {
         require(quality in 0..100) { "JPEG quality must be in 0..100: $quality" }
         require(gain.gainWidth > 0 && gain.gainHeight > 0 && gain.gain.size == gain.gainWidth * gain.gainHeight) {
             "gain map holds ${gain.gain.size} codes for ${gain.gainWidth}x${gain.gainHeight}"
         }
+        val jpeg = compress(sdr, gain, quality)
+        out.write(if (exifTiff != null) JpegSegments.insertApp1AfterSoi(jpeg, exifTiff) else jpeg)
+        out.flush()
+    }
+
+    /** Builds the base and gain-map bitmaps, compresses them into a buffer and frees both bitmaps. */
+    private fun compress(sdr: HalfFloatImage, gain: GainMapResult, quality: Int): ByteArray {
         val base = Bitmap.createBitmap(sdr.width, sdr.height, Bitmap.Config.ARGB_8888)
         val contents = Bitmap.createBitmap(gain.gainWidth, gain.gainHeight, Bitmap.Config.ALPHA_8)
         try {
@@ -66,8 +78,9 @@ class PlatformUltraHdrEncoder : UltraHdrEncoder {
                 setMinDisplayRatioForHdrTransition(minDisplayRatio)
                 setDisplayRatioForFullHdr(max(minDisplayRatio, gain.displayRatioHdr))
             }
-            if (!base.compress(Bitmap.CompressFormat.JPEG, quality, out)) throw IOException("Ultra HDR JPEG compression failed")
-            out.flush()
+            val buffer = ByteArrayOutputStream()
+            if (!base.compress(Bitmap.CompressFormat.JPEG, quality, buffer)) throw IOException("Ultra HDR JPEG compression failed")
+            return buffer.toByteArray()
         } finally {
             base.recycle()
             contents.recycle()

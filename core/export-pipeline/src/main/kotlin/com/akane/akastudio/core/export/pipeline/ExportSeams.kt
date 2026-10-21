@@ -26,9 +26,10 @@ fun interface EncodedSink {
 fun interface UltraHdrEncoder {
     /**
      * Writes an Ultra HDR JPEG of [sdr] (linear light) carrying [gain]'s gain map and parameters into [out] at JPEG
-     * [quality] (0..100). [gain]'s own `sdr` field is ignored in favour of [sdr]. The stream is flushed, not closed.
+     * [quality] (0..100), with [exifTiff] (a TIFF block, see `ExifWriter`) as the primary image's APP1 Exif segment
+     * when non-null. [gain]'s own `sdr` field is ignored in favour of [sdr]. The stream is flushed, not closed.
      */
-    fun encode(sdr: HalfFloatImage, gain: GainMapResult, out: OutputStream, quality: Int)
+    fun encode(sdr: HalfFloatImage, gain: GainMapResult, out: OutputStream, quality: Int, exifTiff: ByteArray?)
 }
 
 /** Encodes sRGB 8-bit rows as a simple lossless WebP file (a single `VP8L` chunk; Android `Bitmap` in production). */
