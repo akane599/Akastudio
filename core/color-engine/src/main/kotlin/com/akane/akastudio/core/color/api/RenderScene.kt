@@ -26,6 +26,8 @@ data class TextOverlay(
     val align: OverlayAlign = OverlayAlign.CENTER,
     val letterSpacingEm: Float = 0.08f,
     val font: OverlayFont = OverlayFont.SANS,
+    val haloArgb: Int = 0,                   // soft outline behind the glyphs so the run reads on any image; 0 = none
+    val maxWidthPx: Float = Float.POSITIVE_INFINITY, // a wider run is drawn at a smaller size that fits
 )
 
 data class RenderScene(

@@ -306,6 +306,25 @@ class RenderMathTest {
     }
 
     @Test
+    fun fittedTextSize_shrinksOnlyRunsWiderThanAPositiveFiniteLimit() {
+        assertEquals(13f, RenderMath.fittedTextSize(26f, 600f, 300f), 1e-5f)
+        assertEquals("already fits", 26f, RenderMath.fittedTextSize(26f, 280f, 300f), 0f)
+        assertEquals("exact fit", 26f, RenderMath.fittedTextSize(26f, 300f, 300f), 0f)
+        assertEquals("no limit", 26f, RenderMath.fittedTextSize(26f, 9000f, Float.POSITIVE_INFINITY), 0f)
+        assertEquals("NaN limit", 26f, RenderMath.fittedTextSize(26f, 9000f, Float.NaN), 0f)
+        assertEquals("non-positive limit", 26f, RenderMath.fittedTextSize(26f, 9000f, 0f), 0f)
+    }
+
+    @Test
+    fun haloExtent_coversHalfTheStrokeAndTheBlurTail() {
+        val size = 26f
+        val extent = RenderMath.haloExtentPx(size)
+        val blurSigma = 0.577f * size * RenderMath.HALO_BLUR_EM + 0.5f
+        assertEquals(size * RenderMath.HALO_STROKE_EM / 2f + 3f * blurSigma, extent, 1e-4f)
+        assertTrue(RenderMath.haloExtentPx(52f) > extent)
+    }
+
+    @Test
     fun mipLevelCount_coversTheFullChain() {
         assertEquals(1, RenderMath.mipLevelCount(1, 1))
         assertEquals(12, RenderMath.mipLevelCount(4000, 3000))
