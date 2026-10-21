@@ -103,8 +103,13 @@ class ZipPathDeviceTest {
         val uri = Uri.fromFile(File(appDir, "slip.zip").apply { writeBytes(slip) }).toString()
 
         val session = createIngestionSession(targetContext)
-        val events = session.use { it.collect(IngestionRequest.ZipArchive(uri, "slip.zip")) }
+        var stagedBeforeClose: List<File> = emptyList()
+        val events = session.use { open ->
+            open.collect(IngestionRequest.ZipArchive(uri, "slip.zip"))
+                .also { stagedBeforeClose = open.workDir.walkTopDown().filter(File::isFile).toList() }
+        }
 
+        assertRejectedArchiveContributedNothing(events, stagedBeforeClose)
         val failure = events.failures().single()
         assertEquals("slip.zip", failure.displayName)
         val error = failure.error
@@ -119,7 +124,7 @@ class ZipPathDeviceTest {
 
     @Test
     fun highRatioBomb_rejectsArchiveWithZipBomb_andLeavesNoPartialFile() {
-        val bomb = zipOf("trip/zeros.jpg" to ByteArray(16 * MIB))
+        val bomb = zipOf("trip/IMG_0001.jpg" to photo1, "trip/zeros.jpg" to ByteArray(16 * MIB))
         assertTrue("fixture is a real high-ratio archive (${bomb.size} bytes)", bomb.size < 64 * 1024)
         val uri = Uri.fromFile(File(appDir, "bomb.zip").apply { writeBytes(bomb) }).toString()
 
@@ -129,10 +134,18 @@ class ZipPathDeviceTest {
             val error = events.failures().single().error
             assertTrue("ZipBomb expected, got $error", error is IngestionError.ZipBomb)
             assertTrue(error.message.startsWith("Archive looks like a decompression bomb: compression ratio"))
-            assertTrue(events.completed().candidates.isEmpty())
             val leftovers = session.workDir.walkTopDown().filter { it.isFile }.toList()
-            assertTrue("partial output deleted: $leftovers", leftovers.isEmpty())
+            assertRejectedArchiveContributedNothing(events, leftovers)
         }
+    }
+
+    /** Fail closed: the good IMG_0001 entry before the bad one is neither accepted nor kept on disk until close. */
+    private fun assertRejectedArchiveContributedNothing(events: List<IngestionEvent>, filesBeforeClose: List<File>) {
+        val done = events.completed()
+        assertTrue("no candidate from the rejected archive: ${done.candidates}", done.candidates.isEmpty())
+        assertEquals("no orphan accepted count", 0, done.telemetry.candidatesAccepted)
+        assertTrue("no CandidateReady emitted", events.none { it is IngestionEvent.CandidateReady })
+        assertTrue("staged IMG_0001 deleted before close: $filesBeforeClose", filesBeforeClose.isEmpty())
     }
 
     @Test

@@ -16,8 +16,8 @@ import com.akane.akastudio.core.ingestion.model.SkipReason
 import com.akane.akastudio.core.ingestion.model.stableCandidateId
 import com.akane.akastudio.core.ingestion.picker.PickedItem
 import java.io.File
-import java.io.IOException
 import java.io.InputStream
+import java.nio.file.Files
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -29,12 +29,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 
 /**
  * Turns picker selections and zip archives into one cold [IngestionEvent] stream. Archives are extracted one at a
- * time; metadata parsing runs concurrently (at most [parseParallelism] at once) and overlaps later extraction.
+ * time and published only once complete; metadata parsing runs concurrently (at most [parseParallelism] at once)
+ * and overlaps the extraction of later archives.
  */
 class DefaultIngestionSession(
     override val workDir: File,
@@ -105,32 +107,47 @@ class DefaultIngestionSession(
             }
         }
 
+        /**
+         * Fails closed: an archive contributes only once it has been read cleanly to its end. A whole-archive
+         * failure (Zip Slip, bomb, limit, I/O) publishes nothing but [IngestionEvent.SourceFailed], so no entry
+         * extracted before the bad one is counted, parsed or kept on disk.
+         */
         private suspend fun CoroutineScope.ingestZip(request: IngestionRequest.ZipArchive) {
-            try {
-                val destination = File(workDir, stableCandidateId(request.uri).take(ARCHIVE_DIR_HEX_CHARS))
-                if (!destination.mkdirs() && !destination.isDirectory) {
-                    throw IOException("Cannot create extraction folder ${destination.name}")
-                }
-                extractor.extract({ zipOpener(request.uri) }, request.uri, destination).collect { event ->
-                    when (event) {
-                        is ZipExtractionEvent.EntryExtracted -> {
-                            emitProgress {
-                                it.copy(
-                                    sourcesTotal = it.sourcesTotal + 1,
-                                    bytesExtracted = it.bytesExtracted + event.bytes,
-                                )
-                            }
-                            enqueueParse(event.source, identity = archiveEntryIdentity(request.uri, event.source))
-                        }
-                        is ZipExtractionEvent.EntrySkipped -> skip(event.entryName, event.reason)
-                    }
-                }
+            val staged = try {
+                extractStaged(request)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: IngestionException) {
-                sourceFailed(request.displayName, e.error)
+                return sourceFailed(request.displayName, e.error)
             } catch (e: Exception) {
-                sourceFailed(request.displayName, IngestionError.Io(e.message ?: e.javaClass.simpleName))
+                return sourceFailed(request.displayName, IngestionError.Io(e.message ?: e.javaClass.simpleName))
+            }
+            for (event in staged) {
+                when (event) {
+                    is ZipExtractionEvent.EntryExtracted -> {
+                        emitProgress {
+                            it.copy(sourcesTotal = it.sourcesTotal + 1, bytesExtracted = it.bytesExtracted + event.bytes)
+                        }
+                        enqueueParse(event.source, identity = archiveEntryIdentity(request.uri, event.source))
+                    }
+                    is ZipExtractionEvent.EntrySkipped -> skip(event.entryName, event.reason)
+                }
+            }
+        }
+
+        /**
+         * Extracts into a fresh staging folder owned by this request alone (the same archive requested twice gets
+         * two), buffering the events. Any failure, cancellation included, deletes that folder before propagating.
+         */
+        private suspend fun extractStaged(request: IngestionRequest.ZipArchive): List<ZipExtractionEvent> {
+            workDir.mkdirs()
+            val prefix = stableCandidateId(request.uri).take(ARCHIVE_DIR_HEX_CHARS) + "-"
+            val staging = Files.createTempDirectory(workDir.toPath(), prefix).toFile()
+            try {
+                return extractor.extract({ zipOpener(request.uri) }, request.uri, staging).toList()
+            } catch (failure: Throwable) {
+                staging.deleteRecursively()
+                throw failure
             }
         }
 

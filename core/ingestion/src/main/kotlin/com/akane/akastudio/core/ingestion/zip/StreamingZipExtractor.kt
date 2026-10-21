@@ -38,8 +38,8 @@ import kotlinx.coroutines.flow.flowOn
  *
  * Limits are enforced on bytes actually inflated, never on declared header sizes. Any failure, including
  * cancellation or a downstream that stops collecting early, deletes only the file being written at that moment.
- * Files already fully written are complete and belong to the consumer (the session's work dir owns their
- * lifetime). Nothing this collection did not create is ever deleted.
+ * Files already fully written are complete and belong to the consumer, which decides their fate (the session
+ * deletes the staging folder of a rejected archive at once). Nothing this collection did not create is ever deleted.
  *
  * [freeSpaceProvider] reports the bytes still claimable on the destination's volume; on Android that is
  * `StorageManager.getAllocatableBytes` (see `createIngestionSession`). [ZipLimits.freeSpaceReserveBytes] is kept free
