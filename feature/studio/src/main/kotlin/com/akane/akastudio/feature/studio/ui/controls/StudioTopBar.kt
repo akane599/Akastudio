@@ -95,9 +95,9 @@ private fun ModeChip(state: StudioState, onClick: () -> Unit, modifier: Modifier
     val spacing = DarkroomTheme.spacing
     val motion = DarkroomTheme.motion
     val curation = state.curation
-    val mode = state.selection.mode ?: curation?.chosen?.mode
-    val modeName = mode?.let { stringResource(it.nameRes()) }
-    val aiPick = curation != null && mode == curation.note.chosenMode
+    val modeName = state.activeMode?.let { stringResource(it.nameRes()) }
+    // Provenance comes from the curator's original recommendation, not from the latest (possibly forced) result.
+    val aiPick = state.isAiPick
     val label = when {
         curation == null || modeName == null -> stringResource(R.string.controls_mode_pending)
         aiPick -> stringResource(R.string.controls_mode_ai_pick, modeName)

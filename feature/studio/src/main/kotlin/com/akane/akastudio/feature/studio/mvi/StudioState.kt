@@ -24,6 +24,8 @@ import kotlinx.collections.immutable.persistentMapOf
  * The whole studio screen state. Immutable; every change produces a new instance through `StudioViewModel`.
  *
  * @property curation The latest curation result (after any forced mode), or null before curation decides.
+ * @property aiRecommendedMode The curator's own pick, set when a curation run decides and never changed by a forced
+ *   mode, so the AI provenance survives the user's choice. Null before the first decision.
  * @property template The active template; its photo count always equals `selection.mode.photoCount`.
  * @property overrides Per-photo crop/zoom/pan overrides by photo id.
  * @property scene The preview scene at [com.akane.akastudio.core.composer.api.CanvasSize.STORY_1080], or null.
@@ -37,6 +39,7 @@ data class StudioState(
     val phase: StudioPhase = StudioPhase.Empty,
     val telemetry: TelemetryUi = TelemetryUi(),
     val curation: CurationResult? = null,
+    val aiRecommendedMode: StoryMode? = null,
     val selection: SelectionUi = SelectionUi(),
     val template: StoryTemplate? = null,
     val layout: LayoutStyle = LayoutStyle(),
@@ -51,7 +54,22 @@ data class StudioState(
     val modeDrawerOpen: Boolean = false,
     val export: ExportUi = ExportUi(),
     val error: StudioError? = null,
-)
+) {
+    /** The story's active mode: the selection's, or the curation's choice before a selection exists. */
+    val activeMode: StoryMode?
+        get() = selection.mode ?: curation?.chosen?.mode
+
+    /**
+     * The mode the curator recommended: [aiRecommendedMode], or the curation's own choice for a state assembled
+     * without one (a curation that never went through a forced mode).
+     */
+    val aiMode: StoryMode?
+        get() = aiRecommendedMode ?: curation?.chosen?.mode
+
+    /** True when a curation exists and the active mode is the curator's recommendation rather than the user's. */
+    val isAiPick: Boolean
+        get() = curation != null && activeMode != null && activeMode == aiMode
+}
 
 /** Where the studio is in its pipeline. Only [Empty] and [Ready] are stable; the others are cancellable work. */
 sealed interface StudioPhase {

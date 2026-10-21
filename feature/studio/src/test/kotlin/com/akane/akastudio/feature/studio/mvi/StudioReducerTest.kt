@@ -121,4 +121,33 @@ class StudioReducerTest {
         assertEquals(4, clustered.telemetry.clusters)
         assertEquals(2, clustered.telemetry.rejected)
     }
+
+    @Test
+    fun decided_records_the_ai_mode_and_a_forced_selection_keeps_it() {
+        val decided = StudioReducer.onCuration(StudioState(), CurationProgress.Decided(result))
+        assertEquals(StoryMode.COLLAGE_2, decided.aiRecommendedMode)
+        val aiSelected = StudioReducer.withSelection(decided, result, listOf("a", "b"), candidates)
+        assertTrue(aiSelected.isAiPick)
+
+        // What CurationEngine.decide returns for a forced mode: the note now names the forced mode too.
+        val forced = result.copy(
+            chosen = result.alternatives.getValue(StoryMode.HERO),
+            note = result.note.copy(chosenMode = StoryMode.HERO),
+        )
+        val userSelected = StudioReducer.withSelection(aiSelected, forced, listOf("a"), candidates)
+        assertEquals(StoryMode.HERO, userSelected.activeMode)
+        assertEquals(StoryMode.COLLAGE_2, userSelected.aiRecommendedMode)
+        assertEquals(StoryMode.COLLAGE_2, userSelected.aiMode)
+        assertFalse(userSelected.isAiPick)
+    }
+
+    @Test
+    fun ai_pick_needs_a_curation_and_falls_back_to_its_choice_without_a_recorded_mode() {
+        assertFalse(StudioState().isAiPick)
+        assertNull(StudioState().aiMode)
+        val legacy = selected()
+        assertNull(legacy.aiRecommendedMode)
+        assertEquals(StoryMode.COLLAGE_2, legacy.aiMode)
+        assertTrue(legacy.isAiPick)
+    }
 }

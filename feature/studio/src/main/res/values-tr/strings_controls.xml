@@ -7,7 +7,7 @@
 
     <!-- Üst çubuk -->
     <string name="controls_mode_ai_pick">AI Seçimi: %1$s</string>
-    <string name="controls_mode_user_pick">Seçiminiz: %1$s</string>
+    <string name="controls_mode_user_pick">Senin seçimin: %1$s</string>
     <string name="controls_mode_pending">Hikâye modu</string>
     <string name="controls_mode_drawer_expanded">Mod listesi açık</string>
     <string name="controls_mode_drawer_collapsed">Mod listesi kapalı</string>

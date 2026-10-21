@@ -59,8 +59,9 @@ import com.akane.akastudio.feature.studio.ui.theme.DarkroomTheme
  * The top-anchored story-mode drawer, shown while `state.modeDrawerOpen` and a curation result exist.
  *
  * Lists every feasible mode from `CurationResult.alternatives` (Hero, 2, 3, 4) with palette-coloured photo
- * stand-ins, the score and, for collages, the colour/rhythm/context synergy. The curator's own pick carries an
- * "AI" tag; tapping a row sends `ForceMode`. Below, the rejected photos with their reasons and the curator note.
+ * stand-ins, the score and, for collages, the colour/rhythm/context synergy. The curator's original pick
+ * (`StudioState.aiMode`) carries an "AI" tag even after the user forces another mode; the selected row (fill and
+ * check) follows the active mode. Tapping a row sends `ForceMode`. Below, the rejected photos with their reasons and the curator note.
  */
 @Composable
 fun ModeDrawer(state: StudioState, onIntent: (StudioIntent) -> Unit, modifier: Modifier = Modifier) {
@@ -77,7 +78,8 @@ fun ModeDrawer(state: StudioState, onIntent: (StudioIntent) -> Unit, modifier: M
         if (curation != null) {
             DrawerContent(
                 curation = curation,
-                selectedMode = state.selection.mode ?: curation.chosen.mode,
+                selectedMode = state.activeMode ?: curation.chosen.mode,
+                aiMode = state.aiMode,
                 enabled = state.phase == StudioPhase.Ready,
                 onIntent = onIntent,
             )
@@ -89,6 +91,7 @@ fun ModeDrawer(state: StudioState, onIntent: (StudioIntent) -> Unit, modifier: M
 private fun DrawerContent(
     curation: CurationResult,
     selectedMode: StoryMode,
+    aiMode: StoryMode?,
     enabled: Boolean,
     onIntent: (StudioIntent) -> Unit,
 ) {
@@ -119,7 +122,7 @@ private fun DrawerContent(
                     option = option,
                     analyses = curation.analyses,
                     selected = mode == selectedMode,
-                    aiPick = mode == curation.note.chosenMode,
+                    aiPick = mode == aiMode,
                     enabled = enabled,
                     onClick = { onIntent(StudioIntent.ForceMode(mode)) },
                 )

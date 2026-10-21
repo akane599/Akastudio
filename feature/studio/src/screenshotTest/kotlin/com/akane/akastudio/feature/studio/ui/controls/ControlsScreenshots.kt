@@ -87,3 +87,9 @@ private fun SheetSurface(state: StudioState, sdkInt: Int) = DarkroomTheme {
 
 @PreviewTest @Preview(name = "mode-drawer-large-font", widthDp = 360, heightDp = 900, fontScale = 1.5f, showBackground = true, backgroundColor = 0xFF070809)
 @Composable fun ModeDrawerLargeFontShot() = TopBarWithDrawer(ControlsFixtures.state(drawerOpen = true))
+
+@PreviewTest @Preview(name = "mode-drawer-user-pick", widthDp = 360, heightDp = 720, showBackground = true, backgroundColor = 0xFF070809)
+@Composable fun ModeDrawerUserPickShot() = TopBarWithDrawer(ControlsFixtures.userPick())
+
+@PreviewTest @Preview(name = "mode-drawer-user-pick-tr", widthDp = 360, heightDp = 720, locale = "tr", showBackground = true, backgroundColor = 0xFF070809)
+@Composable fun ModeDrawerUserPickTurkishShot() = TopBarWithDrawer(ControlsFixtures.userPick())

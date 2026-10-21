@@ -235,6 +235,63 @@ class StudioViewModelTest {
     }
 
     @Test
+    fun forced_mode_keeps_the_ai_recommendation_and_forcing_back_is_an_ai_pick_again() = runTest {
+        val h = harness()
+        ready(h)
+        assertEquals(StoryMode.COLLAGE_2, h.state.aiRecommendedMode)
+        assertTrue(h.state.isAiPick)
+
+        h.vm.onIntent(StudioIntent.ForceMode(StoryMode.COLLAGE_3))
+        advanceUntilIdle()
+        assertEquals(StoryMode.COLLAGE_3, h.state.activeMode)
+        assertEquals("decide names the forced mode", StoryMode.COLLAGE_3, h.state.curation!!.note.chosenMode)
+        assertEquals("the AI provenance survives the user's choice", StoryMode.COLLAGE_2, h.state.aiMode)
+        assertFalse("a forced mode is the user's pick", h.state.isAiPick)
+
+        h.vm.onIntent(StudioIntent.ForceMode(StoryMode.COLLAGE_2))
+        advanceUntilIdle()
+        assertEquals(StoryMode.COLLAGE_2, h.state.activeMode)
+        assertEquals(StoryMode.COLLAGE_2, h.state.aiRecommendedMode)
+        assertTrue("forcing back to the AI mode is the AI pick again", h.state.isAiPick)
+    }
+
+    @Test
+    fun a_new_curation_run_replaces_the_ai_mode_and_clears_the_override() = runTest {
+        val h = harness()
+        ready(h)
+        h.vm.onIntent(StudioIntent.ForceMode(StoryMode.COLLAGE_3))
+        advanceUntilIdle()
+        assertFalse(h.state.isAiPick)
+
+        h.deps.curation.result = result.copy(
+            chosen = result.alternatives.getValue(StoryMode.HERO),
+            note = result.note.copy(chosenMode = StoryMode.HERO),
+        )
+        h.deps.ingestScripts += TestData.ingestion(listOf(a, b, c))
+        h.vm.onIntent(StudioIntent.ImportPhotos(listOf("u9")))
+        advanceUntilIdle()
+
+        assertEquals(StudioPhase.Ready, h.state.phase)
+        assertEquals(StoryMode.HERO, h.state.aiRecommendedMode)
+        assertEquals(StoryMode.HERO, h.state.activeMode)
+        assertTrue(h.state.isAiPick)
+    }
+
+    @Test
+    fun reset_clears_the_ai_mode_and_the_override() = runTest {
+        val h = harness()
+        ready(h)
+        h.vm.onIntent(StudioIntent.ForceMode(StoryMode.HERO))
+        advanceUntilIdle()
+        assertFalse(h.state.isAiPick)
+
+        h.vm.onIntent(StudioIntent.Reset)
+        assertNull(h.state.aiRecommendedMode)
+        assertNull(h.state.activeMode)
+        assertFalse(h.state.isAiPick)
+    }
+
+    @Test
     fun swap_slots_reorders_without_preparing_and_moves_the_anchor() = runTest {
         val h = harness()
         ready(h)
@@ -453,6 +510,8 @@ class StudioViewModelTest {
         assertEquals(before.selection, h.state.selection)
         assertEquals(before.template, h.state.template)
         assertEquals(before.curation, h.state.curation)
+        assertEquals(before.aiRecommendedMode, h.state.aiRecommendedMode)
+        assertTrue(h.state.isAiPick)
         assertEquals(listOf("key-a", "key-b"), h.state.scene!!.layers.map { it.imageKey })
         assertEquals(listOf("c"), h.deps.preparer.released)
         assertEquals(2, h.deps.preparer.prepareCalls.size)

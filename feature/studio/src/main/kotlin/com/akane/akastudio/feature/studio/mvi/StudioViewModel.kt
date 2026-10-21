@@ -362,6 +362,7 @@ class StudioViewModel(
         val current = _state.value
         val merged = current.copy(
             curation = target.curation,
+            aiRecommendedMode = target.aiRecommendedMode,
             selection = target.selection,
             template = target.template,
             telemetry = target.telemetry,
