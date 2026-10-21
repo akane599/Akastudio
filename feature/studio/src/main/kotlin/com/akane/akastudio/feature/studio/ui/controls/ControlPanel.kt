@@ -56,6 +56,8 @@ fun ControlPanel(
     var selectedSlot by rememberSaveable { mutableIntStateOf(0) }
     val slotCount = state.selection.photoIds.size
     val slot = if (slotCount == 0) 0 else selectedSlot.coerceIn(0, slotCount - 1)
+    // One scroll state per tab so switching tabs never carries over another tab's offset.
+    val scrollStates = ControlTab.entries.associateWith { rememberScrollState() }
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -70,7 +72,7 @@ fun ControlPanel(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(scrollStates.getValue(state.tab))
                     .padding(vertical = DarkroomTheme.spacing.l),
             ) {
                 when (state.tab) {
