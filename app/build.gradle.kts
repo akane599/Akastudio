@@ -1,7 +1,41 @@
+import com.android.build.api.artifact.SingleArtifact
+import javax.xml.parsers.DocumentBuilderFactory
+import org.w3c.dom.Element
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.compose.screenshot)
+}
+
+/**
+ * Fails the build when the merged manifest requests INTERNET. AkaStudio is on-device only. INTERNET arrives only through
+ * transitive dependencies (MediaPipe's data-transport CCT backend), and the app manifest strips it.
+ */
+abstract class CheckNoInternetPermission : DefaultTask() {
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val mergedManifest: RegularFileProperty
+
+    @TaskAction
+    fun check() {
+        val file = mergedManifest.get().asFile
+        val document = DocumentBuilderFactory.newInstance().apply { isNamespaceAware = true }
+            .newDocumentBuilder().parse(file)
+        val requested = listOf("uses-permission", "uses-permission-sdk-23").flatMap { tag ->
+            val nodes = document.getElementsByTagName(tag)
+            (0 until nodes.length).map {
+                (nodes.item(it) as Element).getAttributeNS("http://schemas.android.com/apk/res/android", "name")
+            }
+        }
+        if ("android.permission.INTERNET" in requested) {
+            throw GradleException(
+                "$file requests android.permission.INTERNET. AkaStudio must stay offline: remove it in " +
+                    "app/src/main/AndroidManifest.xml with tools:node=\"remove\" and find the dependency that added it " +
+                    "(app/build/outputs/logs/manifest-merger-*-report.txt).",
+            )
+        }
+    }
 }
 
 // 32-bit x86 has no API 31+ devices or system images, and LiteRT ships no x86 .so, so it is dropped.
@@ -61,6 +95,23 @@ android {
         noCompress += listOf("tflite", "task")
     }
     experimentalProperties["android.experimental.enableScreenshotTest"] = true
+}
+
+// `check` runs the offline guard for every variant, and a release APK or bundle can't be built without passing it.
+androidComponents {
+    onVariants { variant ->
+        val variantName = variant.name.replaceFirstChar(Char::uppercaseChar)
+        val guard = tasks.register<CheckNoInternetPermission>("check${variantName}NoInternetPermission") {
+            group = "verification"
+            description = "Fails if the ${variant.name} merged manifest requests INTERNET."
+            mergedManifest.set(variant.artifacts.get(SingleArtifact.MERGED_MANIFEST))
+        }
+        tasks.named("check") { dependsOn(guard) }
+        if (variant.buildType == "release") {
+            tasks.named { it == "assemble$variantName" || it == "bundle$variantName" }
+                .configureEach { dependsOn(guard) }
+        }
+    }
 }
 
 dependencies {
