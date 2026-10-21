@@ -3,6 +3,7 @@ package com.akane.akastudio.core.ingestion.decode
 import android.content.ContentResolver
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
+import androidx.core.graphics.scale
 import com.akane.akastudio.core.ingestion.api.AnalysisDecoder
 import com.akane.akastudio.core.ingestion.api.IngestionException
 import com.akane.akastudio.core.ingestion.api.SourceOpener
@@ -59,7 +60,7 @@ class SampledAnalysisDecoder(
     private fun fitToBound(bitmap: Bitmap, maxEdgePx: Int): Bitmap {
         if (maxOf(bitmap.width, bitmap.height) <= maxEdgePx) return bitmap
         val (width, height) = ScaleMath.fitLongEdge(bitmap.width, bitmap.height, maxEdgePx)
-        val scaled = Bitmap.createScaledBitmap(bitmap, width, height, true)
+        val scaled = bitmap.scale(width, height)
         if (scaled !== bitmap) bitmap.recycle()
         return scaled
     }

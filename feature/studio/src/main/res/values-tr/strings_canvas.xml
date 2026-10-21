@@ -2,8 +2,14 @@
 <resources>
     <!-- Live story canvas (ui/canvas) -->
     <string name="canvas_description">Hikâye önizlemesi</string>
-    <string name="canvas_state_selected">%2$d hücreden %1$d. hücre seçili</string>
-    <string name="canvas_state_cells">%1$d hücre</string>
+    <plurals name="canvas_state_selected">
+        <item quantity="one">%2$d hücreden %1$d. hücre seçili</item>
+        <item quantity="other">%2$d hücreden %1$d. hücre seçili</item>
+    </plurals>
+    <plurals name="canvas_state_cells">
+        <item quantity="one">%1$d hücre</item>
+        <item quantity="other">%1$d hücre</item>
+    </plurals>
     <string name="canvas_action_swap_next">Sonraki hücreyle yer değiştir</string>
 
     <!-- Before/after compare -->

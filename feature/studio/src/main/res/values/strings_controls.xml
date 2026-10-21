@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Studio controls: top bar, mode drawer, control panel and export sheet. -->
 
     <!-- Value readouts. %1$s is the already-signed number text. -->
@@ -55,8 +55,9 @@
     <string name="controls_burst_same_scene">Same scene</string>
     <string name="controls_burst_other_scene">Other scene</string>
     <string name="controls_burst_empty">No other usable shot for this photo.</string>
-    <!-- %1$d slot number, %2$s same/other scene, %3$s quality percent -->
-    <string name="controls_burst_description">Swap photo %1$d for this %2$s shot, quality %3$s</string>
+    <!-- %1$d slot number, %2$s same/other scene, %3$s quality percent. Not a plural: %1$d names a slot
+         ("photo 2"), it does not count anything. -->
+    <string name="controls_burst_description" tools:ignore="PluralsCandidate">Swap photo %1$d for this %2$s shot, quality %3$s</string>
 
     <!-- Layout tab -->
     <string name="controls_template_title">Template</string>

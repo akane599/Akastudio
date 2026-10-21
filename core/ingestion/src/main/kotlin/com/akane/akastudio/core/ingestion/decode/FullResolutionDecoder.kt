@@ -6,8 +6,9 @@ import android.graphics.Canvas
 import android.graphics.ColorSpace
 import android.graphics.ImageDecoder
 import android.graphics.Paint
-import android.net.Uri
 import android.os.Build
+import androidx.core.graphics.createBitmap
+import androidx.core.net.toUri
 import com.akane.akastudio.core.ingestion.api.IngestionException
 import com.akane.akastudio.core.ingestion.model.IngestionError
 import com.akane.akastudio.core.ingestion.model.PhotoCandidate
@@ -110,7 +111,7 @@ class FullResolutionDecoder(
     }
 
     private fun createSource(source: PhotoSource): ImageDecoder.Source = when (source) {
-        is PhotoSource.ContentUri -> ImageDecoder.createSource(contentResolver, Uri.parse(source.uri))
+        is PhotoSource.ContentUri -> ImageDecoder.createSource(contentResolver, source.uri.toUri())
         is PhotoSource.ExtractedFile -> ImageDecoder.createSource(File(source.path))
     }
 
@@ -121,7 +122,7 @@ class FullResolutionDecoder(
     private fun toLinearF16(bitmap: Bitmap): Bitmap {
         if (bitmap.config == Bitmap.Config.RGBA_F16 && bitmap.colorSpace == linearExtendedSrgb) return bitmap
         val converted = try {
-            Bitmap.createBitmap(
+            createBitmap(
                 bitmap.width,
                 bitmap.height,
                 Bitmap.Config.RGBA_F16,

@@ -2,8 +2,15 @@
 <resources>
     <!-- Live story canvas (ui/canvas) -->
     <string name="canvas_description">Story preview</string>
-    <string name="canvas_state_selected">Cell %1$d of %2$d selected</string>
-    <string name="canvas_state_cells">%1$d cells</string>
+    <!-- Quantity is the cell count (%2$d); %1$d is the selected cell's position -->
+    <plurals name="canvas_state_selected">
+        <item quantity="one">Cell %1$d of %2$d selected</item>
+        <item quantity="other">Cell %1$d of %2$d selected</item>
+    </plurals>
+    <plurals name="canvas_state_cells">
+        <item quantity="one">%1$d cell</item>
+        <item quantity="other">%1$d cells</item>
+    </plurals>
     <string name="canvas_action_swap_next">Swap with next cell</string>
 
     <!-- Before/after compare -->

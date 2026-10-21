@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Darkroom launcher mark: a 9:16 story frame split into two collage cells, a low sun over a horizon.
+     Everything sits inside the 66dp adaptive-icon safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Lower cell: horizon -->
+    <path
+        android:fillColor="@color/ic_launcher_horizon"
+        android:pathData="M43.25,74.25 L43.25,68.5 L50,63.5 L55,67.25 L59,64.75 L64.75,68.75 L64.75,74.25 Z" />
+    <!-- Upper cell: sun -->
+    <path
+        android:fillColor="@color/ic_launcher_mark"
+        android:pathData="M50,45.5 A4,4 0 1,0 58,45.5 A4,4 0 1,0 50,45.5 Z" />
+    <!-- Story frame and collage split -->
+    <path
+        android:pathData="M44.5,32.5 L63.5,32.5 A2.5,2.5 0 0,1 66,35 L66,73 A2.5,2.5 0 0,1 63.5,75.5 L44.5,75.5 A2.5,2.5 0 0,1 42,73 L42,35 A2.5,2.5 0 0,1 44.5,32.5 Z M42,58 L66,58"
+        android:strokeWidth="2.5"
+        android:strokeColor="@color/ic_launcher_mark" />
+</vector>

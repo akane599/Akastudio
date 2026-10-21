@@ -44,6 +44,7 @@ import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
@@ -169,22 +170,21 @@ internal fun StoryCanvasLayout(
             CanvasTransform(viewWidth, viewHeight, canvasWidth, canvasHeight)
         }
         val viewSize = with(density) { DpSize(viewWidth.toDp(), viewHeight.toDp()) }
-        val gestures = rememberCanvasGestures(
-            transform = transform,
-            scene = scene,
-            selectedSlot = selected,
-            onSelect = onSelect,
-            onIntent = onIntent,
-            hitTest = hitTest,
-            photoIds = photoIds,
-            overrides = overrides,
-            dragState = dragState,
-        )
         Box(
             Modifier
                 .size(viewSize)
                 .canvasSemantics(cellCount, selected, onSelect, onIntent)
-                .then(gestures),
+                .canvasGestures(
+                    transform = transform,
+                    scene = scene,
+                    selectedSlot = selected,
+                    onSelect = onSelect,
+                    onIntent = onIntent,
+                    hitTest = hitTest,
+                    photoIds = photoIds,
+                    overrides = overrides,
+                    dragState = dragState,
+                ),
         ) {
             val frame = transform.frame ?: return@Box
             val frameSize = with(density) { DpSize(frame.width.toDp(), frame.height.toDp()) }
@@ -233,9 +233,9 @@ private fun Modifier.canvasSemantics(
 ): Modifier {
     val description = stringResource(R.string.canvas_description)
     val state = if (selected != null) {
-        stringResource(R.string.canvas_state_selected, selected + 1, cellCount)
+        pluralStringResource(R.plurals.canvas_state_selected, cellCount, selected + 1, cellCount)
     } else {
-        stringResource(R.string.canvas_state_cells, cellCount)
+        pluralStringResource(R.plurals.canvas_state_cells, cellCount, cellCount)
     }
     val swapLabel = stringResource(R.string.canvas_action_swap_next)
     return semantics {
@@ -255,9 +255,9 @@ private fun Modifier.canvasSemantics(
     }
 }
 
-/** Builds the pointer-input modifier for tap, double-tap, long-press drag and two-finger transform. */
+/** Adds the pointer input for tap, double-tap, long-press drag and two-finger transform. */
 @Composable
-private fun rememberCanvasGestures(
+private fun Modifier.canvasGestures(
     transform: CanvasTransform,
     scene: RenderScene?,
     selectedSlot: Int?,
@@ -285,7 +285,7 @@ private fun rememberCanvasGestures(
         return currentHitTest(canvasPoint.x, canvasPoint.y)?.takeIf { it in 0 until cells }
     }
 
-    return Modifier
+    return this
         .pointerInput(Unit) {
             detectTapGestures(
                 onTap = { currentOnSelect(slotAt(it)) },

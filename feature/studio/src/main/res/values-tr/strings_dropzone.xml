@@ -14,7 +14,10 @@
     <string name="dropzone_add_more_photos">Fotoğraflar</string>
     <string name="dropzone_add_more_zip">.ZIP arşivi</string>
     <string name="dropzone_curate_now">Şimdi seç</string>
-    <string name="dropzone_progress_description">İşlem ilerlemesi yüzde %1$d</string>
+    <plurals name="dropzone_progress_description">
+        <item quantity="one">İşlem ilerlemesi yüzde %1$d</item>
+        <item quantity="other">İşlem ilerlemesi yüzde %1$d</item>
+    </plurals>
 
     <!-- Dropzone: telemetry steps -->
     <plurals name="dropzone_photos_read">
@@ -30,7 +33,10 @@
         <item quantity="one">%1$d seri kümelendi</item>
         <item quantity="other">%1$d seri kümelendi</item>
     </plurals>
-    <string name="dropzone_analyzed">%2$d fotoğraftan %1$d tanesi incelendi</string>
+    <plurals name="dropzone_analyzed">
+        <item quantity="one">%2$d fotoğraftan %1$d tanesi incelendi</item>
+        <item quantity="other">%2$d fotoğraftan %1$d tanesi incelendi</item>
+    </plurals>
     <string name="dropzone_step_focus">Göz / odak kontrolü</string>
     <string name="dropzone_step_focus_done">Göz / odak kontrolü tamamlandı</string>
     <plurals name="dropzone_rejected">

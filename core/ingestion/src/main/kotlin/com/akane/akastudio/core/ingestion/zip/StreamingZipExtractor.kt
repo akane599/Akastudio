@@ -40,11 +40,15 @@ import kotlinx.coroutines.flow.flowOn
  * cancellation or a downstream that stops collecting early, deletes only the file being written at that moment.
  * Files already fully written are complete and belong to the consumer (the session's work dir owns their
  * lifetime). Nothing this collection did not create is ever deleted.
+ *
+ * [freeSpaceProvider] reports the bytes still claimable on the destination's volume; on Android that is
+ * `StorageManager.getAllocatableBytes` (see `createIngestionSession`). [ZipLimits.freeSpaceReserveBytes] is kept free
+ * on top of it.
  */
 class StreamingZipExtractor(
     private val limits: ZipLimits = ZipLimits(),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
-    private val freeSpaceProvider: (File) -> Long = { it.usableSpace },
+    private val freeSpaceProvider: (File) -> Long,
 ) : ArchiveExtractor {
 
     override fun extract(

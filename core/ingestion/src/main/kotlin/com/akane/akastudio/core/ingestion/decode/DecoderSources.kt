@@ -2,7 +2,7 @@ package com.akane.akastudio.core.ingestion.decode
 
 import android.content.ContentResolver
 import android.graphics.ImageDecoder
-import android.net.Uri
+import androidx.core.net.toUri
 import com.akane.akastudio.core.ingestion.model.PhotoSource
 import java.io.File
 
@@ -13,5 +13,5 @@ import java.io.File
 internal fun imageDecoderSource(source: PhotoSource, resolver: ContentResolver?): ImageDecoder.Source? =
     when (source) {
         is PhotoSource.ExtractedFile -> ImageDecoder.createSource(File(source.path))
-        is PhotoSource.ContentUri -> resolver?.let { ImageDecoder.createSource(it, Uri.parse(source.uri)) }
+        is PhotoSource.ContentUri -> resolver?.let { ImageDecoder.createSource(it, source.uri.toUri()) }
     }
