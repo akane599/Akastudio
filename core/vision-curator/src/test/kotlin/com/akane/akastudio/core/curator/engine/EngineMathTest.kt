@@ -52,6 +52,37 @@ class EngineMathTest {
     }
 
     @Test
+    fun uniformAesthetic_countsMissingAndRescoredPhotosAndSkipsUnreadable() {
+        fun readable(id: String, aesthetic: Float) = PhotoAnalyzer.unreadable(id).copy(
+            rejectReason = null,
+            composition = 0.5f,
+            palette = grey,
+            aesthetic = aesthetic,
+            technical = PhotoAnalyzer.unreadable(id).technical.copy(total = 0.8f),
+        )
+        val unreadable = PhotoAnalyzer.unreadable("u")
+        val photos = listOf(
+            PhotoAnalyzer.AnalyzedPhoto(readable("nima", 0.9f), nimaMissing = false),
+            PhotoAnalyzer.AnalyzedPhoto(readable("none", 0.3f), nimaMissing = true),
+            PhotoAnalyzer.AnalyzedPhoto(unreadable, nimaMissing = false),
+        )
+
+        val uniform = PhotoAnalyzer.uniformAesthetic(photos)
+        assertEquals(1, uniform.nimaMissing)
+        assertEquals(1, uniform.rescored)
+        val rescored = uniform.analyses[0]
+        assertEquals(0.6f * 0.5f, rescored.aesthetic, 1e-6f)
+        assertEquals(PhotoAnalyzer.quality(0.8f, 0.6f * 0.5f), rescored.quality, 1e-6f)
+        assertSame(photos[1].analysis, uniform.analyses[1])
+        assertSame(unreadable, uniform.analyses[2])
+
+        val untouched = PhotoAnalyzer.uniformAesthetic(listOf(photos[0], photos[2]))
+        assertEquals(0, untouched.nimaMissing)
+        assertEquals(0, untouched.rescored)
+        assertSame(photos[0].analysis, untouched.analyses[0])
+    }
+
+    @Test
     fun dominantScene_prefersMostFrequentThenAnchor() {
         val beach = analysis("a", SceneType.BEACH_SEA)
         val forest = analysis("b", SceneType.NATURE_FOREST)

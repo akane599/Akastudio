@@ -31,13 +31,22 @@ import kotlin.coroutines.cancellation.CancellationException
  */
 internal class PhotoAnalyzer(private val pixels: PixelSource, private val models: AnalysisModels) {
 
-    suspend fun analyze(candidate: PhotoCandidate): PhotoAnalysis {
+    /** One finished [analysis]; [nimaMissing] is true when its image was readable but NIMA gave no score. */
+    class AnalyzedPhoto(val analysis: PhotoAnalysis, val nimaMissing: Boolean)
+
+    /**
+     * The analyses of one curation under a single aesthetic formula: [nimaMissing] photos lacked a NIMA score, and
+     * [rescored] NIMA-scored photos were moved to the no-NIMA formula because of them.
+     */
+    class UniformAesthetic(val analyses: List<PhotoAnalysis>, val nimaMissing: Int, val rescored: Int)
+
+    suspend fun analyze(candidate: PhotoCandidate): AnalyzedPhoto {
         val image = try {
             pixels.load(candidate)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            return unreadable(candidate.id)
+            return AnalyzedPhoto(unreadable(candidate.id), nimaMissing = false)
         }
         try {
             return analyzeImage(candidate, image)
@@ -46,7 +55,7 @@ internal class PhotoAnalyzer(private val pixels: PixelSource, private val models
         }
     }
 
-    private suspend fun analyzeImage(candidate: PhotoCandidate, image: AnalysisImage): PhotoAnalysis {
+    private suspend fun analyzeImage(candidate: PhotoCandidate, image: AnalysisImage): AnalyzedPhoto {
         val px = image.pixels
         val gray = Luma.of(px)
         val faces = models.faces(image).map { face ->
@@ -78,12 +87,13 @@ internal class PhotoAnalyzer(private val pixels: PixelSource, private val models
         checkActive()
 
         val composition = Composition.score(saliency)
-        val aesthetic = aestheticScore(models.aesthetic(image), composition, color.palette)
+        val nimaMean = models.aesthetic(image)
+        val aesthetic = aestheticScore(nimaMean, composition, color.palette)
         val prominentFace = faces.any(::isProminent)
         val modelScene = models.scene(image)
         val scene = if (prominentFace && modelScene == SceneType.GENERAL) SceneType.PORTRAIT else modelScene
 
-        return PhotoAnalysis(
+        val analysis = PhotoAnalysis(
             candidateId = candidate.id,
             technical = technical,
             aesthetic = aesthetic,
@@ -101,6 +111,7 @@ internal class PhotoAnalyzer(private val pixels: PixelSource, private val models
             saliency = saliency,
             rejectReason = rejectReason,
         )
+        return AnalyzedPhoto(analysis, nimaMissing = nimaMean == null || !nimaMean.isFinite())
     }
 
     private suspend fun checkActive() = currentCoroutineContext().ensureActive()
@@ -156,6 +167,26 @@ internal class PhotoAnalyzer(private val pixels: PixelSource, private val models
         /** `Q = 0.45 * T + 0.55 * A`. */
         fun quality(technical: Float, aesthetic: Float): Float =
             (TECHNICAL_WEIGHT * technical + AESTHETIC_WEIGHT * aesthetic).coerceIn(0f, 1f)
+
+        /**
+         * One aesthetic formula per curation. When any photo in [photos] lacked a NIMA score, every analysis is
+         * rescored with the no-NIMA formula of [aestheticScore] (from its composition and palette) and its Q
+         * recomputed, so a per-image NIMA failure never ranks photos on two different scales. Otherwise the analyses
+         * are returned unchanged. Unreadable photos never ran the model and do not count as missing.
+         */
+        fun uniformAesthetic(photos: List<AnalyzedPhoto>): UniformAesthetic {
+            val missing = photos.count { it.nimaMissing }
+            if (missing == 0) return UniformAesthetic(photos.map { it.analysis }, nimaMissing = 0, rescored = 0)
+            var rescored = 0
+            val analyses = photos.map { photo ->
+                val a = photo.analysis
+                if (photo.nimaMissing || a.rejectReason == RejectReason.UNREADABLE) return@map a
+                rescored++
+                val fallback = aestheticScore(null, a.composition, a.palette)
+                a.copy(aesthetic = fallback, quality = quality(a.technical.total, fallback))
+            }
+            return UniformAesthetic(analyses, nimaMissing = missing, rescored = rescored)
+        }
 
         /**
          * The analysis of a candidate whose pixels could not be loaded: rejected as UNREADABLE with zero scores, no
