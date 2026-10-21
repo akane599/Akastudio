@@ -1,5 +1,6 @@
 package com.akane.akastudio.core.color.grade
 
+import com.akane.akastudio.core.color.analysis.SkinMask
 import com.akane.akastudio.core.color.api.GradeParams
 import com.akane.akastudio.core.color.api.HarmonizationParams
 import com.akane.akastudio.core.color.api.OkLab
@@ -19,7 +20,7 @@ import kotlin.math.pow
  * 4. contrast: OKLab `L' = L + c·(s(L) − L)` with `s(L) = L²(3 − 2L)` on L clamped to [0, 1] (both L terms
  *    inside the bracket are the clamped value, so HDR lightness above 1 is untouched); a and b unchanged;
  * 5. look: the colour is divided by `m = max(1, maxChannel)`, encoded to sRGB, the full and skin-safe LUTs
- *    are sampled at the [0, 1]-clamped code value and mixed by `SkinMask(OKLab of the step-4 colour) ·
+ *    are sampled at the [0, 1]-clamped code value and mixed by `analysis.SkinMask (the single source of truth for the skin window; OKLab of the step-4 colour) ·
  *    skinProtection`, the result is mixed with the (unclamped) encoded input by `lookIntensity`, decoded
  *    and multiplied by `m`, so HDR highlights keep their headroom;
  * 6. saturation: OKLCh chroma `× max(0, 1 + saturation)`.
