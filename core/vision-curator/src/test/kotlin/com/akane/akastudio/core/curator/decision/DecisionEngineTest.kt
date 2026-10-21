@@ -14,6 +14,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.random.Random
 
 class DecisionEngineTest {
@@ -392,5 +393,84 @@ class DecisionEngineTest {
         assertEquals(Warmth.NEUTRAL, w(6800f to 0.5f))
         assertEquals(Warmth.COOL_BLUE, w(7000f to 0.5f, 7200f to 0.5f))
         assertThrows(IllegalArgumentException::class.java) { DecisionEngine.warmth(emptyList()) }
+    }
+
+    // ---- Cancellation checkpoints (AUD-05) ----
+
+    /** Ten unrelated eligible champions, so every 2..4 subset of the pool is enumerated. */
+    private fun tenChampions(): List<PhotoAnalysis> = List(10) { i ->
+        analysis("c$i", quality = 0.70f + 0.02f * i, scale = ShotScale.entries[i % 3], cct = 4000f + 300f * i)
+    }
+
+    /** Checkpoints of one full [DecisionEngine.decide] over n = 10 unrelated eligible photos. */
+    private val subsetCheckpoints = 45 + 120 + 210                  // C(10, 2) + C(10, 3) + C(10, 4)
+    private val decideCheckpoints = 1 + (1 + 10) + 45 + subsetCheckpoints  // entry, clustering, palette pairs, subsets
+
+    private fun cancellingAt(stopAt: Int, counter: IntArray): () -> Unit = {
+        if (++counter[0] == stopAt) throw CancellationException("collector cancelled")
+    }
+
+    @Test
+    fun decide_checkpointCoversClusteringPalettePairsAndEverySubset_withoutChangingTheDecision() {
+        val photos = tenChampions()
+        val reference = DecisionEngine.decide(photos, emptyMap())
+        val counter = IntArray(1)
+
+        assertEquals(reference, DecisionEngine.decide(photos, emptyMap(), checkpoint = { counter[0]++ }))
+        assertEquals(10, reference.champions.size)
+        assertEquals(decideCheckpoints, counter[0])
+    }
+
+    @Test
+    fun decide_checkpointThrowingMidSubsetEnumeration_stopsTheDecision() {
+        val photos = tenChampions()
+        // The last 210 checkpoints are the 4-photo subsets; stop half-way through them.
+        val stopAt = decideCheckpoints - 105
+        val counter = IntArray(1)
+
+        assertThrows(CancellationException::class.java) {
+            DecisionEngine.decide(photos, emptyMap(), checkpoint = cancellingAt(stopAt, counter))
+        }
+        assertEquals(stopAt, counter[0])
+    }
+
+    @Test
+    fun redecide_automatic_checkpointThrowingMidSubsetEnumeration_stopsTheDecision() {
+        val photos = tenChampions()
+        val previous = DecisionEngine.decide(photos, emptyMap())
+        val total = IntArray(1)
+        assertEquals(
+            previous,
+            DecisionEngine.redecide(previous, photos, emptyMap(), forcedMode = null, checkpoint = { total[0]++ }),
+        )
+        assertEquals(1 + decideCheckpoints, total[0])
+
+        val stopAt = total[0] - 105
+        val counter = IntArray(1)
+        assertThrows(CancellationException::class.java) {
+            DecisionEngine.redecide(previous, photos, emptyMap(), forcedMode = null, checkpoint = cancellingAt(stopAt, counter))
+        }
+        assertEquals(stopAt, counter[0])
+    }
+
+    @Test
+    fun redecide_forcedUnofferedCollage_checkpointThrowingMidSubsetEnumeration_stopsTheDecision() {
+        val photos = tenChampions()
+        val decided = DecisionEngine.decide(photos, emptyMap())
+        val heroOnly = decided.copy(
+            chosen = decided.alternatives.getValue(StoryMode.HERO),
+            alternatives = mapOf(StoryMode.HERO to decided.alternatives.getValue(StoryMode.HERO)),
+        )
+        val total = IntArray(1)
+        val forced = DecisionEngine.redecide(heroOnly, photos, emptyMap(), StoryMode.COLLAGE_4, checkpoint = { total[0]++ })
+        assertEquals(decided.alternatives.getValue(StoryMode.COLLAGE_4), forced.chosen)
+        assertEquals(1 + 45 + 210, total[0])   // entry, palette pairs, 4-photo subsets
+
+        val stopAt = total[0] - 105
+        val counter = IntArray(1)
+        assertThrows(CancellationException::class.java) {
+            DecisionEngine.redecide(heroOnly, photos, emptyMap(), StoryMode.COLLAGE_4, checkpoint = cancellingAt(stopAt, counter))
+        }
+        assertEquals(stopAt, counter[0])
     }
 }

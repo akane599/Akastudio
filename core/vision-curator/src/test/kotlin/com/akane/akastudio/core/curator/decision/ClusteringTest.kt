@@ -6,7 +6,9 @@ import com.akane.akastudio.core.curator.decision.Fixtures.flip
 import com.akane.akastudio.core.curator.decision.Fixtures.randomHash
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.coroutines.cancellation.CancellationException
 
 class ClusteringTest {
 
@@ -141,6 +143,38 @@ class ClusteringTest {
         assertThrows(IllegalArgumentException::class.java) {
             Clustering.cluster(listOf(analysis("a"), analysis("a")))
         }
+    }
+
+    // ---- Cancellation checkpoints (AUD-05) ----
+
+    @Test
+    fun checkpoint_runsAtEntryEachRowAndEveryStrideOfPairs_withoutChangingTheResult() {
+        val photos = List(300) { analysis("p$it") }
+        var calls = 0
+        val checked = Clustering.cluster(photos) { calls++ }
+
+        assertEquals(Clustering.cluster(photos), checked)
+        val n = photos.size
+        val strideHits = (0 until n).sumOf { i -> (i + 1 until n).count { j -> j % Clustering.CHECKPOINT_STRIDE == 0 } }
+        assertEquals(1 + n + strideHits, calls)
+    }
+
+    @Test
+    fun checkpointThrowingCancellation_stopsThePairLoopBeforeItCompletes() {
+        val photos = List(300) { analysis("p$it") }
+        var total = 0
+        Clustering.cluster(photos) { total++ }
+        val stopAt = total / 2   // about a quarter of the rows (row i compares n - 1 - i pairs)
+        var calls = 0
+
+        val thrown = assertThrows(CancellationException::class.java) {
+            Clustering.cluster(photos) { if (++calls == stopAt) throw CancellationException("collector cancelled") }
+        }
+
+        assertEquals("collector cancelled", thrown.message)
+        // No checkpoint ran after the throwing one: the remaining rows and pairs were never compared.
+        assertEquals(stopAt, calls)
+        assertTrue(calls < total)
     }
 
     private fun sqrt(x: Float): Float = kotlin.math.sqrt(x)

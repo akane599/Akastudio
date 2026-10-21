@@ -19,8 +19,15 @@ internal object CurationResults {
         .thenByDescending { it.aesthetic }
         .thenBy { it.candidateId }
 
-    /** Assembles the result for [decision] over [analyses] (every candidate, in input order). */
-    fun build(decision: Decision, analyses: Map<String, PhotoAnalysis>): CurationResult {
+    /**
+     * Assembles the result for [decision] over [analyses] (every candidate, in input order), carrying the run's
+     * [captureTimes] (by candidate id, null = unknown) so a later mode switch re-decides with them.
+     */
+    fun build(
+        decision: Decision,
+        analyses: Map<String, PhotoAnalysis>,
+        captureTimes: Map<String, Long?>,
+    ): CurationResult {
         val chosen = decision.chosen.photoIds.map { id ->
             requireNotNull(analyses[id]) { "decision chose an unknown candidate: $id" }
         }
@@ -34,6 +41,7 @@ internal object CurationResults {
             rejectedIds = decision.rejectedIds,
             note = note(decision, chosen, analyses.size),
             suggestedLook = suggestedLook(anchor),
+            captureTimes = captureTimes,
         )
     }
 

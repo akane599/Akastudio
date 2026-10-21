@@ -14,6 +14,10 @@ import kotlin.math.sqrt
  */
 object Clustering {
 
+    /** Inner pair comparisons between two [cluster] checkpoints: a power of two, tested with [CHECKPOINT_MASK]. */
+    internal const val CHECKPOINT_STRIDE = 64
+    private const val CHECKPOINT_MASK = CHECKPOINT_STRIDE - 1
+
     /**
      * Clusters the non-rejected photos of [analyses]; photos with a `rejectReason` are ignored.
      *
@@ -21,14 +25,26 @@ object Clustering {
      * ordered by quality descending, ties by id, so the champion (the highest-quality member) is always first.
      * The result does not depend on the order of [analyses].
      *
+     * [checkpoint] is called at entry, once per outer row of the all-pairs comparison and once every
+     * [CHECKPOINT_STRIDE] inner comparisons; the curation engine passes a coroutine cancellation check so a cancelled
+     * collector stops the O(N²) loop. Anything it throws propagates unchanged; when it returns normally the result is
+     * identical to one computed without it.
+     *
      * @throws IllegalArgumentException when two analyses share a `candidateId`.
      */
-    fun cluster(analyses: List<PhotoAnalysis>, config: DecisionConfig = DecisionConfig()): List<SceneCluster> {
+    fun cluster(
+        analyses: List<PhotoAnalysis>,
+        config: DecisionConfig = DecisionConfig(),
+        checkpoint: () -> Unit = {},
+    ): List<SceneCluster> {
+        checkpoint()
         requireDistinctIds(analyses)
         val photos = analyses.filter { it.rejectReason == null }.sortedBy { it.candidateId }
         val parent = IntArray(photos.size) { it }
         for (i in photos.indices) {
+            checkpoint()
             for (j in i + 1 until photos.size) {
+                if ((j and CHECKPOINT_MASK) == 0) checkpoint()
                 if (isNearDuplicate(photos[i], photos[j], config)) union(parent, i, j)
             }
         }

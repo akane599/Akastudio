@@ -102,8 +102,13 @@ object Synergy {
  * Scores subsets of a fixed candidate list with the pairwise palette terms precomputed once, so exhaustive subset
  * enumeration costs one EMD per candidate pair rather than per subset. Subsets are index arrays into [members];
  * pair means run in the order of the index array, matching [PaletteHarmony.colorScore] for increasing indices.
+ * [checkpoint] is called before each pairwise EMD (see [DecisionEngine.decide]).
  */
-internal class GroupScorer(private val members: List<PhotoAnalysis>, private val captureTimes: List<Long?>) {
+internal class GroupScorer(
+    private val members: List<PhotoAnalysis>,
+    private val captureTimes: List<Long?>,
+    checkpoint: () -> Unit = {},
+) {
 
     private val emd: Array<DoubleArray>
     private val hues: List<Float?> = members.map { PaletteHarmony.dominantHue(it.palette) }
@@ -114,6 +119,7 @@ internal class GroupScorer(private val members: List<PhotoAnalysis>, private val
         emd = Array(n) { DoubleArray(n) }
         for (i in 0 until n) {
             for (j in i + 1 until n) {
+                checkpoint()
                 val distance = PaletteHarmony.emd(members[i].palette, members[j].palette).toDouble()
                 emd[i][j] = distance
                 emd[j][i] = distance
