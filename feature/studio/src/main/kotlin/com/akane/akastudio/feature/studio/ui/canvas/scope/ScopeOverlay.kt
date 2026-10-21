@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -30,10 +32,16 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -50,9 +58,12 @@ import kotlinx.coroutines.withContext
 internal const val SCOPE_ASPECT = 16f / 10f
 
 private const val PANEL_ALPHA = 0.82f
-private const val GRATICULE_ALPHA = 0.32f
 private const val HISTOGRAM_FILL_ALPHA = 0.38f
-private val GRATICULE_FRACTIONS = floatArrayOf(0f, 0.5f, 1f)
+
+/** Level ticks at 0, 50 and 100 % of the signal range, with their axis labels in the same order. */
+private val TICK_FRACTIONS = floatArrayOf(0f, 0.5f, 1f)
+private val TICK_LABELS = listOf("0", "50", "100")
+private val CHANNEL_LABELS = listOf("R", "G", "B")
 
 /** Scope content ready to draw: rasters for waveforms, normalized heights for the histogram. */
 @Immutable
@@ -110,106 +121,139 @@ fun ScopeOverlay(pixels: ImagePixels?, mode: ScopeMode, modifier: Modifier = Mod
     ScopePanel(data = data, mode = mode, modifier = modifier)
 }
 
-/** Draws precomputed scope [data] (or just the graticule while it is null) in the translucent scope panel. */
+/**
+ * Draws precomputed scope [data] (or just the labelled level ticks while it is null) in the translucent scope panel,
+ * under a caption naming the active [mode].
+ */
 @Composable
 internal fun ScopePanel(data: ScopeData?, mode: ScopeMode, modifier: Modifier = Modifier) {
     val scheme = MaterialTheme.colorScheme
     val colors = DarkroomTheme.colors
     val spacing = DarkroomTheme.spacing
-    val description = stringResource(
+    val caption = stringResource(
         when (mode) {
             ScopeMode.RGB_PARADE -> R.string.canvas_scope_parade
             ScopeMode.HISTOGRAM -> R.string.canvas_scope_histogram
             ScopeMode.LUMA_WAVEFORM, ScopeMode.OFF -> R.string.canvas_scope_luma
         },
     )
-    val graticule = scheme.onSurfaceVariant.copy(alpha = GRATICULE_ALPHA)
-    Box(
+    val measurer = rememberTextMeasurer()
+    val labelStyle = MaterialTheme.typography.labelSmall.copy(color = scheme.onSurfaceVariant)
+    val tickLabels = remember(measurer, labelStyle) { TICK_LABELS.map { measurer.measure(it, labelStyle) } }
+    val channelLabels = remember(measurer, labelStyle) { CHANNEL_LABELS.map { measurer.measure(it, labelStyle) } }
+    val tick = scheme.outline
+    Column(
         modifier = modifier
             .aspectRatio(SCOPE_ASPECT)
             .background(scheme.surfaceContainerLowest.copy(alpha = PANEL_ALPHA), MaterialTheme.shapes.small)
             .border(Dp.Hairline, scheme.outline, MaterialTheme.shapes.small)
-            .semantics { contentDescription = description },
+            .semantics { contentDescription = caption }
+            .padding(spacing.s),
+        verticalArrangement = Arrangement.spacedBy(spacing.xs),
     ) {
-        Canvas(Modifier.fillMaxSize().padding(spacing.s)) {
-            when (data) {
-                is ScopeData.Waveform -> {
-                    drawLevelGraticule(Offset.Zero, size, graticule)
-                    drawRaster(data.image, Offset.Zero, size)
-                }
-                is ScopeData.Parade -> {
-                    val gap = spacing.xs.toPx()
-                    val panel = Size((size.width - 2 * gap) / 3f, size.height)
-                    listOf(data.red, data.green, data.blue).forEachIndexed { i, image ->
-                        val origin = Offset(i * (panel.width + gap), 0f)
-                        drawLevelGraticule(origin, panel, graticule)
-                        drawRaster(image, origin, panel)
+        Text(
+            text = caption,
+            style = MaterialTheme.typography.labelSmall,
+            color = scheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            // The panel already announces the scope; the caption is its visible twin.
+            modifier = Modifier.clearAndSetSemantics {},
+        )
+        Box(Modifier.fillMaxWidth().weight(1f)) {
+            Canvas(Modifier.fillMaxSize()) {
+                val gap = spacing.xs.toPx()
+                if (mode == ScopeMode.HISTOGRAM) {
+                    val plot = Size(size.width, size.height - tickLabels.maxOf { it.size.height } - gap)
+                    drawCodeTicks(plot, tick, tickLabels)
+                    if (data is ScopeData.Histogram) {
+                        drawHistogramFill(data.red, colors.scopeR, plot)
+                        drawHistogramFill(data.green, colors.scopeG, plot)
+                        drawHistogramFill(data.blue, colors.scopeB, plot)
+                        drawHistogramLine(data.luma, colors.scopeLuma, 1.dp.toPx(), plot)
+                    }
+                } else {
+                    val gutter = tickLabels.maxOf { it.size.width } + gap
+                    drawLevelLabels(tickLabels, gutter - gap)
+                    translate(left = gutter) {
+                        val area = Size(size.width - gutter, size.height)
+                        if (mode == ScopeMode.RGB_PARADE) {
+                            drawParade(data as? ScopeData.Parade, area, gap, tick, channelLabels)
+                        } else {
+                            drawLevelTicks(Offset.Zero, area, tick)
+                            (data as? ScopeData.Waveform)?.let { drawRaster(it.image, Offset.Zero, area) }
+                        }
                     }
                 }
-                is ScopeData.Histogram -> {
-                    drawCodeGraticule(graticule)
-                    drawHistogramFill(data.red, colors.scopeR)
-                    drawHistogramFill(data.green, colors.scopeG)
-                    drawHistogramFill(data.blue, colors.scopeB)
-                    drawHistogramLine(data.luma, colors.scopeLuma, 1.dp.toPx())
-                }
-                null -> if (mode == ScopeMode.HISTOGRAM) {
-                    drawCodeGraticule(graticule)
-                } else {
-                    drawLevelGraticule(Offset.Zero, size, graticule)
-                }
             }
+            if (mode == ScopeMode.HISTOGRAM) ChannelLegend(Modifier.align(Alignment.TopEnd).padding(horizontal = spacing.xs))
         }
-        if (mode != ScopeMode.LUMA_WAVEFORM) ChannelLegend(mode, Modifier.align(Alignment.TopStart).padding(spacing.s))
     }
 }
 
-/** R/G/B identity for the multi-channel scopes, so channels are never told apart by colour alone. */
+/** Dot-and-letter R/G/B identity for the histogram, so channels are never told apart by colour alone. */
 @Composable
-private fun ChannelLegend(mode: ScopeMode, modifier: Modifier = Modifier) {
+private fun ChannelLegend(modifier: Modifier = Modifier) {
     val colors = DarkroomTheme.colors
     val spacing = DarkroomTheme.spacing
-    val channels = listOf("R" to colors.scopeR, "G" to colors.scopeG, "B" to colors.scopeB)
-    if (mode == ScopeMode.RGB_PARADE) {
-        Row(modifier.fillMaxWidth()) {
-            channels.forEach { (label, _) ->
-                Box(Modifier.weight(1f)) { ChannelLabel(label) }
-            }
-        }
-    } else {
-        Row(modifier, horizontalArrangement = Arrangement.spacedBy(spacing.s), verticalAlignment = Alignment.CenterVertically) {
-            channels.forEach { (label, colour) ->
-                Row(horizontalArrangement = Arrangement.spacedBy(spacing.xs), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(spacing.s).background(colour, CircleShape))
-                    ChannelLabel(label)
-                }
+    val channels = CHANNEL_LABELS.zip(listOf(colors.scopeR, colors.scopeG, colors.scopeB))
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(spacing.s), verticalAlignment = Alignment.CenterVertically) {
+        channels.forEach { (label, colour) ->
+            Row(horizontalArrangement = Arrangement.spacedBy(spacing.xs), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(spacing.s).background(colour, CircleShape))
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
 }
 
-@Composable
-private fun ChannelLabel(label: String) {
-    Text(
-        text = label,
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
+/** Three side-by-side channel plots in [area], each with its level ticks, its trace (if any) and its R/G/B letter. */
+private fun DrawScope.drawParade(
+    data: ScopeData.Parade?,
+    area: Size,
+    gap: Float,
+    tick: Color,
+    channelLabels: List<TextLayoutResult>,
+) {
+    val panel = Size((area.width - 2 * gap) / 3f, area.height)
+    val images = data?.let { listOf(it.red, it.green, it.blue) }
+    channelLabels.forEachIndexed { i, label ->
+        val origin = Offset(i * (panel.width + gap), 0f)
+        drawLevelTicks(origin, panel, tick)
+        images?.let { drawRaster(it[i], origin, panel) }
+        drawText(label, topLeft = origin + Offset(gap, gap))
+    }
 }
 
-/** Hairlines at 0, 50 and 100 IRE across a waveform plot at [origin] of [plot] size. */
-private fun DrawScope.drawLevelGraticule(origin: Offset, plot: Size, colour: Color) {
-    GRATICULE_FRACTIONS.forEach { f ->
+/** Hairlines at 0, 50 and 100 % across a waveform plot at [origin] of [plot] size. */
+private fun DrawScope.drawLevelTicks(origin: Offset, plot: Size, colour: Color) {
+    TICK_FRACTIONS.forEach { f ->
         val y = origin.y + plot.height * (1f - f)
         drawLine(colour, Offset(origin.x, y), Offset(origin.x + plot.width, y), strokeWidth = Stroke.HairlineWidth)
     }
 }
 
-/** Vertical hairlines at code 0, the midpoint and code 255 across a histogram. */
-private fun DrawScope.drawCodeGraticule(colour: Color) {
-    GRATICULE_FRACTIONS.forEach { f ->
-        val x = size.width * f
-        drawLine(colour, Offset(x, 0f), Offset(x, size.height), strokeWidth = Stroke.HairlineWidth)
+/** The 0 / 50 / 100 level labels, right-aligned to [right] and centred on their ticks, kept inside the plot height. */
+private fun DrawScope.drawLevelLabels(labels: List<TextLayoutResult>, right: Float) {
+    labels.forEachIndexed { i, label ->
+        val height = label.size.height.toFloat()
+        val top = (size.height * (1f - TICK_FRACTIONS[i]) - height / 2f).coerceIn(0f, size.height - height)
+        drawText(label, topLeft = Offset(right - label.size.width, top))
+    }
+}
+
+/** Vertical hairlines at code 0, the midpoint and code 255 across a histogram [plot], labelled 0 / 50 / 100 below it. */
+private fun DrawScope.drawCodeTicks(plot: Size, colour: Color, labels: List<TextLayoutResult>) {
+    TICK_FRACTIONS.forEachIndexed { i, f ->
+        val x = plot.width * f
+        drawLine(colour, Offset(x, 0f), Offset(x, plot.height), strokeWidth = Stroke.HairlineWidth)
+        val label = labels[i]
+        val left = (x - label.size.width / 2f).coerceIn(0f, size.width - label.size.width)
+        drawText(label, topLeft = Offset(left, size.height - label.size.height))
     }
 }
 
@@ -224,26 +268,26 @@ private fun DrawScope.drawRaster(image: ImageBitmap, origin: Offset, plot: Size)
     )
 }
 
-private fun DrawScope.histogramPath(heights: FloatArray, closed: Boolean): Path {
+private fun histogramPath(heights: FloatArray, closed: Boolean, plot: Size): Path {
     val path = Path()
     val last = (heights.size - 1).coerceAtLeast(1)
-    if (closed) path.moveTo(0f, size.height)
+    if (closed) path.moveTo(0f, plot.height)
     heights.forEachIndexed { i, h ->
-        val x = size.width * i / last
-        val y = size.height * (1f - h)
+        val x = plot.width * i / last
+        val y = plot.height * (1f - h)
         if (i == 0 && !closed) path.moveTo(x, y) else path.lineTo(x, y)
     }
     if (closed) {
-        path.lineTo(size.width, size.height)
+        path.lineTo(plot.width, plot.height)
         path.close()
     }
     return path
 }
 
-private fun DrawScope.drawHistogramFill(heights: FloatArray, colour: Color) {
-    drawPath(histogramPath(heights, closed = true), colour.copy(alpha = HISTOGRAM_FILL_ALPHA))
+private fun DrawScope.drawHistogramFill(heights: FloatArray, colour: Color, plot: Size) {
+    drawPath(histogramPath(heights, closed = true, plot), colour.copy(alpha = HISTOGRAM_FILL_ALPHA))
 }
 
-private fun DrawScope.drawHistogramLine(heights: FloatArray, colour: Color, width: Float) {
-    drawPath(histogramPath(heights, closed = false), colour, style = Stroke(width = width))
+private fun DrawScope.drawHistogramLine(heights: FloatArray, colour: Color, width: Float, plot: Size) {
+    drawPath(histogramPath(heights, closed = false, plot), colour, style = Stroke(width = width))
 }

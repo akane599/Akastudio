@@ -170,7 +170,9 @@ private fun StudioWorkspace(
                     compare = state.compare,
                     onIntent = onIntent,
                     hitTest = hitTest,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(vertical = DarkroomTheme.spacing.s),
                     photoIds = state.selection.photoIds,
                     overrides = state.overrides,
                     scope = state.scope,

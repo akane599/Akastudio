@@ -13,6 +13,6 @@
 
     <!-- Scopes (ScopeMode) -->
     <string name="canvas_scope_luma">Luma dalga formu</string>
-    <string name="canvas_scope_parade">RGB parade</string>
+    <string name="canvas_scope_parade">RGB geçit</string>
     <string name="canvas_scope_histogram">Histogram</string>
 </resources>
