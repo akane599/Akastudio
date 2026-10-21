@@ -259,18 +259,6 @@ internal object RenderMath {
         return if (remainder > half || (remainder == half && (quotient and 1) == 1)) quotient + 1 else quotient
     }
 
-    /** Reverses the order of [rows] rows of [rowLength] elements in place (bottom-first GL readback -> top-first). */
-    fun flipRows(data: ShortArray, rowLength: Int, rows: Int) {
-        require(data.size >= rowLength * rows)
-        val scratch = ShortArray(rowLength)
-        for (top in 0 until rows / 2) {
-            val bottom = rows - 1 - top
-            System.arraycopy(data, top * rowLength, scratch, 0, rowLength)
-            System.arraycopy(data, bottom * rowLength, data, top * rowLength, rowLength)
-            System.arraycopy(scratch, 0, data, bottom * rowLength, rowLength)
-        }
-    }
-
     /** Bottom-first RGBA8 bytes (glReadPixels order) -> top-first packed ARGB ints. */
     fun rgbaBottomUpToArgb(rgba: ByteArray, width: Int, height: Int): IntArray {
         require(rgba.size >= width * height * 4)
@@ -293,32 +281,11 @@ internal object RenderMath {
     /** Float RGBA -> half bits. */
     fun floatsToHalf(values: FloatArray): ShortArray = ShortArray(values.size) { floatToHalf(values[it]) }
 
-    /** Log-encoded premultiplied RGBA8 bytes (fallback targets) -> linear premultiplied half bits. */
-    fun logBytesToHalf(rgba: ByteArray): ShortArray {
-        val out = ShortArray(rgba.size)
-        var i = 0
-        while (i + 3 < rgba.size) {
-            val alpha = rgba[i + 3].toInt() and 0xFF
-            for (c in 0 until 3) out[i + c] = logChannelToHalf(rgba[i + c].toInt() and 0xFF, alpha)
-            out[i + 3] = floatToHalf(alpha / 255f)
-            i += 4
-        }
-        return out
-    }
-
     /** One log-encoded premultiplied colour code ([stored], with its pixel's [alpha] code) -> linear premultiplied half bits. */
     fun logChannelToHalf(stored: Int, alpha: Int): Short {
         val a = alpha / 255f
         val linear = if (a > 0f) logDecode((stored / 255f) / a) * a else 0f
         return floatToHalf(linear)
-    }
-
-    /** Copies a top-first [tileWidth]x[tileHeight] block of [channels]-wide pixels into [dest] at ([x], [y]). */
-    fun blitTile(tile: ShortArray, tileWidth: Int, tileHeight: Int, dest: ShortArray, destWidth: Int, x: Int, y: Int, channels: Int) {
-        val rowLength = tileWidth * channels
-        for (row in 0 until tileHeight) {
-            System.arraycopy(tile, row * rowLength, dest, ((y + row) * destWidth + x) * channels, rowLength)
-        }
     }
 
     /** Row-major grid of tiles no larger than [maxTileWidth]x[maxTileHeight] that covers the canvas exactly once. */

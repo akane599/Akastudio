@@ -2,7 +2,6 @@ package com.akane.akastudio.core.color.render
 
 import com.akane.akastudio.core.color.api.NormRect
 import com.akane.akastudio.core.color.api.OverlayAlign
-import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -217,16 +216,6 @@ class RenderMathTest {
     // ---- row flip / packing / tiles ----
 
     @Test
-    fun flipRows_reversesRowOrder() {
-        val data = shortArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 9)
-        RenderMath.flipRows(data, 3, 3)
-        assertArrayEquals(shortArrayOf(7, 8, 9, 4, 5, 6, 1, 2, 3), data)
-        val even = shortArrayOf(1, 2, 3, 4)
-        RenderMath.flipRows(even, 2, 2)
-        assertArrayEquals(shortArrayOf(3, 4, 1, 2), even)
-    }
-
-    @Test
     fun rgbaBottomUpToArgb_flipsAndPacks() {
         val bottomRow = byteArrayOf(1, 2, 3, 4)
         val topRow = byteArrayOf(0xFF.toByte(), 0x80.toByte(), 0x10, 0xFF.toByte())
@@ -254,13 +243,6 @@ class RenderMathTest {
             assertTrue("${width}x$height / ${maxW}x$maxH covered exactly once", hits.all { it == 1 })
         }
         assertEquals(1, RenderMath.planTiles(1024, 1024, 1024, 1024).size)
-    }
-
-    @Test
-    fun blitTile_placesRowsAtTheOffset() {
-        val dest = ShortArray(3 * 2)
-        RenderMath.blitTile(shortArrayOf(7, 8), 1, 2, dest, 3, 2, 0, 1)
-        assertArrayEquals(shortArrayOf(0, 0, 7, 0, 0, 8), dest)
     }
 
     // ---- blur, log domain, overlay placement, mips ----

@@ -86,7 +86,7 @@ class OffscreenReadbackDeviceTest {
             framebuffer.texture.uploadLevel0(nativeBuffer(bytes.size).apply { put(bytes).rewind() })
             framebuffer.bind()
             val expected = legacyFullFrame(ReadbackEncoding.LOG_BYTES)
-            assertArrayEquals("full-frame log readback decodes the uploaded bytes", flipToCanvas(RenderMath.logBytesToHalf(bytes), W, H), expected)
+            assertArrayEquals("full-frame log readback decodes the uploaded bytes", flipToCanvas(legacyLogBytesToHalf(bytes), W, H), expected)
             for (strip in STRIPS) for ((maxW, maxH) in PLANS) {
                 val canvas = readTiled(WorkingReadback(logDomain = true, stripRows = strip), maxW, maxH)
                 assertArrayEquals("log strips $strip tiles ${maxW}x$maxH", expected, canvas)
@@ -157,16 +157,40 @@ class OffscreenReadbackDeviceTest {
         GLES20.glReadPixels(0, 0, W, H, GLES20.GL_RGBA, type, buffer)
         checkGlError("legacy glReadPixels")
         val halves = when (encoding) {
-            ReadbackEncoding.LOG_BYTES -> RenderMath.logBytesToHalf(ByteArray(count).also { buffer.get(it) })
+            ReadbackEncoding.LOG_BYTES -> legacyLogBytesToHalf(ByteArray(count).also { buffer.get(it) })
             ReadbackEncoding.HALF_FLOAT -> ShortArray(count).also { buffer.asShortBuffer().get(it) }
             ReadbackEncoding.FLOAT -> RenderMath.floatsToHalf(FloatArray(count).also { buffer.asFloatBuffer().get(it) })
         }
-        RenderMath.flipRows(halves, W * 4, H)
+        flipRows(halves, W * 4, H)
         return halves
     }
 
+    /** The pre-F-20 `RenderMath.logBytesToHalf`: log-encoded premultiplied RGBA8 bytes -> linear premultiplied half bits. */
+    private fun legacyLogBytesToHalf(rgba: ByteArray): ShortArray {
+        val out = ShortArray(rgba.size)
+        var i = 0
+        while (i + 3 < rgba.size) {
+            val alpha = rgba[i + 3].toInt() and 0xFF
+            for (c in 0 until 3) out[i + c] = RenderMath.logChannelToHalf(rgba[i + c].toInt() and 0xFF, alpha)
+            out[i + 3] = RenderMath.floatToHalf(alpha / 255f)
+            i += 4
+        }
+        return out
+    }
+
+    /** Reverses the order of [rows] rows of [rowLength] elements in place (bottom-first GL readback -> top-first). */
+    private fun flipRows(data: ShortArray, rowLength: Int, rows: Int) {
+        val scratch = ShortArray(rowLength)
+        for (top in 0 until rows / 2) {
+            val bottom = rows - 1 - top
+            System.arraycopy(data, top * rowLength, scratch, 0, rowLength)
+            System.arraycopy(data, bottom * rowLength, data, top * rowLength, rowLength)
+            System.arraycopy(scratch, 0, data, bottom * rowLength, rowLength)
+        }
+    }
+
     private fun flipToCanvas(framebufferRows: ShortArray, width: Int, height: Int): ShortArray =
-        framebufferRows.copyOf().also { RenderMath.flipRows(it, width * 4, height) }
+        framebufferRows.copyOf().also { flipRows(it, width * 4, height) }
 
     private fun nativeBuffer(bytes: Int): ByteBuffer = ByteBuffer.allocateDirect(bytes).order(ByteOrder.nativeOrder())
 
