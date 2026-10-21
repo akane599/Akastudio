@@ -4,6 +4,13 @@ plugins {
     alias(libs.plugins.compose.screenshot)
 }
 
+// 32-bit x86 has no API 31+ devices or system images, and LiteRT ships no x86 .so, so it is dropped.
+val supportedAbis = listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+
+// Opt-in side-load fallback: `assembleRelease -Pakastudio.abiSplits=true` emits one APK per ABI instead of the
+// universal APK. Leave it off for `bundleRelease`, which splits by ABI on its own.
+val abiSplitApks = providers.gradleProperty("akastudio.abiSplits").map(String::toBoolean).getOrElse(false)
+
 android {
     namespace = "com.akane.akastudio"
     compileSdk = 37
@@ -15,6 +22,24 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // AGP rejects ndk.abiFilters alongside splits.abi, so the split include list takes over when splits are on.
+        if (!abiSplitApks) {
+            ndk { abiFilters += supportedAbis }
+        }
+    }
+
+    splits {
+        abi {
+            isEnable = abiSplitApks
+            reset()
+            include(*supportedAbis.toTypedArray())
+            isUniversalApk = false
+        }
+    }
+
+    // Release ships as an App Bundle (`bundleRelease`): Play serves each device only its own ABI's native libraries.
+    bundle {
+        abi { enableSplit = true }
     }
 
     buildTypes {
