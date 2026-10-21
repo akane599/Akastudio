@@ -10,6 +10,7 @@ android {
 
     defaultConfig {
         minSdk = 31
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
     }
 
@@ -30,6 +31,11 @@ android {
         unitTests {
             isReturnDefaultValues = true
         }
+    }
+    // The androidTest APK bundles :core:vision-curator's models, whose noCompress does not carry over;
+    // keep them stored so MediaPipe/LiteRT can mmap them in instrumented tests.
+    androidResources {
+        noCompress += listOf("tflite", "task")
     }
     experimentalProperties["android.experimental.enableScreenshotTest"] = true
 }
@@ -56,6 +62,11 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+
+    androidTestImplementation(libs.bundles.androidx.test)
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 
     screenshotTestImplementation(libs.screenshot.validation.api)
     screenshotTestImplementation(libs.androidx.compose.ui.tooling)
