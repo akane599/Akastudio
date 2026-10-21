@@ -59,7 +59,8 @@ class PhotoDecodeException(val displayName: String, cause: Throwable) :
  *
  * Decodes run one at a time, and [prepare] and [release] never overlap, which caps peak memory at one decode in
  * flight. Every registered image stays tracked from the moment it is registered, so releasing the ids of a failed or
- * cancelled batch frees what that batch had already registered.
+ * cancelled batch frees what that batch had already registered. An image is freed only once its unregister succeeds:
+ * one whose unregister failed stays tracked, and every later [release] retries it.
  */
 internal class DefaultPhotoPreparer(
     private val backend: PreparerBackend,
@@ -70,6 +71,9 @@ internal class DefaultPhotoPreparer(
 
     /** Registered images by candidate id. Guarded by [mutex]. */
     private val registered = HashMap<String, FullResolutionImage>()
+
+    /** Ids still in [registered] whose unregister failed, retried by every [release]. Guarded by [mutex]. */
+    private val unregisterFailed = LinkedHashSet<String>()
 
     override suspend fun prepare(
         candidates: List<PhotoCandidate>,
@@ -85,16 +89,24 @@ internal class DefaultPhotoPreparer(
     }
 
     override suspend fun release(ids: Collection<String>) = mutex.withLock {
+        val requested = ids.toSet()
         var failure: Throwable? = null
-        for (id in ids.toSet()) {
-            val image = registered.remove(id) ?: continue
+        for (id in requested + unregisterFailed) {
+            val image = registered[id] ?: continue
             try {
                 backend.unregister(id)
             } catch (t: Throwable) {
-                if (failure == null) failure = t else failure.addSuppressed(t)
-            } finally {
-                image.free()
+                // The renderer may still hold the pixels, so they stay ours to retry. A retry nobody asked for here
+                // was already reported when it first failed.
+                unregisterFailed += id
+                if (id in requested) {
+                    if (failure == null) failure = t else failure.addSuppressed(t)
+                }
+                continue
             }
+            registered.remove(id)
+            unregisterFailed -= id
+            image.free()
         }
         failure?.let { throw it }
         Unit
@@ -122,7 +134,9 @@ internal class DefaultPhotoPreparer(
             image.free()
             throw t
         }
-        // A replaced registration no longer references the older pixels, so they can go now.
+        // A replaced registration no longer references the older pixels, so they can go now, and an unregister of
+        // them that failed must not be retried against the new registration.
+        unregisterFailed -= candidate.id
         registered.put(candidate.id, image)?.takeIf { it !== image }?.free()
         // Tracked before the cancellation check, so releasing this batch's ids unregisters it, then frees it.
         currentCoroutineContext().ensureActive()

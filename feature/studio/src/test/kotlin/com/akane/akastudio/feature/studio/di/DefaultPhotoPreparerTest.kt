@@ -189,8 +189,9 @@ class DefaultPhotoPreparerTest {
     }
 
     @Test
-    fun releaseFreesEveryImageWhenAnUnregisterFailsAndThenRethrows() = runTest {
+    fun releaseKeepsAnImageWhoseUnregisterFailedAndRetriesItOnTheNextRelease() = runTest {
         preparer.prepare(listOf(a, b), analyses, hero = false)
+        val (imageA, imageB) = backend.images
         backend.failUnregister += "a"
         try {
             preparer.release(listOf("a", "bb"))
@@ -198,8 +199,45 @@ class DefaultPhotoPreparerTest {
         } catch (e: IllegalStateException) {
             assertEquals("unregister a failed", e.message)
         }
-        assertEquals(listOf("a", "bb"), backend.unregistered)
-        assertTrue(backend.images.all { it.freed == 1 })
+        assertEquals("the renderer may still hold a's pixels, so they must not be freed", 0, imageA.freed)
+        assertEquals(1, imageB.freed)
+
+        // Later releases retry "a" though their callers no longer name it; a retry that fails again stays quiet.
+        preparer.release(listOf("unknown"))
+        assertEquals(0, imageA.freed)
+        backend.failUnregister.clear()
+        preparer.release(listOf("unknown"))
+
+        assertEquals(1, imageA.freed)
+        assertEquals(
+            listOf("unregister:a", "unregister:bb", "free:bb", "unregister:a", "unregister:a", "free:a"),
+            backend.events,
+        )
+        preparer.release(listOf("a"))
+        assertEquals(1, imageA.freed)
+        assertEquals(listOf("a", "bb", "a", "a"), backend.unregistered)
+    }
+
+    @Test
+    fun preparingAnIdWhoseUnregisterFailedReplacesItAndStopsTheRetry() = runTest {
+        preparer.prepare(listOf(a), analyses, hero = false)
+        backend.failUnregister += "a"
+        try {
+            preparer.release(listOf("a"))
+            fail("expected IllegalStateException")
+        } catch (e: IllegalStateException) {
+            assertEquals("unregister a failed", e.message)
+        }
+        backend.failUnregister.clear()
+
+        preparer.prepare(listOf(a), analyses, hero = false)
+        val (old, new) = backend.images
+        assertEquals("the new registration replaced the old pixels", 1, old.freed)
+
+        preparer.release(listOf("unknown"))
+        assertEquals("the retry must not unregister the new registration", listOf("a"), backend.unregistered)
+        assertSame(new, backend.registry["a"])
+        assertEquals(0, new.freed)
     }
 
     @Test
