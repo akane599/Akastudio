@@ -20,13 +20,10 @@
     <string name="controls_scope_rgb_parade">RGB parade</string>
     <string name="controls_scope_histogram">Histogram</string>
     <string name="controls_open_export">Export</string>
-    <string name="controls_state_on">On</string>
-    <string name="controls_state_off">Off</string>
 
     <!-- Mode drawer -->
     <string name="controls_drawer_title">Story mode</string>
     <string name="controls_tag_ai">AI</string>
-    <string name="controls_score">Score %1$s</string>
     <string name="controls_synergy_color">Color</string>
     <string name="controls_synergy_rhythm">Rhythm</string>
     <string name="controls_synergy_context">Context</string>

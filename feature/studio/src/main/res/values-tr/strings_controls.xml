@@ -18,13 +18,10 @@
     <string name="controls_scope_rgb_parade">RGB geçidi</string>
     <string name="controls_scope_histogram">Histogram</string>
     <string name="controls_open_export">Dışa aktar</string>
-    <string name="controls_state_on">Açık</string>
-    <string name="controls_state_off">Kapalı</string>
 
     <!-- Mod çekmecesi -->
     <string name="controls_drawer_title">Hikâye modu</string>
     <string name="controls_tag_ai">AI</string>
-    <string name="controls_score">Puan %1$s</string>
     <string name="controls_synergy_color">Renk</string>
     <string name="controls_synergy_rhythm">Ritim</string>
     <string name="controls_synergy_context">Bağlam</string>
