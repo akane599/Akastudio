@@ -1,0 +1,273 @@
+package com.akane.akastudio.core.export.pipeline
+
+import com.akane.akastudio.core.color.api.HalfFloatImage
+import com.akane.akastudio.core.color.api.StoryRenderer
+import com.akane.akastudio.core.export.api.ExportFormat
+import com.akane.akastudio.core.export.api.ExportPlan
+import com.akane.akastudio.core.export.api.ExportProgress
+import com.akane.akastudio.core.export.api.ExportRequest
+import com.akane.akastudio.core.export.api.ExportResolution
+import com.akane.akastudio.core.export.api.ExportResult
+import com.akane.akastudio.core.export.api.ExportStage
+import com.akane.akastudio.core.export.api.StoryExporter
+import com.akane.akastudio.core.export.encode.ExifFields
+import com.akane.akastudio.core.export.encode.ExifWriter
+import com.akane.akastudio.core.export.encode.JpegEncoder
+import com.akane.akastudio.core.export.encode.PngEncoder
+import com.akane.akastudio.core.export.encode.SrgbIccProfile
+import com.akane.akastudio.core.export.encode.WebpContainer
+import com.akane.akastudio.core.export.process.Dither
+import com.akane.akastudio.core.export.process.GainMapMath
+import com.akane.akastudio.core.export.process.Lanczos3
+import com.akane.akastudio.core.export.process.LumaSharpen
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withContext
+import java.io.OutputStream
+import java.time.ZoneId
+import kotlin.math.min
+
+/**
+ * Production [StoryExporter]: render -> process -> encode -> [EncodedSink].
+ *
+ * Stages are emitted in order with fractions rising from 0 to 1 within each stage, and the flow ends with
+ * [ExportProgress.Done]:
+ * - PNG_16 / PNG_8 / SOCIAL_STORY_JPEG / ULTRA_HDR_JPEG stream straight into the sink, so quantization (blue-noise
+ *   dither / 16-bit rounding) is fused into the encoder's row pulls and reported as ENCODE; a separate dithered frame
+ *   would exceed the memory budget.
+ * - SOCIAL_STORY_JPEG adds RESAMPLE (only when the render is larger than the target) and SHARPEN before ENCODE.
+ * - ULTRA_HDR_JPEG reports the optional highlight boost and the gain-map computation inside RENDER (they produce the
+ *   HDR/SDR pair), then SHARPEN (after RESAMPLE if the render is larger), ENCODE.
+ * - WEBP_LOSSLESS dithers into the platform bitmap (DITHER), compresses and adds ICC + EXIF (ENCODE), then writes the
+ *   buffered file (WRITE).
+ * - WRITE reaches 1 once the sink has published the entry.
+ *
+ * ULTRA_HDR_JPEG without an [ultraHdr] encoder (below API 34) falls back to SOCIAL_STORY_JPEG processing at the
+ * target size and reports SOCIAL_STORY_JPEG. Cancellation is checked between stages and on every pulled row; the
+ * sink removes the partial entry. Heavy work runs on [Dispatchers.Default], the sink write on [Dispatchers.IO]. At most
+ * two full-frame [HalfFloatImage]s are reachable at once (a stage's input and its output) plus row buffers.
+ *
+ * @param webpLossless the bitmap-backed lossless WebP encoder (Android-only in production).
+ * @param clock wall-clock millis used for the file name.
+ */
+class ExportProcessor(
+    private val renderer: StoryRenderer,
+    private val sink: EncodedSink,
+    private val ultraHdr: UltraHdrEncoder?,
+    private val webpLossless: WebpLosslessEncoder,
+    private val clock: () -> Long = System::currentTimeMillis,
+) : StoryExporter {
+
+    /**
+     * Exports [request].
+     *
+     * @throws IllegalArgumentException immediately (before any rendering) when the scene canvas differs from
+     *   [ExportPlan.renderSize] for the request's format and resolution.
+     */
+    override fun export(request: ExportRequest): Flow<ExportProgress> {
+        val (renderWidth, renderHeight) = ExportPlan.renderSize(request.format, request.resolution)
+        val scene = request.scene
+        require(scene.canvasWidth == renderWidth && scene.canvasHeight == renderHeight) {
+            "${request.format} at ${request.resolution} renders ${renderWidth}x$renderHeight, " +
+                "but the scene canvas is ${scene.canvasWidth}x${scene.canvasHeight}"
+        }
+        val format = if (request.format == ExportFormat.ULTRA_HDR_JPEG && ultraHdr == null) {
+            ExportFormat.SOCIAL_STORY_JPEG
+        } else {
+            request.format
+        }
+        return channelFlow {
+            val progress = ProgressReporter(this)
+            val job = ExportJob(request, format, progress, ExportNaming.fileName(format, clock(), ZoneId.systemDefault()))
+            val result = job.run()
+            progress.ensureActive()
+            send(ExportProgress.Done(result))
+        }.buffer(Channel.UNLIMITED).flowOn(Dispatchers.Default)
+    }
+
+    /** Holds the one live full-frame image, so replacing it leaves the previous frame unreachable. */
+    private class Frame(var image: HalfFloatImage)
+
+    private inner class ExportJob(
+        private val request: ExportRequest,
+        private val format: ExportFormat,
+        private val progress: ProgressReporter,
+        private val displayName: String,
+    ) {
+        private val target: ExportResolution = request.resolution
+        private val mimeType = ExportNaming.mimeType(format)
+
+        suspend fun run(): ExportResult {
+            progress.stage(ExportStage.RENDER, 0f)
+            val frame = Frame(renderer.renderOffscreen(request.scene))
+            check(frame.image.width == request.scene.canvasWidth && frame.image.height == request.scene.canvasHeight) {
+                "renderer returned ${frame.image.width}x${frame.image.height} for a " +
+                    "${request.scene.canvasWidth}x${request.scene.canvasHeight} canvas"
+            }
+            return when (format) {
+                ExportFormat.PNG_16 -> {
+                    progress.stage(ExportStage.RENDER, 1f)
+                    writePng(frame, sixteenBit = true)
+                }
+                ExportFormat.PNG_8 -> {
+                    progress.stage(ExportStage.RENDER, 1f)
+                    writePng(frame, sixteenBit = false)
+                }
+                ExportFormat.WEBP_LOSSLESS -> {
+                    progress.stage(ExportStage.RENDER, 1f)
+                    writeWebp(frame)
+                }
+                ExportFormat.SOCIAL_STORY_JPEG -> {
+                    progress.stage(ExportStage.RENDER, 1f)
+                    resampleIfLarger(frame)
+                    progress.stage(ExportStage.SHARPEN, 0f)
+                    frame.image = LumaSharpen.apply(frame.image)
+                    progress.stage(ExportStage.SHARPEN, 1f)
+                    writeJpeg(frame)
+                }
+                ExportFormat.ULTRA_HDR_JPEG -> writeUltraHdr(frame, checkNotNull(ultraHdr))
+            }
+        }
+
+        private fun resampleIfLarger(frame: Frame) {
+            if (frame.image.width <= target.width && frame.image.height <= target.height) return
+            progress.stage(ExportStage.RESAMPLE, 0f)
+            frame.image = Lanczos3.resample(frame.image, target.width, target.height)
+            progress.stage(ExportStage.RESAMPLE, 1f)
+        }
+
+        private suspend fun writePng(frame: Frame, sixteenBit: Boolean): ExportResult {
+            val image = frame.image
+            val exif = exif(image.width, image.height)
+            val rows = RowProgress(image.height, ExportStage.ENCODE, progress)
+            progress.stage(ExportStage.ENCODE, 0f)
+            val bytes = commit { out ->
+                if (sixteenBit) {
+                    PngEncoder.write16(out, image.width, image.height, { y, row ->
+                        rows.pull(y)
+                        Dither.toSrgb16Row(image, y, row)
+                    }, exif)
+                } else {
+                    PngEncoder.write8(out, image.width, image.height, alpha = false, rows = { y, row ->
+                        rows.pull(y)
+                        Dither.toSrgb8Row(image, y, row)
+                    }, exif = exif)
+                }
+                finishStreamingEncode(rows)
+            }
+            return result(bytes, image.width, image.height)
+        }
+
+        private suspend fun writeJpeg(frame: Frame): ExportResult {
+            val image = frame.image
+            val exif = exif(image.width, image.height)
+            val rows = RowProgress(image.height, ExportStage.ENCODE, progress)
+            progress.stage(ExportStage.ENCODE, 0f)
+            val bytes = commit { out ->
+                JpegEncoder.write(out, image.width, image.height, { y, row ->
+                    rows.pull(y)
+                    Dither.toSrgb8Row(image, y, row)
+                }, quality = JPEG_QUALITY, icc = SrgbIccProfile.bytes, exifTiff = exif)
+                finishStreamingEncode(rows)
+            }
+            return result(bytes, image.width, image.height)
+        }
+
+        private suspend fun writeWebp(frame: Frame): ExportResult {
+            val image = frame.image
+            val rows = RowProgress(image.height, ExportStage.DITHER, progress)
+            progress.stage(ExportStage.DITHER, 0f)
+            val lossless = webpLossless.encode(image.width, image.height) { y, row ->
+                rows.pull(y)
+                Dither.toSrgb8Row(image, y, row)
+            }
+            check(rows.complete) { "WebP encoder returned before pulling all ${image.height} rows" }
+            progress.stage(ExportStage.ENCODE, 0f)
+            val webp = WebpContainer.withMetadata(lossless, SrgbIccProfile.bytes, exif(image.width, image.height))
+            progress.stage(ExportStage.ENCODE, 1f)
+            val bytes = commit { out ->
+                progress.stage(ExportStage.WRITE, 0f)
+                var offset = 0
+                while (offset < webp.size) {
+                    progress.ensureActive()
+                    val length = min(WRITE_CHUNK, webp.size - offset)
+                    out.write(webp, offset, length)
+                    offset += length
+                    progress.stage(ExportStage.WRITE, offset.toFloat() / webp.size)
+                }
+            }
+            return result(bytes, image.width, image.height)
+        }
+
+        private suspend fun writeUltraHdr(frame: Frame, encoder: UltraHdrEncoder): ExportResult {
+            progress.stage(ExportStage.RENDER, 0.5f)
+            if (request.hdrBoost) {
+                frame.image = GainMapMath.boostHighlights(frame.image)
+                progress.stage(ExportStage.RENDER, 0.75f)
+            }
+            var gainMap = GainMapMath.compute(frame.image)
+            frame.image = gainMap.sdr
+            progress.stage(ExportStage.RENDER, 1f)
+            if (gainMap.sdr.width > target.width || gainMap.sdr.height > target.height) {
+                progress.stage(ExportStage.RESAMPLE, 0f)
+                gainMap = gainMap.copy(sdr = Lanczos3.resample(gainMap.sdr, target.width, target.height))
+                frame.image = gainMap.sdr
+                progress.stage(ExportStage.RESAMPLE, 1f)
+            }
+            progress.stage(ExportStage.SHARPEN, 0f)
+            gainMap = gainMap.copy(sdr = LumaSharpen.apply(gainMap.sdr))
+            frame.image = gainMap.sdr
+            progress.stage(ExportStage.SHARPEN, 1f)
+            val sdr = gainMap.sdr
+            progress.stage(ExportStage.ENCODE, 0f)
+            val bytes = commit { out ->
+                encoder.encode(sdr, gainMap, out, JPEG_QUALITY)
+                progress.stage(ExportStage.ENCODE, 1f)
+                progress.stage(ExportStage.WRITE, 0f)
+            }
+            return result(bytes, sdr.width, sdr.height)
+        }
+
+        /** Closes a streaming ENCODE inside the sink block: everything is encoded, the sink is about to publish. */
+        private fun finishStreamingEncode(rows: RowProgress) {
+            check(rows.complete) { "encoder finished before pulling every row" }
+            progress.stage(ExportStage.ENCODE, 1f)
+            progress.stage(ExportStage.WRITE, 0f)
+        }
+
+        /**
+         * Runs [block] against the sink's stream on [Dispatchers.IO] and returns the bytes it wrote. Any failure or
+         * cancellation inside [block] propagates through the sink, which removes the entry.
+         */
+        private suspend fun commit(block: (OutputStream) -> Unit): CommittedFile = withContext(Dispatchers.IO) {
+            var written = 0L
+            val uri = sink.write(displayName, mimeType, request.metadata.captureEpochMillis) { out ->
+                progress.ensureActive()
+                val counting = CountingOutputStream(out)
+                block(counting)
+                counting.flush()
+                written = counting.count
+            }
+            progress.stage(ExportStage.WRITE, 1f)
+            CommittedFile(uri, written)
+        }
+
+        private fun exif(width: Int, height: Int): ByteArray = ExifWriter.tiff(
+            ExifFields(request.metadata.captureEpochMillis, request.metadata.description, request.metadata.software, width, height),
+        )
+
+        private fun result(file: CommittedFile, width: Int, height: Int) =
+            ExportResult(uri = file.uri, mimeType = mimeType, width = width, height = height, byteSize = file.byteSize, format = format)
+    }
+
+    private class CommittedFile(val uri: String, val byteSize: Long)
+
+    private companion object {
+        const val JPEG_QUALITY = 95
+        const val WRITE_CHUNK = 64 * 1024
+    }
+}
