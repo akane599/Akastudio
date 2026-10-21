@@ -49,7 +49,7 @@ class SdrOnlyUltraHdrDeviceTest {
     @Test
     fun sdrOnlyStoryWithUltraHdrRequestExportsSocialJpeg() {
         val sdr = decodeLikeTheApp(sdrPhotoJpeg())
-        val graded = CpuGradingPipeline.grade(sdr, GradeParams(look = MasterLook.MEDITERRANEAN_AZURE, contrast = 1f))
+        val graded = CpuGradingPipeline.grade(sdr, GradeParams(look = MasterLook.MEDITERRANEAN_AZURE, contrast = 0.5f))
         val renderer = SyntheticRenderer(sample(graded))
         val ratioMax = GainMapMath.compute(renderer.render(1080, 1920)).ratioMax
         record("sdrOnly.ratioMax", ratioMax)
