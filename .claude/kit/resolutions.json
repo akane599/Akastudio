@@ -1,0 +1,12 @@
+{
+  ".claude/live-rules/rules/android-build.md": {
+    "merged_sha256": "4cf17bfc35113e594d9c8e3cd9f57cde01376971fec17c07be70e3d668c5eac2",
+    "resolved_at": "2026-10-21T16:15:43.879022+00:00",
+    "template_sha256": "b792f5a08b202d1423d4e6fcb337fdddd435ece5eaf767384f5a551e0efa4306"
+  },
+  ".claude/skills/full-repo-audit/scripts/audit-guard.py": {
+    "merged_sha256": "2a124e9c884fce0c7fa4e07957e91d90c01b5f2d9a4bcce8fe9f8fd869cbb2f7",
+    "resolved_at": "2026-10-21T16:15:43.880638+00:00",
+    "template_sha256": "71e7c2ced1c88dfa089b6d048ab247dc746356f11f0f48e8aa29e32addbeeb03"
+  }
+}

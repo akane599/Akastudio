@@ -25,8 +25,8 @@
     },
     {
       "path": "rules/android-orchestration.md",
-      "hash": "10d6e7a2fea27f2790f980cef94dbbd06baf2afa80a1c0363640a369a2dcf6d8",
-      "description": "Android ticket ownership, verification and native Claude routing through Sidequest profile android-kit-claude-max",
+      "hash": "2782f54318e32d8764454f82cb167e836703fda4beb1e257b974eee28d2f4bc7",
+      "description": "Android ticket ownership, verification and native Claude routing through Sidequest profile android-kit-claude-max-hybrid",
       "globs": [],
       "dirs": [],
       "prompt": [],
