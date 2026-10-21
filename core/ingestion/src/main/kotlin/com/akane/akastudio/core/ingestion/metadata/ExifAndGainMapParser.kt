@@ -126,9 +126,7 @@ class ExifAndGainMapParser(
         val orientation = ExifOrientation.fromExif(
             exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL),
         )
-        @Suppress("DEPRECATION")
         val iso = ExifValues.parseIntTag(exif.getAttribute(ExifInterface.TAG_PHOTOGRAPHIC_SENSITIVITY))
-            ?: ExifValues.parseIntTag(exif.getAttribute(ExifInterface.TAG_ISO_SPEED_RATINGS))
         val metadata = CaptureMetadata.EMPTY.copy(
             captureEpochMillis = captureMillis,
             captureHasUtcOffset = hasOffset,
