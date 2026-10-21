@@ -103,8 +103,8 @@ internal data class SlotDrag(val from: Int, val start: Offset, val current: Offs
  * - Long-press then drag swaps the picked cell with the one it is dropped on ([StudioIntent.SwapSlots]); only while
  *   [editable], since the studio rejects a swap outside its Ready phase.
  * - Two-finger pinch or pan zooms (1..4) and pans (-1..1) the cell under the fingers, or the selected cell, sending
- *   at most one [StudioIntent.SetCellOverride] per display frame; it starts only while [editable], since the studio
- *   ignores crop edits outside its Ready phase.
+ *   at most one [StudioIntent.SetCellOverride] per display frame; only while [editable], since the studio ignores
+ *   crop edits outside its Ready phase. A pinch on a locked canvas is still swallowed, so it never ends as a tap.
  * - With [compare] set, a draggable split handle sends [StudioIntent.SetCompare]; "Before"/"After" mark each side.
  * - Accessibility services get custom actions for the same edits: select next cell, swap with next cell, zoom in,
  *   zoom out and reset crop (see [CanvasActions]); the editing ones only while [editable].
@@ -380,7 +380,10 @@ private fun Modifier.canvasGestures(
             detectTwoFingerTransform(
                 onStart = { centroid ->
                     tracker = null
-                    if (!currentEditable || dragState.value != null) return@detectTwoFingerTransform false
+                    if (dragState.value != null) return@detectTwoFingerTransform false
+                    // Locked: still claim the pinch so its moves are consumed and its last up is not a tap, but edit
+                    // nothing (no tracker) and leave the selection alone.
+                    if (!currentEditable) return@detectTwoFingerTransform true
                     val slot = slotAt(centroid) ?: currentSelected ?: return@detectTwoFingerTransform false
                     val cell = currentScene?.layers?.getOrNull(slot)?.dst ?: return@detectTwoFingerTransform false
                     val photoId = currentPhotoIds.getOrNull(slot) ?: return@detectTwoFingerTransform false
