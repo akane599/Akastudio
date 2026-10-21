@@ -24,6 +24,10 @@ _Work items, stories and blockers live on the Sidequest board. This file keeps w
 - 2026-10-21: Turkish UI keeps product and format names in English (Ultra HDR, Social Story Master, HDR Story Boost, PNG, WebP) but translates the Hero mode as "Tek kare", because format names are what users see in other apps and in the gallery. (SQ-40)
 - 2026-10-21: pending telemetry steps use the Tertiary token (#8E8A82, ≥4.5:1) instead of a dimmed grey, because they're content rather than disabled controls, so the WCAG AA contrast minimum applies. (SQ-27/SQ-39)
 - 2026-10-21: the renderer, the curator models and the StudioContainer are process-wide and never closed. GlStoryRenderer keeps registered Bitmaps for context-loss re-upload, so the preparer recycles one only after unregisterImage. (SQ-26)
+- 2026-10-21: a whole-archive failure, whether security (Zip Slip, bomb) or I/O (truncated, read error, storage), discards everything from that archive (per-archive staging, published only after a clean end), rather than keeping entries extracted before the failure. This matches the "Whole archive rejected" copy and fails closed. (SQ-63)
+- 2026-10-21: full-resolution decoding uses the largest power-of-two sample size ≤ the downscale factor, never upscaling or softening. A downscale under 2× still decodes at full size, and its peak memory is a documented bound. (SQ-60)
+- 2026-10-21: the export's ringing limit applies to Lanczos plus the post-resize sharpener together (about 19%; measured 15.1%), not Lanczos alone (10%; measured 8.1%). The sharpener is part of the anti-compression design. (SQ-61)
+- 2026-10-21: device verification runs as module-local `src/androidTest` suites on the shared emulator-5554, serialized by `flock $HOME/.cache/akastudio-emulator-5554.lock`, rather than JVM-only verification. Stages 1–5 had skipped it, and the first device QA found 2 crashes and 3 defects. (US-6)
 
 ## Audit status
 | Area | Last run | Result | How |
