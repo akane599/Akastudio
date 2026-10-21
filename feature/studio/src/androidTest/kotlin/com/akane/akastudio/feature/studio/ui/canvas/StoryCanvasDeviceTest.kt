@@ -139,8 +139,8 @@ class StoryCanvasDeviceTest {
         canvas().assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, state))
     }
 
-    /** Spreads two fingers apart horizontally over the top cell. */
-    private fun pinchOutOnTop() {
+    /** Spreads two fingers apart horizontally over the top cell for [durationMillis]. */
+    private fun pinchOutOnTop(durationMillis: Long = 400L) {
         canvas().performTouchInput {
             val y = height * 0.25f
             pinch(
@@ -148,7 +148,7 @@ class StoryCanvasDeviceTest {
                 end0 = Offset(centerX - 200f, y),
                 start1 = Offset(centerX + 40f, y),
                 end1 = Offset(centerX + 200f, y),
-                durationMillis = 400L,
+                durationMillis = durationMillis,
             )
         }
         compose.waitForIdle()
@@ -164,10 +164,16 @@ class StoryCanvasDeviceTest {
     }
 
     @Test
-    fun lockedPinchSendsNoCropEdit() {
+    fun lockedPinchSendsNoCropEditAndKeepsTheSelection() {
         setCanvas(editable = false)
-        pinchOutOnTop()
+        // Quicker than a long press, whose drag detector would consume the moves itself.
+        pinchOutOnTop(durationMillis = 150L)
+        // Past the double-tap timeout, so a pinch that fell through to the tap detector would have selected by now.
+        compose.mainClock.advanceTimeBy(1_000L)
+        compose.waitForIdle()
         assertTrue(intents.toString(), intents.none { it is StudioIntent.SetCellOverride })
+        val state = resources.getQuantityString(R.plurals.canvas_state_cells, 2, 2)
+        canvas().assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, state))
     }
 
     @Test
