@@ -10,6 +10,7 @@ import com.akane.akastudio.core.curator.api.PhotoAnalysis
 import com.akane.akastudio.core.export.api.StoryExporter
 import com.akane.akastudio.core.ingestion.api.IngestionSession
 import com.akane.akastudio.core.ingestion.model.PhotoCandidate
+import com.akane.akastudio.core.ingestion.picker.PickerItems
 import kotlinx.coroutines.CoroutineDispatcher
 
 /**
@@ -29,6 +30,12 @@ interface StudioDependencies {
     val harmonizer: HarmonizationPlanner
     val dispatchers: StudioDispatchers
     val errors: StudioErrorMapper
+
+    /**
+     * The user-visible name of the picked document at [uri]. Blocking (a provider query): the studio calls it on
+     * `dispatchers.io`. Defaults to the uri's last segment.
+     */
+    fun documentDisplayName(uri: String): String = PickerItems.displayNameFallback(uri)
 }
 
 /**

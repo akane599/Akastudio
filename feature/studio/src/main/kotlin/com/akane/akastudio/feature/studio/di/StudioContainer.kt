@@ -2,6 +2,9 @@ package com.akane.akastudio.feature.studio.di
 
 import android.content.ComponentCallbacks2
 import android.content.Context
+import android.provider.OpenableColumns
+import android.util.Log
+import androidx.core.net.toUri
 import com.akane.akastudio.core.color.api.StoryRenderer
 import com.akane.akastudio.core.color.harmonize.Harmonizer
 import com.akane.akastudio.core.color.render.createStoryRenderer
@@ -19,6 +22,7 @@ import com.akane.akastudio.core.ingestion.api.IngestionSession
 import com.akane.akastudio.core.ingestion.createAnalysisDecoder
 import com.akane.akastudio.core.ingestion.createIngestionSession
 import com.akane.akastudio.core.ingestion.decode.FullResolutionDecoder
+import com.akane.akastudio.core.ingestion.picker.PickerItems
 import com.akane.akastudio.feature.studio.domain.HarmonizationPlanner
 import com.akane.akastudio.feature.studio.domain.PhotoPreparer
 import com.akane.akastudio.feature.studio.domain.StudioDependencies
@@ -80,6 +84,23 @@ class StudioContainer(context: Context) : StudioDependencies {
 
     override val errors: StudioErrorMapper = StudioContainerErrorMapper()
 
+    /** The provider's display name, or the last uri segment when it has none or refuses the query. */
+    override fun documentDisplayName(uri: String): String {
+        val queried = try {
+            app.contentResolver.query(uri.toUri(), arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                val column = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (column >= 0 && cursor.moveToFirst()) cursor.getString(column) else null
+            }
+        } catch (e: SecurityException) {
+            Log.w(TAG, "Display name query refused", e)
+            null
+        } catch (e: IllegalArgumentException) {
+            Log.w(TAG, "Display name query rejected", e)
+            null
+        }
+        return queried?.takeIf { it.isNotBlank() } ?: PickerItems.displayNameFallback(uri)
+    }
+
     /**
      * Forward of `Application.onTrimMemory`. From [ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN] up (the app's UI has
      * stopped, or the system is short of memory) the renderer frees its pooled targets, cached grades and window
@@ -87,5 +108,9 @@ class StudioContainer(context: Context) : StudioDependencies {
      */
     fun onTrimMemory(level: Int) {
         if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN && rendererInstance.isInitialized()) renderer.trimMemory()
+    }
+
+    private companion object {
+        const val TAG = "StudioContainer"
     }
 }

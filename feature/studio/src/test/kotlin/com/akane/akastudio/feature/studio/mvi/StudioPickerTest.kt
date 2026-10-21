@@ -5,6 +5,7 @@ import com.akane.akastudio.core.curator.api.StoryMode
 import com.akane.akastudio.core.ingestion.api.IngestionRequest
 import com.akane.akastudio.feature.studio.domain.FakeCurationEngine
 import com.akane.akastudio.feature.studio.domain.FakeStudioDependencies
+import com.akane.akastudio.feature.studio.domain.StudioDependencies
 import com.akane.akastudio.feature.studio.domain.TestData
 import com.akane.akastudio.feature.studio.domain.studioTestDispatchers
 import kotlinx.coroutines.CoroutineScope
@@ -40,9 +41,15 @@ class StudioPickerTest {
         val state: StudioState get() = vm.state.value
     }
 
-    private fun TestScope.harness(): Harness {
+    /** [documentNames] answers `StudioDependencies.documentDisplayName`; the fake's default is used when null. */
+    private fun TestScope.harness(documentNames: ((String) -> String)? = null): Harness {
         val deps = FakeStudioDependencies(studioTestDispatchers(testScheduler), FakeCurationEngine(result))
-        val vm = StudioViewModel(deps, CoroutineScope(SupervisorJob(backgroundScope.coroutineContext.job) + deps.dispatchers.main))
+        val vmDeps = documentNames?.let { names ->
+            object : StudioDependencies by deps {
+                override fun documentDisplayName(uri: String): String = names(uri)
+            }
+        } ?: deps
+        val vm = StudioViewModel(vmDeps, CoroutineScope(SupervisorJob(backgroundScope.coroutineContext.job) + deps.dispatchers.main))
         val effects = mutableListOf<StudioEffect>()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.effects.collect { effects += it } }
         return Harness(vm, deps, effects)
@@ -147,5 +154,95 @@ class StudioPickerTest {
         h.vm.onIntent(StudioIntent.PickerClosed)
         advanceUntilIdle()
         assertEquals(StudioPhase.Ready, h.state.phase)
+    }
+
+    @Test
+    fun stacked_pickers_hold_auto_curation_until_the_last_one_closes() = runTest {
+        val h = harness()
+        readFirstBatch(h)
+        h.vm.onIntent(StudioIntent.PickerOpened)
+        h.vm.onIntent(StudioIntent.PickerOpened)
+
+        h.vm.onIntent(StudioIntent.PickerClosed)
+        advanceTimeBy(StudioViewModel.AUTO_CURATION_DEBOUNCE_MS * 20)
+        runCurrent()
+        assertEquals(StudioPhase.Ingesting, h.state.phase)
+        assertTrue(h.deps.curation.curated.isEmpty())
+
+        h.deps.ingestScripts += TestData.ingestion(listOf(c))
+        h.vm.onIntent(StudioIntent.ImportPhotos(listOf("u3")))
+        h.vm.onIntent(StudioIntent.PickerClosed)
+        advanceUntilIdle()
+        assertTrue("the second picker's photos were not refused", h.effects.isEmpty())
+        assertEquals(listOf(listOf("a", "b", "c")), h.deps.curation.curated.map { batch -> batch.map { it.id } })
+        assertEquals(StudioPhase.Ready, h.state.phase)
+    }
+
+    @Test
+    fun stacked_picker_opened_from_the_empty_studio_still_extends_the_batch() = runTest {
+        val h = harness()
+        h.vm.onIntent(StudioIntent.PickerOpened)
+        h.vm.onIntent(StudioIntent.PickerOpened)
+        h.deps.ingestScripts += TestData.ingestion(listOf(a, b))
+        h.vm.onIntent(StudioIntent.ImportPhotos(listOf("u1", "u2")))
+        h.vm.onIntent(StudioIntent.PickerClosed)
+        advanceTimeBy(StudioViewModel.AUTO_CURATION_DEBOUNCE_MS * 20)
+        runCurrent()
+        assertEquals(StudioPhase.Ingesting, h.state.phase)
+
+        h.deps.ingestScripts += TestData.ingestion(listOf(c))
+        h.vm.onIntent(StudioIntent.ImportPhotos(listOf("u3")))
+        h.vm.onIntent(StudioIntent.PickerClosed)
+        advanceUntilIdle()
+        assertEquals(1, h.deps.sessions.size)
+        assertEquals(listOf(listOf("a", "b", "c")), h.deps.curation.curated.map { batch -> batch.map { it.id } })
+        assertEquals(StudioPhase.Ready, h.state.phase)
+    }
+
+    @Test
+    fun zip_pick_is_queued_at_once_and_its_name_is_looked_up_off_the_intent() = runTest {
+        val lookups = mutableListOf<String>()
+        val h = harness(documentNames = { uri -> lookups += uri; "Trip to Lisbon.zip" })
+        h.vm.onIntent(StudioIntent.PickerOpened)
+        h.deps.ingestScripts += TestData.ingestion(listOf(a, b))
+        h.vm.onIntent(StudioIntent.ImportZip("content://downloads/42"))
+        h.vm.onIntent(StudioIntent.PickerClosed)
+
+        assertEquals("the pick is accepted synchronously", StudioPhase.Ingesting, h.state.phase)
+        assertTrue("no provider query inside onIntent", lookups.isEmpty())
+        advanceUntilIdle()
+
+        assertEquals(listOf("content://downloads/42"), lookups)
+        assertEquals(
+            listOf(IngestionRequest.ZipArchive("content://downloads/42", "Trip to Lisbon.zip")),
+            h.deps.sessions.single().requests,
+        )
+        assertEquals(StudioPhase.Ready, h.state.phase)
+    }
+
+    @Test
+    fun zip_with_a_known_name_skips_the_lookup() = runTest {
+        val lookups = mutableListOf<String>()
+        val h = harness(documentNames = { uri -> lookups += uri; "unused" })
+        h.deps.ingestScripts += TestData.ingestion(listOf(a, b))
+        h.vm.onIntent(StudioIntent.ImportZip("content://downloads/42", "trip.zip"))
+        advanceUntilIdle()
+
+        assertTrue(lookups.isEmpty())
+        assertEquals(
+            listOf(IngestionRequest.ZipArchive("content://downloads/42", "trip.zip")),
+            h.deps.sessions.single().requests,
+        )
+    }
+
+    @Test
+    fun close_without_an_open_picker_is_ignored() = runTest {
+        val h = harness()
+        readFirstBatch(h)
+        h.vm.onIntent(StudioIntent.PickerClosed)
+        h.vm.onIntent(StudioIntent.PickerOpened)
+        advanceTimeBy(StudioViewModel.AUTO_CURATION_DEBOUNCE_MS * 20)
+        runCurrent()
+        assertEquals(StudioPhase.Ingesting, h.state.phase)
     }
 }
