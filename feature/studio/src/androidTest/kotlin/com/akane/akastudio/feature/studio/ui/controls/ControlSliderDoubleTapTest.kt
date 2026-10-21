@@ -2,6 +2,7 @@ package com.akane.akastudio.feature.studio.ui.controls
 
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.TouchInjectionScope
@@ -30,7 +31,7 @@ class ControlSliderDoubleTapTest {
 
     private fun setSlider(initial: Float) {
         compose.setContent {
-            var value by mutableFloatStateOf(initial)
+            var value by remember { mutableFloatStateOf(initial) }
             DarkroomTheme {
                 ControlSlider(
                     label = LABEL,
