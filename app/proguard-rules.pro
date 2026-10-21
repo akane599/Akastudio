@@ -13,6 +13,12 @@
 -dontwarn com.google.auto.value.extension.memoized.Memoized
 -dontwarn com.google.mediapipe.proto.CalculatorProfileProto$CalculatorProfile
 -dontwarn com.google.mediapipe.proto.GraphTemplateProto$CalculatorGraphTemplate
+# Flogger 0.6 (pulled in by tasks-core) finds its caller by stack shape: StackBasedCallerFinder.findLoggingClass creates a
+# Throwable and skips exactly one frame to reach FluentLogger.forEnclosingClass. R8 inlined findLoggingClass into
+# forEnclosingClass, so the skip dropped the only FluentLogger frame and Graph.<clinit> threw "no caller found on the
+# stack", disabling every MediaPipe task in release. Forbid optimizing (and renaming) the Flogger code that is reachable;
+# unused Flogger classes are still shrunk.
+-keep,allowshrinking class com.google.common.flogger.** { *; }
 
 # --- LiteRT (com.google.ai.edge.litert) ---
 # liblitert_jni.so constructs LiteRtException, TensorBufferRequirements and TensorType (with its ElementType and
