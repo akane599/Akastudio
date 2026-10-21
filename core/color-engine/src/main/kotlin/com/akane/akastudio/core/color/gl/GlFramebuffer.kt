@@ -2,8 +2,11 @@ package com.akane.akastudio.core.color.gl
 
 import android.opengl.GLES20
 
-/** A framebuffer with one single-level colour texture. GL thread only; [release] is idempotent. */
-internal class GlFramebuffer private constructor(val id: Int, val texture: GlTexture) {
+/**
+ * A framebuffer with one single-level colour texture. GL thread only; [release] is idempotent. Production code builds
+ * it with [create]; the constructor is open to the module so JVM tests can wrap a texture without a GL driver.
+ */
+internal class GlFramebuffer internal constructor(val id: Int, val texture: GlTexture) {
     val width: Int get() = texture.width
     val height: Int get() = texture.height
     val format: GlFormat get() = texture.format

@@ -29,13 +29,17 @@ private class SurfaceTarget(val surface: Surface, val width: Int, val height: In
 /**
  * Wraps the [TextureView]'s [SurfaceTexture] in a [Surface] while it exists and reports it, with its size, through
  * [onTarget]. The [Surface] is released when the texture is destroyed (the view detaching or being torn down), and
- * [onTarget] gets null first so no new render starts on it.
+ * [onTarget] gets null first so no new render starts on it; [onRelease] gets it just before so the renderer can drop
+ * the window surface it built on it.
  */
-private class SurfaceTargetListener(private val onTarget: (SurfaceTarget?) -> Unit) : TextureView.SurfaceTextureListener {
+private class SurfaceTargetListener(
+    private val onTarget: (SurfaceTarget?) -> Unit,
+    private val onRelease: (Surface) -> Unit,
+) : TextureView.SurfaceTextureListener {
     private var surface: Surface? = null
 
     override fun onSurfaceTextureAvailable(texture: SurfaceTexture, width: Int, height: Int) {
-        surface?.release()
+        surface?.let(::release)
         val created = Surface(texture)
         surface = created
         onTarget(SurfaceTarget(created, width, height))
@@ -47,9 +51,14 @@ private class SurfaceTargetListener(private val onTarget: (SurfaceTarget?) -> Un
 
     override fun onSurfaceTextureDestroyed(texture: SurfaceTexture): Boolean {
         onTarget(null)
-        surface?.release()
+        surface?.let(::release)
         surface = null
         return true
+    }
+
+    private fun release(old: Surface) {
+        onRelease(old)
+        old.release()
     }
 
     override fun onSurfaceTextureUpdated(texture: SurfaceTexture) = Unit
@@ -74,12 +83,16 @@ internal fun PreviewSurface(
     val currentScene by rememberUpdatedState(scene)
     val currentRevision by rememberUpdatedState(revision)
     val currentCompare by rememberUpdatedState(compare)
+    val currentRenderer by rememberUpdatedState(renderer)
 
     AndroidView(
         factory = { context ->
             TextureView(context).apply {
                 isOpaque = true
-                surfaceTextureListener = SurfaceTargetListener { target = it }
+                surfaceTextureListener = SurfaceTargetListener(
+                    onTarget = { target = it },
+                    onRelease = { currentRenderer.releaseSurface(it) },
+                )
             }
         },
         modifier = modifier,

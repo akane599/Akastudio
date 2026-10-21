@@ -17,4 +17,9 @@ class AkaStudioApp : Application() {
         // Session folders left behind by a killed process; deleting them touches disk, so keep it off the main thread.
         Thread({ purgeStaleIngestionDirs(this) }, "ingest-purge").start()
     }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        container.onTrimMemory(level)
+    }
 }

@@ -81,6 +81,11 @@ internal class EglCore {
         return classify(EGL14.eglGetError(), "eglSwapBuffers", isWindow = true)
     }
 
+    /** Destroys the cached window surface when it was created for [surface]; any other cached surface stays. */
+    fun dropWindowSurface(surface: Surface) {
+        if (surface === windowTarget) dropWindowSurface()
+    }
+
     /** Destroys the cached window surface (after making the pbuffer current if it was bound). */
     fun dropWindowSurface() {
         if (windowSurface != EGL14.EGL_NO_SURFACE) {

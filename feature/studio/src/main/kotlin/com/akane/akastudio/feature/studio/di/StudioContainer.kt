@@ -1,5 +1,6 @@
 package com.akane.akastudio.feature.studio.di
 
+import android.content.ComponentCallbacks2
 import android.content.Context
 import com.akane.akastudio.core.color.api.StoryRenderer
 import com.akane.akastudio.core.color.harmonize.Harmonizer
@@ -32,7 +33,8 @@ import kotlinx.coroutines.Dispatchers
  * Lifetime: the [renderer] (one GL thread and its textures) and the curator's on-device models are process-wide and
  * are never closed. The studio view model unregisters every photo when it is cleared, so a backgrounded process
  * holds only the idle GL context and the loaded models, and the system reclaims both with the process. Closing them
- * on a trim-memory signal would leave a later view model talking to a closed renderer.
+ * on a trim-memory signal would leave a later view model talking to a closed renderer, so [onTrimMemory] only trims
+ * the renderer's caches.
  */
 class StudioContainer(context: Context) : StudioDependencies {
 
@@ -57,7 +59,9 @@ class StudioContainer(context: Context) : StudioDependencies {
 
     override val composer: CollageComposer by lazy { DefaultCollageComposer() }
 
-    override val renderer: StoryRenderer by lazy { createStoryRenderer(app) }
+    private val rendererInstance = lazy { createStoryRenderer(app) }
+
+    override val renderer: StoryRenderer by rendererInstance
 
     override val exporter: StoryExporter by lazy { createStoryExporter(app, renderer) }
 
@@ -75,4 +79,13 @@ class StudioContainer(context: Context) : StudioDependencies {
         HarmonizationPlanner { stats, anchorIndex, strength -> Harmonizer.forCollage(stats, anchorIndex, strength) }
 
     override val errors: StudioErrorMapper = StudioContainerErrorMapper()
+
+    /**
+     * Forward of `Application.onTrimMemory`. From [ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN] up (the app's UI has
+     * stopped, or the system is short of memory) the renderer frees its pooled targets, cached grades and window
+     * surface; it stays usable. A renderer that was never built is left unbuilt.
+     */
+    fun onTrimMemory(level: Int) {
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN && rendererInstance.isInitialized()) renderer.trimMemory()
+    }
 }

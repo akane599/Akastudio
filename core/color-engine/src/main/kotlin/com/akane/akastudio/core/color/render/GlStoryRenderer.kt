@@ -86,11 +86,49 @@ internal class GlStoryRenderer(
     }
 
     override suspend fun renderOffscreen(scene: RenderScene): HalfFloatImage = onGl { rt ->
-        frame(rt) { renderOffscreenOn(rt, scene) }
+        try {
+            frame(rt) { renderOffscreenOn(rt, scene) }
+        } finally {
+            // An export's full-size grades and targets are not reused by the preview, and nothing ages them out once
+            // rendering stops: free them now instead of pinning hundreds of MB until the next frames.
+            rt.grader.trim(GradeSlotSpace.EXPORT)
+            rt.pool.releaseFree()
+        }
     }
 
     override suspend fun renderPreviewPixels(scene: RenderScene, width: Int, height: Int): ImagePixels = onGl { rt ->
         frame(rt) { renderPreviewOn(rt, scene, width, height) }
+    }
+
+    /** Never creates the context: with no runtime there is nothing to trim. */
+    override fun trimMemory() {
+        postBestEffort("memory trim") {
+            val core = egl ?: return@postBestEffort
+            core.dropWindowSurface()
+            val rt = runtime ?: return@postBestEffort
+            // A lost context is rebuilt (and its objects dropped) by the next call; nothing to free in it now.
+            if (core.makeCurrentOffscreen() != EglStatus.OK) return@postBestEffort
+            GradeSlotSpace.entries.forEach(rt.grader::trim)
+            rt.text.releaseAll()
+            rt.pool.releaseFree()
+        }
+    }
+
+    override fun releaseSurface(surface: Surface) {
+        postBestEffort("window surface release") { egl?.dropWindowSurface(surface) }
+    }
+
+    /** Queues [block] on the GL thread unless the renderer is closed; failures are logged, never thrown. */
+    private fun postBestEffort(what: String, block: () -> Unit) {
+        if (closed.get()) return
+        glThread.post {
+            if (closed.get()) return@post
+            try {
+                block()
+            } catch (e: RuntimeException) {
+                Log.w(TAG, "$what failed", e)
+            }
+        }
     }
 
     /** Asynchronous and idempotent: queued calls finish first, then GL objects, EGL and the thread go. */
