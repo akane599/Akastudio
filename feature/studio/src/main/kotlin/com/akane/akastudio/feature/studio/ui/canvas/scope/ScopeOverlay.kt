@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -45,6 +44,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -63,12 +63,16 @@ internal const val SCOPE_ASPECT = 16f / 10f
 
 /**
  * The narrowest the docked scope panel gets (the canvas still caps it): wide enough for the caption, the 0 / 50 / 100
- * labels and the R / G / B legend side by side without touching, in English and Turkish at 1.3x font scale.
+ * labels and the R / G / B identity without touching each other or the plot, in English and Turkish at 1.3x font
+ * scale.
  */
 val ScopeMinWidth: Dp = 160.dp
 
 /** Test tag on every piece of text the scope panel shows: its caption, axis labels, channel letters and legend. */
 const val SCOPE_LABEL_TAG = "scope_label"
+
+/** Test tag on the scope's plot, the area its ticks and traces are drawn in; no [SCOPE_LABEL_TAG] text touches it. */
+const val SCOPE_PLOT_TAG = "scope_plot"
 
 private const val PANEL_ALPHA = 0.82f
 private const val HISTOGRAM_FILL_ALPHA = 0.38f
@@ -137,8 +141,9 @@ fun ScopeOverlay(pixels: ImagePixels?, mode: ScopeMode, modifier: Modifier = Mod
  * Draws precomputed scope [data] (or just the labelled level ticks while it is null) in the translucent scope panel,
  * under a caption naming the active [mode].
  *
- * The caption falls back to its short form when the full one does not fit, and a label that would leave the plot or
- * touch another is left out (see [ScopeLabelLayout.layout]), so no text overlaps or clips at any panel size.
+ * The R / G / B identity sits on the caption row, which falls back to the short caption to make room for it, or else
+ * on its own row above the plot; a label that would leave the panel or touch another label or the plot is left out
+ * (see [ScopeLabelLayout.layout]), so no text overlaps, clips or covers a trace at any panel size.
  */
 @Composable
 internal fun ScopePanel(data: ScopeData?, mode: ScopeMode, modifier: Modifier = Modifier) {
@@ -165,6 +170,10 @@ internal fun ScopePanel(data: ScopeData?, mode: ScopeMode, modifier: Modifier = 
     val channelLabels = remember(measurer, labelStyle) {
         CHANNEL_LABELS.map { measurer.measure(it, labelStyle).size.toSize() }
     }
+    val captionSize = remember(measurer, labelStyle, caption) { measurer.measure(caption, labelStyle, maxLines = 1).size.toSize() }
+    val shortSize = remember(measurer, labelStyle, shortCaption) {
+        measurer.measure(shortCaption, labelStyle, maxLines = 1).size.toSize()
+    }
     val tick = scheme.outline
     BoxWithConstraints(
         modifier = modifier
@@ -176,31 +185,31 @@ internal fun ScopePanel(data: ScopeData?, mode: ScopeMode, modifier: Modifier = 
     ) {
         val width = if (constraints.hasBoundedWidth) constraints.maxWidth else 0
         val height = if (constraints.hasBoundedHeight) constraints.maxHeight else 0
-        val shown = remember(measurer, labelStyle, caption, shortCaption, width) {
-            if (measurer.measure(caption, labelStyle, maxLines = 1).size.width <= width) caption else shortCaption
-        }
         val density = LocalDensity.current
         val gap = with(density) { spacing.xs.roundToPx() }
         val legend = with(density) { legendSize(channelLabels, spacing.s.roundToPx(), spacing.xs.roundToPx()) }
-        val plotTop = remember(measurer, labelStyle, shown) { measurer.measure(shown, labelStyle, maxLines = 1).size.height } + gap
-        val plot = remember(mode, width, height, plotTop, tickLabels, channelLabels, legend, gap) {
-            val plotSize = Size(width.toFloat(), (height - plotTop).coerceAtLeast(0).toFloat())
-            ScopeLabelLayout.layout(mode, plotSize, tickLabels, channelLabels, legend, gap.toFloat())
+        val plot = remember(mode, width, height, captionSize, shortSize, tickLabels, channelLabels, legend, gap) {
+            val content = Size(width.toFloat(), height.toFloat())
+            ScopeLabelLayout.layout(mode, content, captionSize, shortSize, tickLabels, channelLabels, legend, gap.toFloat())
         }
-        Canvas(Modifier.fillMaxSize()) {
-            translate(top = plotTop.toFloat()) { drawPlot(mode, data, plot, tick, colors) }
+        val area = plot.plot
+        Canvas(
+            Modifier
+                .offset { area.at() }
+                .size(with(density) { DpSize(area.width.toDp(), area.height.toDp()) })
+                .testTag(SCOPE_PLOT_TAG),
+        ) {
+            translate(-area.left, -area.top) { drawPlot(mode, data, plot, tick, colors) }
         }
-        ScopeText(shown, labelStyle, IntOffset.Zero)
-        plot.tickLabels.forEachIndexed { i, rect -> rect?.let { ScopeText(TICK_LABELS[i], labelStyle, it.at(plotTop)) } }
-        plot.channelLabels.forEachIndexed { i, rect ->
-            rect?.let { ScopeText(CHANNEL_LABELS[i], labelStyle, it.at(plotTop)) }
-        }
-        plot.legend?.let { ChannelLegend(Modifier.offset { it.at(plotTop) }.testTag(SCOPE_LABEL_TAG)) }
+        ScopeText(if (plot.shortCaption) shortCaption else caption, labelStyle, plot.caption.at())
+        plot.tickLabels.forEachIndexed { i, rect -> rect?.let { ScopeText(TICK_LABELS[i], labelStyle, it.at()) } }
+        plot.channelLabels.forEachIndexed { i, rect -> rect?.let { ScopeText(CHANNEL_LABELS[i], labelStyle, it.at()) } }
+        plot.legend?.let { ChannelLegend(Modifier.offset { it.at() }.testTag(SCOPE_LABEL_TAG)) }
     }
 }
 
-/** [rect]'s whole-pixel top-left in the panel, the plot starting [plotTop] pixels down. */
-private fun Rect.at(plotTop: Int) = IntOffset(left.roundToInt(), top.roundToInt() + plotTop)
+/** [rect]'s whole-pixel top-left in the panel's content. */
+private fun Rect.at() = IntOffset(left.roundToInt(), top.roundToInt())
 
 /**
  * One line of scope text at [offset]. It is decoration for sighted users (the panel announces the scope), so it is
@@ -255,13 +264,16 @@ private fun ChannelLegend(modifier: Modifier = Modifier) {
 private fun DrawScope.drawPlot(mode: ScopeMode, data: ScopeData?, plot: ScopePlotLayout, tick: Color, colors: DarkroomColors) {
     when (mode) {
         ScopeMode.HISTOGRAM -> {
-            val area = plot.traces.first().size
-            drawCodeTicks(area, tick)
-            if (data is ScopeData.Histogram) {
-                drawHistogramFill(data.red, colors.scopeR, area)
-                drawHistogramFill(data.green, colors.scopeG, area)
-                drawHistogramFill(data.blue, colors.scopeB, area)
-                drawHistogramLine(data.luma, colors.scopeLuma, 1.dp.toPx(), area)
+            val origin = plot.plot.topLeft
+            val area = plot.plot.size
+            translate(origin.x, origin.y) {
+                drawCodeTicks(area, tick)
+                if (data is ScopeData.Histogram) {
+                    drawHistogramFill(data.red, colors.scopeR, area)
+                    drawHistogramFill(data.green, colors.scopeG, area)
+                    drawHistogramFill(data.blue, colors.scopeB, area)
+                    drawHistogramLine(data.luma, colors.scopeLuma, 1.dp.toPx(), area)
+                }
             }
         }
         ScopeMode.RGB_PARADE -> {
