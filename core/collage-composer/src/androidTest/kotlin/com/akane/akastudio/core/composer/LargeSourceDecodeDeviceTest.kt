@@ -3,6 +3,8 @@ package com.akane.akastudio.core.composer
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.ColorSpace
+import android.graphics.ImageDecoder
 import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Shader
@@ -27,10 +29,11 @@ import org.junit.runner.RunWith
 
 /**
  * The composer's inputs come from two decodes of each chosen photo: the subsampled analysis decode that feeds the
- * horizon detector (1024 px) and the bounded full-resolution decode the renderer draws (3072 px collage budget).
- * On a 6000×4000 JPEG written on the device, both must decode straight to their bound without materialising the
- * full-resolution image, with the Java heap untouched by pixels. A heap sampler records the peaks; its negative
- * control is an unsampled BitmapFactory decode, which must show the full 96 MB allocation the bounded decodes avoid.
+ * horizon detector (1024 px) and the bounded full-resolution decode the renderer draws (up to the 3072 px collage
+ * budget). On a 6000×4000 JPEG written on the device, a decode whose target is at most half the source must sample
+ * instead of materialising the full-resolution image, with the Java heap untouched by pixels. A heap sampler records
+ * the peaks; its negative controls are an unsampled BitmapFactory decode (96 MB) and the full-resolution RGBA_F16
+ * decode (183 MiB) that sampling avoids.
  */
 @RunWith(AndroidJUnit4::class)
 class LargeSourceDecodeDeviceTest {
@@ -48,25 +51,66 @@ class LargeSourceDecodeDeviceTest {
     }
 
     @Test
-    fun fullResolutionDecodeIsBoundedToTheCollageEdge() {
-        val candidate = PhotoCandidate("big", source, ImageFormat.JPEG, file.length(), WIDTH, HEIGHT, CaptureMetadata.EMPTY)
-        val (decoded, peak) = sampled { runBlocking { FullResolutionDecoder(resolver).decode(candidate, COLLAGE_EDGE) } }
-        val bitmap = decoded.bitmap
-        val outBytes = bitmap.allocationByteCount.toLong()
-        DeviceRender.log("full-res decode -> ${bitmap.width}x${bitmap.height} ${bitmap.config} (${outBytes / MB} MB) from ${decoded.sourceWidth}x${decoded.sourceHeight}; $peak")
-        assertEquals(WIDTH, decoded.sourceWidth)
-        assertEquals(HEIGHT, decoded.sourceHeight)
+    fun fullResolutionDecodeAtMostHalfTheSourceSamplesInsteadOfDecodingFullSize() {
+        val (bitmap, peak) = fullResolutionDecode(2048)
+        assertEquals(2048, bitmap.width)
+        assertEquals(1365, bitmap.height)
+        // Factor 2.93: sample size 2 decodes 3000×2000 RGBA_F16 (45.8 MiB), then the exact downscale adds the
+        // 2048×1365 output (21.3 MiB): about 67 MiB, against 183 MiB for the full-resolution F16 decode.
+        val expected = 3000L * 2000 * F16_BYTES + 2048L * 1365 * F16_BYTES
+        assertTrue(
+            "2048 decode native peak ${peak.nativeMb} MiB is near the sampled ${expected / MB} MiB, not the full ${FULL_F16_BYTES / MB} MiB",
+            peak.nativeBytes <= expected * 11 / 10,
+        )
+        assertTrue("2048 decode Java heap peak ${peak.javaMb} MiB stays bounded", peak.javaBytes < JAVA_BOUND_BYTES)
+        bitmap.recycle()
+    }
+
+    @Test
+    fun fullResolutionDecodeAtTheCollageEdgeStaysWithinTheDocumentedBound() {
+        val (bitmap, peak) = fullResolutionDecode(COLLAGE_EDGE)
         assertEquals(COLLAGE_EDGE, bitmap.width)
         assertEquals(2048, bitmap.height)
-        assertEquals(Bitmap.Config.RGBA_F16, bitmap.config)
-        // A full-resolution RGBA_F16 decode needs 183 MiB; a sampled decode to the bound stays under the full 8888 size
-        // (sample size 2 measures about 47 MiB here). Failing on this means the full-resolution image was materialised.
+        // Factor 6000 / 3072 = 1.95 < 2, so no power-of-two sample size keeps the decode at least as large as the
+        // target, and anything smaller would have to be upscaled, which the 16-bit pipeline never does. The full
+        // 6000×4000 RGBA_F16 decode (183 MiB) plus the 3072×2048 output (48 MiB) is therefore inherent: about 231 MiB,
+        // asserted against a documented 250 MiB bound rather than a tight one.
         assertTrue(
-            "full-res decode native peak ${peak.nativeMb} MB stays below the $FULL_8888_MB MB full-resolution 8888 decode",
-            peak.nativeBytes < FULL_8888_BYTES,
+            "3072 decode native peak ${peak.nativeMb} MiB stays within full-res F16 + output (${FULL_RES_PLUS_OUTPUT_BOUND / MB} MiB)",
+            peak.nativeBytes <= FULL_RES_PLUS_OUTPUT_BOUND,
         )
-        assertTrue("full-res decode Java heap peak ${peak.javaMb} MB stays bounded", peak.javaBytes < JAVA_BOUND_BYTES)
+        assertTrue("3072 decode Java heap peak ${peak.javaMb} MiB stays bounded", peak.javaBytes < JAVA_BOUND_BYTES)
         bitmap.recycle()
+    }
+
+    @Test
+    fun negativeControlFullResolutionF16DecodeShowsTheBaselineSamplingAvoids() {
+        val (bitmap, peak) = sampled {
+            ImageDecoder.decodeBitmap(ImageDecoder.createSource(file)) { decoder, _, _ ->
+                decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                decoder.setTargetColorSpace(ColorSpace.get(ColorSpace.Named.LINEAR_EXTENDED_SRGB))
+            }
+        }
+        DeviceRender.log("full-resolution F16 baseline -> ${bitmap.width}x${bitmap.height} ${bitmap.config}; $peak")
+        assertEquals(WIDTH, bitmap.width)
+        assertEquals(Bitmap.Config.RGBA_F16, bitmap.config)
+        assertTrue("sampler sees the full ${FULL_F16_BYTES / MB} MiB F16 allocation: ${peak.nativeMb} MiB", peak.nativeBytes >= FULL_F16_BYTES * 9 / 10)
+        bitmap.recycle()
+    }
+
+    private fun fullResolutionDecode(maxLongEdge: Int): Pair<Bitmap, Peak> {
+        val candidate = PhotoCandidate("big", source, ImageFormat.JPEG, file.length(), WIDTH, HEIGHT, CaptureMetadata.EMPTY)
+        val (decoded, peak) = sampled { runBlocking { FullResolutionDecoder(resolver).decode(candidate, maxLongEdge) } }
+        val bitmap = decoded.bitmap
+        DeviceRender.log(
+            "full-res decode at $maxLongEdge -> ${bitmap.width}x${bitmap.height} ${bitmap.config} " +
+                "(${bitmap.allocationByteCount / 1024} KiB) from ${decoded.sourceWidth}x${decoded.sourceHeight}; $peak",
+        )
+        assertEquals(WIDTH, decoded.sourceWidth)
+        assertEquals(HEIGHT, decoded.sourceHeight)
+        assertEquals(Bitmap.Config.RGBA_F16, bitmap.config)
+        assertEquals(ColorSpace.get(ColorSpace.Named.LINEAR_EXTENDED_SRGB), bitmap.colorSpace)
+        return bitmap to peak
     }
 
     @Test
@@ -120,6 +164,9 @@ class LargeSourceDecodeDeviceTest {
         private const val MB = 1024L * 1024L
         private const val FULL_8888_BYTES = 6000L * 4000L * 4L
         private const val FULL_8888_MB = FULL_8888_BYTES / MB
+        private const val F16_BYTES = 8L
+        private const val FULL_F16_BYTES = 6000L * 4000L * F16_BYTES
+        private const val FULL_RES_PLUS_OUTPUT_BOUND = 250 * MB
         private const val JAVA_BOUND_BYTES = 16 * MB
 
         private val resolver get() = DeviceRender.context.contentResolver
