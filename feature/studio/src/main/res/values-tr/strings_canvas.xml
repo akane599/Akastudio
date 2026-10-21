@@ -21,4 +21,7 @@
     <string name="canvas_scope_luma">Luma dalga formu</string>
     <string name="canvas_scope_parade">RGB geçit</string>
     <string name="canvas_scope_histogram">Histogram</string>
+    <string name="canvas_scope_luma_short">Luma</string>
+    <string name="canvas_scope_parade_short">RGB</string>
+    <string name="canvas_scope_histogram_short">Hist.</string>
 </resources>
