@@ -116,8 +116,27 @@ class ReadbackDecoderTest {
                 RenderMath.floatsToHalf(floats)
             }
         }
-        RenderMath.flipRows(halves, tile.width * 4, tile.height)
-        RenderMath.blitTile(halves, tile.width, tile.height, dest, destWidth, tile.x, tile.y, 4)
+        legacyFlipRows(halves, tile.width * 4, tile.height)
+        legacyBlitTile(halves, tile.width, tile.height, dest, destWidth, tile.x, tile.y, 4)
+    }
+
+    /** The pre-F-20 `RenderMath.flipRows`: reverses [rows] rows of [rowLength] elements in place. */
+    private fun legacyFlipRows(data: ShortArray, rowLength: Int, rows: Int) {
+        val scratch = ShortArray(rowLength)
+        for (top in 0 until rows / 2) {
+            val bottom = rows - 1 - top
+            System.arraycopy(data, top * rowLength, scratch, 0, rowLength)
+            System.arraycopy(data, bottom * rowLength, data, top * rowLength, rowLength)
+            System.arraycopy(scratch, 0, data, bottom * rowLength, rowLength)
+        }
+    }
+
+    /** The pre-F-20 `RenderMath.blitTile`: copies a top-first tile of [channels]-wide pixels into [dest] at ([x], [y]). */
+    private fun legacyBlitTile(tile: ShortArray, tileWidth: Int, tileHeight: Int, dest: ShortArray, destWidth: Int, x: Int, y: Int, channels: Int) {
+        val rowLength = tileWidth * channels
+        for (row in 0 until tileHeight) {
+            System.arraycopy(tile, row * rowLength, dest, ((y + row) * destWidth + x) * channels, rowLength)
+        }
     }
 
     /** The pre-F-20 `RenderMath.logBytesToHalf`, kept as an independent oracle. */
