@@ -1,5 +1,6 @@
 package com.akane.akastudio.feature.studio.mvi
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import com.akane.akastudio.core.color.api.ImagePixels
 import com.akane.akastudio.core.curator.api.CurationProgress
@@ -90,6 +91,9 @@ class StudioViewModel(
 
     /** True while re-preparing [stable] after a cancelled or failed re-preparation. */
     private var restoring = false
+
+    /** Counts [resetToEmpty] calls, so a reset's late cleanup failure can tell whether a newer reset followed. */
+    private var resets = 0L
 
     init {
         scope.launch { runScopePipeline() }
@@ -294,6 +298,9 @@ class StudioViewModel(
         stable = ready
         try {
             store.retainOnly(ids)
+        } catch (e: CancellationException) {
+            // retainOnly's release is non-cancellable; returning from it re-checks cancellation, which is not an error.
+            throw e
         } catch (e: Exception) {
             _state.update { it.copy(error = deps.errors.map(e)) }
         }
@@ -307,9 +314,12 @@ class StudioViewModel(
             _state.update { it.copy(modeDrawerOpen = false) }
             return
         }
-        reprepare { current ->
+        reprepare {
             val decided = withContext(deps.dispatchers.default) { deps.curation.decide(result, mode) }
-            StudioReducer.withSelection(current, decided, decided.chosen.photoIds, candidates)
+            val transition: (StudioState) -> StudioState = { current ->
+                StudioReducer.withSelection(current, decided, decided.chosen.photoIds, candidates)
+            }
+            transition
         }
     }
 
@@ -327,11 +337,15 @@ class StudioViewModel(
         val analysis = result.analyses[candidateId]
         if (candidateId !in candidates || analysis == null || analysis.rejectReason != null) return
         val newIds = ids.toMutableList().apply { this[slot] = candidateId }
-        reprepare { current -> StudioReducer.withSelection(current, result, newIds, candidates) }
+        reprepare { { current -> StudioReducer.withSelection(current, result, newIds, candidates) } }
     }
 
-    /** Leaves Ready for Preparing, applies [select] (a new selection) and prepares it; failures restore [stable]. */
-    private fun reprepare(select: suspend (StudioState) -> StudioState) {
+    /**
+     * Leaves Ready for Preparing, applies the new selection [select] computes and prepares it; failures restore
+     * [stable]. [select] may suspend off the main thread; the transition it returns is applied to the state current
+     * when it resumes, so edits made meanwhile are kept.
+     */
+    private fun reprepare(select: suspend () -> (StudioState) -> StudioState) {
         _state.update {
             it.copy(
                 phase = StudioPhase.Preparing,
@@ -341,8 +355,8 @@ class StudioViewModel(
         }
         launchWork {
             try {
-                val next = select(_state.value)
-                _state.value = next.copy(phase = StudioPhase.Preparing)
+                val transition = select()
+                _state.update { transition(it).copy(phase = StudioPhase.Preparing) }
                 prepareAndShow()
             } catch (e: CancellationException) {
                 throw e
@@ -427,6 +441,8 @@ class StudioViewModel(
                         error = deps.errors.map(e),
                     )
                 }
+                // Layout edits made while exporting are part of the story now.
+                stable = _state.value
             }
         }
     }
@@ -501,6 +517,7 @@ class StudioViewModel(
                 _state.update {
                     it.copy(phase = StudioPhase.Ready, export = it.export.copy(progress = null, sharing = false))
                 }
+                stable = _state.value
             }
         }
     }
@@ -534,17 +551,27 @@ class StudioViewModel(
         session = null
         val dropped = store.detachAll()
         _state.value = StudioState(error = error)
+        val reset = ++resets
         cleanupScope.launch {
             cancelled.forEach { it.join() }
             try {
                 withContext(deps.dispatchers.io) {
-                    if (dropped.isNotEmpty()) deps.preparer.release(dropped)
-                    oldSession?.close()
+                    try {
+                        if (dropped.isNotEmpty()) deps.preparer.release(dropped)
+                    } finally {
+                        oldSession?.close()
+                    }
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _state.update { if (it.error == null) it.copy(error = deps.errors.map(e)) else it }
+                Log.w(TAG, "Cleanup after reset failed", e)
+                // Only the empty studio this reset left may show it; a session started since must not inherit it.
+                if (reset == resets) {
+                    _state.update {
+                        if (it.phase == StudioPhase.Empty && it.error == null) it.copy(error = deps.errors.map(e)) else it
+                    }
+                }
             }
         }
     }
@@ -576,6 +603,7 @@ class StudioViewModel(
         const val SCOPE_DEBOUNCE_MS = 120L
         const val SCOPE_WIDTH = 270
         const val SCOPE_HEIGHT = 480
+        private const val TAG = "StudioViewModel"
 
         private operator fun IngestionTelemetry.plus(other: IngestionTelemetry) = IngestionTelemetry(
             sourcesTotal = sourcesTotal + other.sourcesTotal,

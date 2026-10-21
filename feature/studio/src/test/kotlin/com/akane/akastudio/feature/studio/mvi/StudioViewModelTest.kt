@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModelStore
 import com.akane.akastudio.core.color.api.HarmonizationParams
 import com.akane.akastudio.core.color.api.MasterLook
 import com.akane.akastudio.core.composer.api.CanvasSize
+import com.akane.akastudio.core.composer.api.CellOverride
 import com.akane.akastudio.core.composer.api.StoryTemplate
 import com.akane.akastudio.core.curator.api.SceneCluster
 import com.akane.akastudio.core.curator.api.StoryMode
@@ -22,13 +23,13 @@ import com.akane.akastudio.feature.studio.domain.FakeStudioDependencies
 import com.akane.akastudio.feature.studio.domain.StudioError
 import com.akane.akastudio.feature.studio.domain.StudioErrorMapper
 import com.akane.akastudio.feature.studio.domain.TestData
+import com.akane.akastudio.feature.studio.domain.studioTestDispatchers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
@@ -72,10 +73,12 @@ class StudioViewModelTest {
     }
 
     private fun TestScope.harness(errors: StudioErrorMapper = DefaultStudioErrorMapper()): Harness {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        val deps = FakeStudioDependencies(dispatcher, FakeCurationEngine(result), errors)
+        val deps = FakeStudioDependencies(studioTestDispatchers(testScheduler), FakeCurationEngine(result), errors)
         deps.ingestScripts += TestData.ingestion(listOf(a, b, c), skipped = 1)
-        val vm = StudioViewModel(deps, CoroutineScope(SupervisorJob(backgroundScope.coroutineContext.job) + dispatcher))
+        val vm = StudioViewModel(
+            deps,
+            CoroutineScope(SupervisorJob(backgroundScope.coroutineContext.job) + deps.dispatchers.main),
+        )
         val phases = mutableListOf<StudioPhase>()
         val effects = mutableListOf<StudioEffect>()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
@@ -292,6 +295,20 @@ class StudioViewModelTest {
     }
 
     @Test
+    fun an_edit_made_while_force_mode_decides_survives_the_reprepare() = runTest {
+        val h = harness()
+        ready(h)
+        h.deps.curation.onDecide = { h.vm.onIntent(StudioIntent.AdjustGrade(GradeField.CONTRAST, 0.5f)) }
+
+        h.vm.onIntent(StudioIntent.ForceMode(StoryMode.COLLAGE_3))
+        advanceUntilIdle()
+
+        assertEquals(StudioPhase.Ready, h.state.phase)
+        assertEquals(listOf("a", "b", "c"), h.state.selection.photoIds)
+        assertTrue("the edit made during decide is kept", h.state.scene!!.layers.all { it.grade.contrast == 0.5f })
+    }
+
+    @Test
     fun swap_slots_reorders_without_preparing_and_moves_the_anchor() = runTest {
         val h = harness()
         ready(h)
@@ -347,6 +364,26 @@ class StudioViewModelTest {
     }
 
     @Test
+    fun template_and_cell_override_changes_rebuild_the_scene() = runTest {
+        val h = harness()
+        ready(h)
+        val revision = h.state.sceneRevision
+
+        h.vm.onIntent(StudioIntent.SelectTemplate(StoryTemplate.DUO_FLOATING_GALLERY))
+        assertEquals(revision + 1, h.state.sceneRevision)
+        assertEquals(StoryTemplate.DUO_FLOATING_GALLERY, h.deps.composer.requests.last().template)
+
+        val override = CellOverride(zoom = 2f, panX = 0.1f)
+        h.vm.onIntent(StudioIntent.SetCellOverride("a", override))
+        assertEquals(revision + 2, h.state.sceneRevision)
+        assertEquals(mapOf("a" to override), h.deps.composer.requests.last().overrides)
+
+        h.vm.onIntent(StudioIntent.SetCellOverride("a", null))
+        assertEquals(revision + 3, h.state.sceneRevision)
+        assertTrue(h.deps.composer.requests.last().overrides.isEmpty())
+    }
+
+    @Test
     fun harmonization_strength_flows_to_per_layer_harmonization() = runTest {
         val h = harness()
         ready(h)
@@ -390,6 +427,39 @@ class StudioViewModelTest {
         h.vm.onIntent(StudioIntent.AdjustGrade(GradeField.TINT, 0.4f))
         advanceUntilIdle()
         assertEquals(2, h.deps.renderer.previewCalls.size)
+    }
+
+    @Test
+    fun scope_pixels_of_a_superseded_scene_are_discarded() = runTest {
+        val h = harness()
+        ready(h)
+        h.deps.renderer.previewDelayMs = 500
+
+        h.vm.onIntent(StudioIntent.SetScope(ScopeMode.LUMA_WAVEFORM))
+        advanceTimeBy(121)
+        assertEquals(1, h.deps.renderer.previewCalls.size)
+        h.vm.onIntent(StudioIntent.AdjustGrade(GradeField.TINT, 0.1f))
+        advanceTimeBy(500)
+
+        assertEquals("the first render finished and the next one started", 2, h.deps.renderer.previewCalls.size)
+        assertNull("pixels rendered for the old revision are dropped", h.state.scopePixels)
+        advanceUntilIdle()
+        assertEquals(2, h.state.scopePixels!!.argb[0])
+    }
+
+    @Test
+    fun scope_render_failure_reports_the_error_and_stays_ready() = runTest {
+        val h = harness()
+        ready(h)
+        h.deps.renderer.previewFailWith = IllegalStateException("context lost")
+
+        h.vm.onIntent(StudioIntent.SetScope(ScopeMode.LUMA_WAVEFORM))
+        advanceUntilIdle()
+
+        assertEquals(1, h.deps.renderer.previewCalls.size)
+        assertEquals(StudioPhase.Ready, h.state.phase)
+        assertEquals(StudioError.Unknown("context lost"), h.state.error)
+        assertNull(h.state.scopePixels)
     }
 
     // endregion
@@ -519,6 +589,25 @@ class StudioViewModelTest {
     }
 
     @Test
+    fun export_right_after_a_reprepare_shows_no_cancellation_error() = runTest {
+        val h = harness()
+        ready(h)
+        h.deps.preparer.releaseDelayMs = 1_000
+
+        h.vm.onIntent(StudioIntent.ForceMode(StoryMode.HERO))
+        advanceTimeBy(500)
+        assertEquals(StudioPhase.Ready, h.state.phase)
+        assertEquals("b is still being released", listOf("b"), h.deps.preparer.released)
+
+        h.vm.onIntent(StudioIntent.Export(share = false))
+        advanceUntilIdle()
+
+        assertEquals(StudioPhase.Ready, h.state.phase)
+        assertNull(h.state.error)
+        assertTrue(h.state.export.lastResult != null)
+    }
+
+    @Test
     fun cancel_while_exporting_returns_to_ready_without_a_result() = runTest {
         val h = harness()
         ready(h)
@@ -612,6 +701,54 @@ class StudioViewModelTest {
     }
 
     @Test
+    fun reprepare_failure_after_the_old_photos_were_invalidated_reprepares_the_previous_story() = runTest {
+        class DecodeFailure(val name: String) : RuntimeException()
+        val mapper = object : DefaultStudioErrorMapper() {
+            override fun map(t: Throwable): StudioError =
+                if (t is DecodeFailure) StudioError.Decode(t.name) else super.map(t)
+        }
+        val h = harness(mapper)
+        ready(h)
+        h.deps.preparer.failOnce = DecodeFailure("a.jpg")
+
+        h.vm.onIntent(StudioIntent.ForceMode(StoryMode.HERO))
+        advanceUntilIdle()
+
+        assertEquals(StudioPhase.Ready, h.state.phase)
+        assertEquals(StudioError.Decode("a.jpg"), h.state.error)
+        assertEquals(listOf("a", "b"), h.state.selection.photoIds)
+        assertEquals(StoryMode.COLLAGE_2, h.state.selection.mode)
+        assertEquals(StoryTemplate.forCount(2).first(), h.state.template)
+        assertEquals(
+            listOf(listOf("a", "b") to false, listOf("a") to true, listOf("a") to false),
+            h.deps.preparer.prepareCalls,
+        )
+        assertEquals(listOf("a"), h.deps.preparer.released)
+        assertEquals(listOf("key-a", "key-b"), h.state.scene!!.layers.map { it.imageKey })
+    }
+
+    @Test
+    fun cancel_while_restoring_the_previous_story_returns_to_empty() = runTest {
+        val h = harness()
+        ready(h)
+        h.deps.preparer.delayMs = 1_000
+        h.deps.preparer.failOnce = IllegalStateException("decoder died")
+
+        h.vm.onIntent(StudioIntent.ForceMode(StoryMode.HERO))
+        advanceTimeBy(1_500)
+        assertEquals(StudioPhase.Preparing, h.state.phase)
+        assertEquals("restoring a at the collage budget", listOf("a") to false, h.deps.preparer.prepareCalls.last())
+
+        h.vm.onIntent(StudioIntent.CancelWork)
+        assertEquals(StudioState(), h.state)
+        advanceUntilIdle()
+
+        assertEquals(StudioState(), h.state)
+        assertEquals(setOf("a", "b"), h.deps.preparer.released.toSet())
+        assertEquals(1, h.deps.sessions.single().closeCount)
+    }
+
+    @Test
     fun export_failure_returns_to_ready_with_the_mapped_error() = runTest {
         val h = harness()
         ready(h)
@@ -622,6 +759,46 @@ class StudioViewModelTest {
         assertEquals(StudioError.Unknown("disk full"), h.state.error)
         assertNull(h.state.export.progress)
         assertTrue(h.effects.none { it is StudioEffect.ShareExport })
+    }
+
+    @Test
+    fun a_template_chosen_during_a_failed_export_survives_a_later_failed_reprepare() = runTest {
+        val h = harness()
+        ready(h)
+        h.deps.exporter.failWith = IllegalStateException("disk full")
+        h.vm.onIntent(StudioIntent.Export(share = false))
+        runCurrent()
+        h.vm.onIntent(StudioIntent.SelectTemplate(StoryTemplate.DUO_FLOATING_GALLERY))
+        advanceUntilIdle()
+        assertEquals(StudioPhase.Ready, h.state.phase)
+        h.vm.onIntent(StudioIntent.DismissError)
+
+        h.deps.preparer.failWith = IllegalStateException("decoder died")
+        h.vm.onIntent(StudioIntent.ForceMode(StoryMode.COLLAGE_3))
+        advanceUntilIdle()
+
+        assertEquals(StudioPhase.Ready, h.state.phase)
+        assertEquals(listOf("a", "b"), h.state.selection.photoIds)
+        assertEquals(StoryTemplate.DUO_FLOATING_GALLERY, h.state.template)
+    }
+
+    @Test
+    fun a_template_chosen_during_a_cancelled_export_survives_a_later_failed_reprepare() = runTest {
+        val h = harness()
+        ready(h)
+        h.vm.onIntent(StudioIntent.Export(share = false))
+        runCurrent()
+        h.vm.onIntent(StudioIntent.SelectTemplate(StoryTemplate.DUO_FLOATING_GALLERY))
+        h.vm.onIntent(StudioIntent.CancelWork)
+        advanceUntilIdle()
+
+        h.deps.preparer.failWith = IllegalStateException("decoder died")
+        h.vm.onIntent(StudioIntent.ForceMode(StoryMode.COLLAGE_3))
+        advanceUntilIdle()
+
+        assertEquals(StudioPhase.Ready, h.state.phase)
+        assertEquals(listOf("a", "b"), h.state.selection.photoIds)
+        assertEquals(StoryTemplate.DUO_FLOATING_GALLERY, h.state.template)
     }
 
     // endregion
@@ -653,6 +830,38 @@ class StudioViewModelTest {
         assertEquals(setOf("a", "b"), h.deps.preparer.released.toSet())
         assertEquals(1, h.deps.sessions.single().closeCount)
         assertEquals("the container owns the renderer", 0, h.deps.renderer.closeCount)
+    }
+
+    @Test
+    fun a_failed_release_during_reset_still_closes_the_session() = runTest {
+        val h = harness()
+        ready(h)
+        h.deps.preparer.releaseFailWith = IllegalStateException("EGL lost")
+
+        h.vm.onIntent(StudioIntent.Reset)
+        advanceUntilIdle()
+
+        assertEquals(1, h.deps.sessions.single().closeCount)
+        assertEquals(StudioPhase.Empty, h.state.phase)
+        assertEquals(StudioError.Unknown("EGL lost"), h.state.error)
+    }
+
+    @Test
+    fun a_failed_release_from_an_earlier_reset_does_not_leak_into_the_next_import() = runTest {
+        val h = harness()
+        ready(h)
+        h.deps.preparer.releaseDelayMs = 1_000
+        h.deps.preparer.releaseFailWith = IllegalStateException("EGL lost")
+
+        h.vm.onIntent(StudioIntent.Reset)
+        runCurrent()
+        h.deps.ingestScripts += TestData.ingestion(listOf(a, b))
+        h.vm.onIntent(StudioIntent.ImportPhotos(listOf("u9")))
+        advanceUntilIdle()
+
+        assertEquals(StudioPhase.Ready, h.state.phase)
+        assertNull(h.state.error)
+        assertEquals(1, h.deps.sessions[0].closeCount)
     }
 
     // endregion

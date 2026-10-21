@@ -45,10 +45,11 @@ import com.akane.akastudio.core.ingestion.model.PhotoCandidate
 import com.akane.akastudio.core.ingestion.model.PhotoSource
 import com.akane.akastudio.core.ingestion.model.SkipReason
 import java.io.File
-import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestCoroutineScheduler
 
 /** Builders for the frozen core types used by the studio tests. */
 object TestData {
@@ -167,6 +168,9 @@ class FakeCurationEngine(var result: CurationResult, private val stepMs: Long = 
     val decideCalls = mutableListOf<StoryMode?>()
     var failWith: Exception? = null
 
+    /** Runs inside [decide], standing in for main-thread work that happens while the decision is computed. */
+    var onDecide: (() -> Unit)? = null
+
     override fun curate(candidates: List<PhotoCandidate>): Flow<CurationProgress> = flow {
         curated += candidates
         delay(stepMs)
@@ -182,6 +186,7 @@ class FakeCurationEngine(var result: CurationResult, private val stepMs: Long = 
 
     override fun decide(result: CurationResult, forcedMode: StoryMode?): CurationResult {
         decideCalls += forcedMode
+        onDecide?.invoke()
         val option = if (forcedMode == null) result.chosen else result.alternatives.getValue(forcedMode)
         return result.copy(chosen = option, note = result.note.copy(chosenMode = option.mode))
     }
@@ -191,7 +196,16 @@ class FakePreparer(var delayMs: Long = 50L) : PhotoPreparer {
     val prepareCalls = mutableListOf<Pair<List<String>, Boolean>>()
     val released = mutableListOf<String>()
     var failWith: Exception? = null
+
+    /** Thrown by the next [prepare] only (after its delay), then cleared. */
+    var failOnce: Exception? = null
     var dropFromResult: String? = null
+
+    /** How long [release] suspends after recording its ids. */
+    var releaseDelayMs: Long = 0L
+
+    /** Thrown by [release] after its ids are recorded and its delay has passed. */
+    var releaseFailWith: Exception? = null
 
     override suspend fun prepare(
         candidates: List<PhotoCandidate>,
@@ -201,11 +215,17 @@ class FakePreparer(var delayMs: Long = 50L) : PhotoPreparer {
         prepareCalls += candidates.map { it.id } to hero
         delay(delayMs)
         failWith?.let { throw it }
+        failOnce?.let {
+            failOnce = null
+            throw it
+        }
         return candidates.filter { it.id != dropFromResult }.map { TestData.composerPhoto(it.id) }
     }
 
     override suspend fun release(ids: Collection<String>) {
         released += ids
+        if (releaseDelayMs > 0) delay(releaseDelayMs)
+        releaseFailWith?.let { throw it }
     }
 }
 
@@ -266,6 +286,12 @@ class FakeComposer : CollageComposer {
 class FakeRenderer : StoryRenderer {
     val previewCalls = mutableListOf<RenderScene>()
 
+    /** How long [renderPreviewPixels] suspends after recording its scene. */
+    var previewDelayMs: Long = 0L
+
+    /** Thrown by [renderPreviewPixels] after its delay. */
+    var previewFailWith: Exception? = null
+
     override suspend fun registerImage(key: String, bitmap: android.graphics.Bitmap) =
         throw UnsupportedOperationException("The studio never registers images itself")
 
@@ -283,9 +309,13 @@ class FakeRenderer : StoryRenderer {
     override suspend fun renderOffscreen(scene: RenderScene): HalfFloatImage =
         throw UnsupportedOperationException("Offscreen rendering belongs to the exporter")
 
+    /** Every pixel holds the 1-based call number, so a test can tell which render produced a readback. */
     override suspend fun renderPreviewPixels(scene: RenderScene, width: Int, height: Int): ImagePixels {
         previewCalls += scene
-        return ImagePixels(width, height, IntArray(width * height))
+        val call = previewCalls.size
+        if (previewDelayMs > 0) delay(previewDelayMs)
+        previewFailWith?.let { throw it }
+        return ImagePixels(width, height, IntArray(width * height) { call })
     }
 
     override suspend fun maxTextureSize(): Int = 8192
@@ -324,9 +354,19 @@ class FakeExporter(private val stepMs: Long = 100L) : StoryExporter {
     }
 }
 
+/**
+ * Distinct main, default and io dispatchers on one [scheduler]. Because they differ, `withContext` really dispatches
+ * and re-checks cancellation on the way back, as it does in production; one shared dispatcher would hide that.
+ */
+fun studioTestDispatchers(scheduler: TestCoroutineScheduler) = StudioDispatchers(
+    main = StandardTestDispatcher(scheduler, "main"),
+    default = StandardTestDispatcher(scheduler, "default"),
+    io = StandardTestDispatcher(scheduler, "io"),
+)
+
 /** Fake dependencies; every session pops its ingestion flows from [ingestScripts]. */
 class FakeStudioDependencies(
-    dispatcher: CoroutineDispatcher,
+    override val dispatchers: StudioDispatchers,
     override val curation: FakeCurationEngine,
     override val errors: StudioErrorMapper = DefaultStudioErrorMapper(),
 ) : StudioDependencies {
@@ -337,7 +377,6 @@ class FakeStudioDependencies(
     override val exporter = FakeExporter()
     override val preparer = FakePreparer()
     override val harmonizer = FakeHarmonizer()
-    override val dispatchers = StudioDispatchers(dispatcher, dispatcher, dispatcher)
 
     override fun newIngestionSession(): IngestionSession = FakeIngestionSession(ingestScripts).also { sessions += it }
 }
