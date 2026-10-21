@@ -61,6 +61,11 @@ object DecisionEngine {
      * Decides the story mode and photos for [analyses]. [captureTimes] maps candidate id to capture epoch millis
      * (missing or null = unknown).
      *
+     * [checkpoint] is called at entry and throughout the CPU-bound stages (clustering pairs, palette pairs, every
+     * enumerated subset); the curation engine passes a coroutine cancellation check, so a cancelled collector stops
+     * here instead of finishing the decision. Anything it throws propagates unchanged; when it returns normally the
+     * decision is identical to one made without it.
+     *
      * @throws IllegalArgumentException when [analyses] is empty or has duplicate ids.
      * @throws IllegalStateException with message "all candidates rejected" when every photo has a reject reason;
      *   the curation engine maps it to its error state.
@@ -69,19 +74,21 @@ object DecisionEngine {
         analyses: List<PhotoAnalysis>,
         captureTimes: Map<String, Long?>,
         config: DecisionConfig = DecisionConfig(),
+        checkpoint: () -> Unit = {},
     ): Decision {
+        checkpoint()
         require(analyses.isNotEmpty()) { "analyses must not be empty" }
-        val clusters = Clustering.cluster(analyses, config)
+        val clusters = Clustering.cluster(analyses, config, checkpoint)
         check(clusters.isNotEmpty()) { ALL_REJECTED }
         val byId = analyses.associateBy { it.candidateId }
         val pool = clusters.map { byId.getValue(it.championId) }.sortedWith(POOL_ORDER)
         val hero = heroOption(pool)
 
         val eligible = pool.filter { it.quality >= config.minMemberQuality }.take(config.subsetPoolSize)
-        val scorer = GroupScorer(eligible, eligible.map { captureTimes[it.candidateId] })
+        val scorer = GroupScorer(eligible, eligible.map { captureTimes[it.candidateId] }, checkpoint)
         val collages = COLLAGE_MODES
             .filter { eligible.size >= it.photoCount }
-            .associateWith { bestSubset(scorer, eligible, it) }
+            .associateWith { bestSubset(scorer, eligible, it, checkpoint) }
 
         val chosen = chooseOption(pool, hero, collages, config)
         return Decision(
@@ -105,6 +112,8 @@ object DecisionEngine {
      *   with the best non-champion member of distinct clusters, then with the remaining cluster members by quality.
      *   Rejected photos are never used. That option is added to the alternatives for its mode alone.
      *
+     * [checkpoint] behaves as in [decide].
+     *
      * @throws IllegalArgumentException when [analyses] has duplicate ids or lacks an id referenced by [previous].
      * @throws IllegalStateException with message "all candidates rejected" when [previous] has no clusters.
      */
@@ -114,8 +123,10 @@ object DecisionEngine {
         captureTimes: Map<String, Long?>,
         forcedMode: StoryMode?,
         config: DecisionConfig = DecisionConfig(),
+        checkpoint: () -> Unit = {},
     ): Decision {
-        if (forcedMode == null) return decide(analyses, captureTimes, config)
+        checkpoint()
+        if (forcedMode == null) return decide(analyses, captureTimes, config, checkpoint)
         Clustering.requireDistinctIds(analyses)
         val byId = analyses.associateBy { it.candidateId }
         fun lookup(id: String): PhotoAnalysis =
@@ -131,7 +142,7 @@ object DecisionEngine {
         val chosen = if (feasible == StoryMode.HERO) {
             heroOption(champions)
         } else {
-            forcedCollage(feasible, clusters, champions, captureTimes, config)
+            forcedCollage(feasible, clusters, champions, captureTimes, config, checkpoint)
         }
         val alternatives = LinkedHashMap(previous.alternatives).apply { put(feasible, chosen) }
         return previous.copy(chosen = chosen, alternatives = alternatives)
@@ -179,23 +190,33 @@ object DecisionEngine {
         champions: List<PhotoAnalysis>,
         captureTimes: Map<String, Long?>,
         config: DecisionConfig,
+        checkpoint: () -> Unit,
     ): CurationOption {
         val m = mode.photoCount
         if (champions.size >= m) {
             val candidates = champions.take(config.subsetPoolSize)
-            return bestSubset(GroupScorer(candidates, candidates.map { captureTimes[it.candidateId] }), candidates, mode)
+            val scorer = GroupScorer(candidates, candidates.map { captureTimes[it.candidateId] }, checkpoint)
+            return bestSubset(scorer, candidates, mode, checkpoint)
         }
         val runnersUp = clusters.mapNotNull { it.getOrNull(1) }.sortedWith(Clustering.BY_QUALITY_THEN_ID)
         val remaining = clusters.flatMap { it.drop(2) }.sortedWith(Clustering.BY_QUALITY_THEN_ID)
         val members = (champions + runnersUp + remaining).take(m)
-        val scorer = GroupScorer(members, members.map { captureTimes[it.candidateId] })
+        val scorer = GroupScorer(members, members.map { captureTimes[it.candidateId] }, checkpoint)
         val all = IntArray(members.size) { it }
         val synergy = scorer.synergy(all)
         return CurationOption(mode, anchorOrder(members).map { it.candidateId }, scorer.score(all, synergy), synergy)
     }
 
-    /** Exhaustive best subset of size `mode.photoCount` over [candidates]; requires enough candidates. */
-    private fun bestSubset(scorer: GroupScorer, candidates: List<PhotoAnalysis>, mode: StoryMode): CurationOption {
+    /**
+     * Exhaustive best subset of size `mode.photoCount` over [candidates]; requires enough candidates. [checkpoint] is
+     * called before each subset is scored.
+     */
+    private fun bestSubset(
+        scorer: GroupScorer,
+        candidates: List<PhotoAnalysis>,
+        mode: StoryMode,
+        checkpoint: () -> Unit,
+    ): CurationOption {
         val m = mode.photoCount
         val subset = IntArray(m) { it }
         var bestSubset: IntArray? = null
@@ -203,6 +224,7 @@ object DecisionEngine {
         var bestKey: List<String> = emptyList()
         var bestSynergy: SynergyBreakdown? = null
         while (true) {
+            checkpoint()
             val synergy = scorer.synergy(subset)
             val score = scorer.score(subset, synergy)
             if (bestSubset == null || score > bestScore) {

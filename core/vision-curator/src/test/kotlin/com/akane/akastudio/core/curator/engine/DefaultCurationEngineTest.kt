@@ -11,14 +11,19 @@ import com.akane.akastudio.core.curator.api.RejectReason
 import com.akane.akastudio.core.curator.api.ShotScale
 import com.akane.akastudio.core.curator.api.StoryMode
 import com.akane.akastudio.core.curator.api.Warmth
+import com.akane.akastudio.core.curator.decision.Clustering
+import com.akane.akastudio.core.curator.decision.DecisionConfig
+import com.akane.akastudio.core.curator.decision.Fixtures
 import com.akane.akastudio.core.curator.engine.EngineImages.noise
 import com.akane.akastudio.core.curator.engine.FakeWorld.Companion.face
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -31,6 +36,7 @@ import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.roundToInt
 
 class DefaultCurationEngineTest {
@@ -315,6 +321,43 @@ class DefaultCurationEngineTest {
         assertTrue(job.isCancelled)
         assertEquals(2, stopped.get())
         assertTrue(emissions.none { it is Decided || it is Clustered })
+    }
+
+    @Test
+    fun curate_cancelledDuringTheDecisionStopsAtTheNextCheckpointAndEmitsNoDecided() = runTest {
+        // 200 unrelated photos (distinct 1024-d embeddings and noise), analysed instantly: the decision then faces
+        // 19,900 clustering pairs. The probe cancels the collector at the fifth checkpoint, which is inside the first
+        // row of the pair loop: decide entry, clustering entry, row 0, then its pairs j = 64 and j = 128.
+        val n = 200
+        val world = FakeWorld(
+            (0 until n).associate { "p$it" to Shot(noise(1_000 + it), embedding = Fixtures.randomEmbedding("p$it", 1024)) },
+        )
+        val stopAt = 3 + 128 / Clustering.CHECKPOINT_STRIDE
+        val probes = AtomicInteger()
+        val emissions = mutableListOf<CurationProgress>()
+        var failure: Throwable? = null
+
+        val job = launch(Dispatchers.Default) {
+            val collector = coroutineContext.job
+            val engine = DefaultCurationEngine(
+                world.source, world.models, Dispatchers.Default, parallelism = 3, config = DecisionConfig(),
+                onDecisionCheckpoint = { if (probes.incrementAndGet() == stopAt) collector.cancel() },
+            )
+            try {
+                engine.curate(world.candidates).collect { emissions += it }
+            } catch (e: CancellationException) {
+                failure = e
+                throw e
+            }
+        }
+        job.join()
+
+        assertTrue(job.isCancelled)
+        assertTrue(failure is CancellationException)
+        // The checkpoint that saw the cancellation threw: no further pair, palette or subset work ran.
+        assertEquals(stopAt, probes.get())
+        assertEquals((0..n).map { Analyzing(it, n) }, emissions)
+        assertTrue(emissions.none { it is Clustered || it is Decided })
     }
 
     @Test

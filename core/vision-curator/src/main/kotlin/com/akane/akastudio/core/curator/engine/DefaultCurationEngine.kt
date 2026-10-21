@@ -15,6 +15,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Semaphore
@@ -43,14 +45,27 @@ class NoUsablePhotosException(val rejectedCount: Int) :
  * analysis uses the no-NIMA formula (see [PhotoAnalyzer.uniformAesthetic]), and the downgrade is logged with counts.
  *
  * Capture times are kept per candidate id so [decide] can rebuild the decision for a mode switch.
+ *
+ * The decision stage is synchronous CPU work (all-pairs clustering, subset enumeration); [curate] runs it with a
+ * cancellation checkpoint bound to the collecting coroutine, so cancelling the collector stops it promptly.
+ * [onDecisionCheckpoint] is a test probe run at each of those checkpoints, before the cancellation check.
  */
-class DefaultCurationEngine(
+class DefaultCurationEngine internal constructor(
     private val pixels: PixelSource,
     private val models: AnalysisModels,
-    private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
-    private val parallelism: Int = 3,
-    private val config: DecisionConfig = DecisionConfig(),
+    private val dispatcher: CoroutineDispatcher,
+    private val parallelism: Int,
+    private val config: DecisionConfig,
+    private val onDecisionCheckpoint: () -> Unit,
 ) : CurationEngine {
+
+    constructor(
+        pixels: PixelSource,
+        models: AnalysisModels,
+        dispatcher: CoroutineDispatcher = Dispatchers.Default,
+        parallelism: Int = 3,
+        config: DecisionConfig = DecisionConfig(),
+    ) : this(pixels, models, dispatcher, parallelism, config, onDecisionCheckpoint = {})
 
     init {
         require(parallelism >= 1) { "parallelism must be at least 1: $parallelism" }
@@ -64,12 +79,14 @@ class DefaultCurationEngine(
     /**
      * Cold flow over [candidates]. Collection throws IllegalArgumentException for an empty list or duplicate ids,
      * and [NoUsablePhotosException] when every candidate is rejected. Cancelling the collector cancels every
-     * in-flight analysis before the flow completes.
+     * in-flight analysis before the flow completes, and stops the decision stage at its next checkpoint (see
+     * [DecisionEngine.decide]) without emitting `Clustered` or `Decided`.
      */
     override fun curate(candidates: List<PhotoCandidate>): Flow<CurationProgress> = flow {
         require(candidates.isNotEmpty()) { "candidates must not be empty" }
         require(candidates.mapTo(HashSet()) { it.id }.size == candidates.size) { "candidate ids must be distinct" }
         val total = candidates.size
+        val collector = currentCoroutineContext()
         rememberCaptureTimes(candidates)
         emit(CurationProgress.Analyzing(0, total))
 
@@ -104,7 +121,10 @@ class DefaultCurationEngine(
             emit(CurationProgress.Clustered(clusterCount = 0, rejectedCount = rejectedCount))
             throw NoUsablePhotosException(rejectedCount)
         }
-        val decision = DecisionEngine.decide(analyzed, captureTimesOf(analyses.keys), config)
+        val decision = DecisionEngine.decide(analyzed, captureTimesOf(analyses.keys), config) {
+            onDecisionCheckpoint()
+            collector.ensureActive()
+        }
         emit(CurationProgress.Clustered(decision.clusters.size, decision.rejectedIds.size))
         emit(CurationProgress.Decided(CurationResults.build(decision, analyses)))
     }
@@ -112,6 +132,11 @@ class DefaultCurationEngine(
     /**
      * Re-decides [result] for [forcedMode] (null = automatic) with [DecisionEngine.redecide], keeping its analyses,
      * clusters and rejections, and rebuilds the note and suggested look for the new chosen option.
+     *
+     * Non-suspending, so it runs the decision with the default no-op checkpoint. That is acceptable: the production
+     * caller (the studio's mode switch) already runs it on the default dispatcher, and a forced mode the result
+     * already offers returns that alternative without any search; only `forcedMode = null` (a full re-decision) or
+     * an unoffered mode enumerates subsets, over the same bounded champion pool as the original curation.
      */
     override fun decide(result: CurationResult, forcedMode: StoryMode?): CurationResult {
         val decision = DecisionEngine.redecide(
