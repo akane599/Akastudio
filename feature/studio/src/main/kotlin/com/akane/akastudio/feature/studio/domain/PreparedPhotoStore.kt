@@ -1,5 +1,6 @@
 package com.akane.akastudio.feature.studio.domain
 
+import android.util.Log
 import com.akane.akastudio.core.composer.api.ComposerPhoto
 import com.akane.akastudio.core.curator.api.PhotoAnalysis
 import com.akane.akastudio.core.ingestion.model.PhotoCandidate
@@ -110,7 +111,14 @@ internal class PreparedPhotoStore(
             // The release is non-cancellable, so this is only the caller's own cancellation surfacing on the way back.
         } catch (cleanup: Throwable) {
             if (cleanup !== this) addSuppressed(cleanup)
+            // A suppressed failure on a cancellation is dropped with it by the coroutine machinery, so it is logged
+            // here; the registration it concerns stays tracked by the preparer for a later retry either way.
+            if (this is CancellationException) Log.w(TAG, "Releasing ${ids.size} photo(s) after a cancelled acquisition failed", cleanup)
         }
         return this
+    }
+
+    private companion object {
+        const val TAG = "PreparedPhotoStore"
     }
 }

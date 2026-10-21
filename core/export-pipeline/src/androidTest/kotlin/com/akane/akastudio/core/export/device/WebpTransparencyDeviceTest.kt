@@ -51,7 +51,8 @@ class WebpTransparencyDeviceTest {
                 }
             }
             record("webpAlpha.maxStraightCodeError", worst)
-            // The ARGB_8888 bitmap stores premultiplied 8-bit colour, so alpha 128 can cost about one straight code.
+            // The bitmap is non-premultiplied, but the encoder may still round through 8-bit premultiplied colour, so
+            // alpha 128 is allowed about one straight code of drift.
             assertTrue("straight colour drifted by $worst codes", worst <= MAX_PREMULTIPLY_LOSS)
         } finally {
             bitmap.recycle()

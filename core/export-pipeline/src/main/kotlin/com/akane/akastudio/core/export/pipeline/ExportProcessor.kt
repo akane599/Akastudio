@@ -263,8 +263,10 @@ class ExportProcessor(
          * [MIN_BOOSTED_HDR_RATIO] (an all-zero gain map, a scene with no highlights to boost) with it. The frame then
          * still holds the render, so the fallback writes exactly what SOCIAL_STORY_JPEG would. Otherwise the frame
          * holds the HDR image to encode (the boosted render with hdrBoost). [GainMapMath.ratioMax] equals the
-         * ratioMax [GainMapMath.compute] reports for the same frame without allocating the SDR base, so the
-         * render, the boosted frame and the base are never all held.
+         * ratioMax [GainMapMath.compute] would report for this (not yet sharpened) frame without allocating the SDR
+         * base, so the render, the boosted frame and the base are never all held. The encoded gain is computed later
+         * from the sharpened frame, so an export within sharpening's effect of the threshold is decided here on the
+         * unsharpened one.
          */
         private fun hasHeadroom(frame: Frame): Boolean {
             progress.stage(ExportStage.RENDER, 0.5f)
@@ -333,9 +335,9 @@ class ExportProcessor(
          * AUD-03: the base is also bounded per channel, so a saturated colour graded past SDR white counts as headroom
          * as well (the luminance-only base clipped it and reported none). On a CPU-graded copy of
          * SdrOnlyUltraHdrDeviceTest's SDR photo (sky to white, saturated patches, grey ramp; no JPEG round trip),
-         * default looks give 0 to 0.20 stop and MEDITERRANEAN_AZURE with contrast 1 gives 0.29, all still below the
-         * threshold, while saturation +1 (0.56, 0.73 with AZURE), temperature -1 (0.56) or halation 1 (0.37) now keep
-         * the gain map.
+         * default looks give 0 to 0.20 stop and MEDITERRANEAN_AZURE with contrast 1 gives 0.29 (0.36 on the device,
+         * GPU-graded, after a JPEG round trip: above the threshold, so that device fixture grades with contrast 0.5),
+         * while saturation +1 (0.56, 0.73 with AZURE), temperature -1 (0.56) or halation 1 (0.37) keep the gain map.
          */
         val MIN_HDR_RATIO = 2f.pow(1f / 3f)
 

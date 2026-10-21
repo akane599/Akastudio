@@ -11,7 +11,8 @@ import kotlin.coroutines.CoroutineContext
  * photo's stable identity (its candidate id, which repeats across imports of the same photo) from the registration a
  * particular story made of it: the preparer registers an owner's photo under a key made of the owner's [id] and the
  * candidate id, so two stories (a retired one whose last registration lands late, or two live studios on one
- * container) never share a registration, and a release under one owner can only ever reach that owner's images.
+ * container) never share a registration, and a release under one owner resolves only that owner's keys (the one
+ * exception is the retry of an unregister that failed earlier, which any later release attempts, whoever owned it).
  */
 class PhotoOwner(label: String = "photos") : AbstractCoroutineContextElement(PhotoOwner) {
 
