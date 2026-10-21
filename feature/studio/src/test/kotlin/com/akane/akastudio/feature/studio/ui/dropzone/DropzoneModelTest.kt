@@ -101,10 +101,10 @@ class DropzoneModelTest {
     }
 
     @Test
-    fun `cancel is offered only for the dropzone's running work`() {
+    fun `cancel is offered only while reading or curating, never once the story is chosen`() {
         assertTrue(DropzoneModel.canCancel(StudioPhase.Ingesting))
         assertTrue(DropzoneModel.canCancel(StudioPhase.Curating))
-        assertTrue(DropzoneModel.canCancel(StudioPhase.Preparing))
+        assertFalse(DropzoneModel.canCancel(StudioPhase.Preparing))
         assertFalse(DropzoneModel.canCancel(StudioPhase.Empty))
         assertFalse(DropzoneModel.canCancel(StudioPhase.Ready))
         assertFalse(DropzoneModel.canCancel(StudioPhase.Exporting))

@@ -3,7 +3,14 @@
     <!-- Dropzone: welcome -->
     <string name="dropzone_tagline">From a raw pile to an editorial story.</string>
     <string name="dropzone_select_photos">Select Photos</string>
-    <string name="dropzone_select_photos_formats" translatable="false">JPEG · HEIC · PNG · WebP · DNG</string>
+    <!-- Shown joined by dropzone_detail_separator; a wrapped row drops the separator instead of stranding it. -->
+    <string-array name="dropzone_select_photos_formats" translatable="false">
+        <item>JPEG</item>
+        <item>HEIC</item>
+        <item>PNG</item>
+        <item>WebP</item>
+        <item>DNG</item>
+    </string-array>
     <string name="dropzone_import_zip">Import .ZIP Archive</string>
     <string name="dropzone_import_zip_subtitle">Streams safely; junk files are skipped</string>
 
@@ -19,7 +26,8 @@
     <string name="dropzone_progress_description">Pipeline progress %1$d percent</string>
 
     <!-- Dropzone: telemetry steps -->
-    <string name="dropzone_detail_separator" translatable="false">" · "</string>
+    <!-- No-break spaces on both sides, so the "·" never starts or ends a line on its own -->
+    <string name="dropzone_detail_separator" translatable="false">"\u00A0·\u00A0"</string>
     <plurals name="dropzone_photos_read">
         <item quantity="one">%1$d photo read</item>
         <item quantity="other">%1$d photos read</item>
@@ -56,4 +64,9 @@
     <!-- %1$s is a short cause -->
     <string name="dropzone_error_export">The export failed: %1$s</string>
     <string name="dropzone_error_unknown">Something went wrong. Try again.</string>
+    <!-- %1$d is how many photos were read and then discarded as unusable -->
+    <plurals name="dropzone_error_no_usable">
+        <item quantity="one">The photo you added wasn\'t usable. Try a sharper, better-exposed shot.</item>
+        <item quantity="other">None of the %1$d photos were usable. Try sharper, better-exposed shots.</item>
+    </plurals>
 </resources>

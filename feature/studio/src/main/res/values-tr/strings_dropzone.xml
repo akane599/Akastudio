@@ -48,4 +48,8 @@
     <string name="dropzone_error_decode">“%1$s” tam çözünürlükte açılamadı. Yeniden deneyin ya da başka fotoğraflar seçin.</string>
     <string name="dropzone_error_export">Dışa aktarma başarısız oldu: %1$s</string>
     <string name="dropzone_error_unknown">Bir şeyler ters gitti. Yeniden deneyin.</string>
+    <plurals name="dropzone_error_no_usable">
+        <item quantity="one">Eklediğiniz fotoğraf kullanılamadı. Daha net ve iyi pozlanmış bir kare deneyin.</item>
+        <item quantity="other">%1$d fotoğrafın hiçbiri kullanılamadı. Daha net ve iyi pozlanmış kareler deneyin.</item>
+    </plurals>
 </resources>

@@ -54,6 +54,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -243,21 +245,21 @@ private fun ColumnScope.WelcomeContent(
     }
     ActionCard(
         title = stringResource(R.string.dropzone_select_photos),
-        subtitle = stringResource(R.string.dropzone_select_photos_formats),
+        subtitle = stringArrayResource(R.array.dropzone_select_photos_formats).toList(),
         icon = DropzoneIcons.Photos,
         onClick = onPickPhotos,
     )
     Spacer(Modifier.height(spacing.m))
     ActionCard(
         title = stringResource(R.string.dropzone_import_zip),
-        subtitle = stringResource(R.string.dropzone_import_zip_subtitle),
+        subtitle = listOf(stringResource(R.string.dropzone_import_zip_subtitle)),
         icon = DropzoneIcons.Archive,
         onClick = onPickZip,
     )
 }
 
 @Composable
-private fun ActionCard(title: String, subtitle: String, icon: ImageVector, onClick: () -> Unit) {
+private fun ActionCard(title: String, subtitle: List<String>, icon: ImageVector, onClick: () -> Unit) {
     val spacing = DarkroomTheme.spacing
     val scheme = MaterialTheme.colorScheme
     Surface(
@@ -286,7 +288,12 @@ private fun ActionCard(title: String, subtitle: String, icon: ImageVector, onCli
             Spacer(Modifier.width(spacing.l))
             Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
                 Text(text = title, style = MaterialTheme.typography.titleMedium, color = scheme.onSurface)
-                Text(text = subtitle, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+                SeparatedLine(
+                    items = subtitle,
+                    separator = stringResource(R.string.dropzone_detail_separator),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = scheme.onSurfaceVariant,
+                )
             }
         }
     }
@@ -462,11 +469,20 @@ private fun ErrorCard(error: StudioError, onRetry: () -> Unit) {
 @Composable
 private fun errorText(error: StudioError): Pair<String, String?> = when (error) {
     is StudioError.Ingestion -> ingestionErrorText(error.error) to null
-    is StudioError.NoUsablePhotos -> stringResource(R.string.error_no_usable_photos) to null
+    is StudioError.NoUsablePhotos -> noUsablePhotosText(error.rejectedCount) to null
     is StudioError.Decode -> stringResource(R.string.dropzone_error_decode, error.name) to null
     is StudioError.Export -> stringResource(R.string.dropzone_error_export, error.reason) to null
     is StudioError.Unknown -> stringResource(R.string.dropzone_error_unknown) to error.message.takeIf { it.isNotBlank() }
 }
+
+/** Names how many photos were discarded when the error knows it; the generic sentence covers a zero count. */
+@Composable
+private fun noUsablePhotosText(rejectedCount: Int): String =
+    if (rejectedCount > 0) {
+        pluralStringResource(R.plurals.dropzone_error_no_usable, rejectedCount, rejectedCount)
+    } else {
+        stringResource(R.string.error_no_usable_photos)
+    }
 
 @Composable
 private fun ingestionErrorText(error: IngestionError): String = when (error) {
