@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -67,23 +66,25 @@ import com.akane.akastudio.feature.studio.mvi.StudioMessage
 import com.akane.akastudio.feature.studio.mvi.StudioPhase
 import com.akane.akastudio.feature.studio.mvi.StudioState
 import com.akane.akastudio.feature.studio.ui.canvas.StoryCanvas
-import com.akane.akastudio.feature.studio.ui.controls.ControlPanel
+import com.akane.akastudio.feature.studio.ui.controls.CollapsibleControlPanel
+import com.akane.akastudio.feature.studio.ui.controls.CompareHintTooltip
+import com.akane.akastudio.feature.studio.ui.controls.compareToolCenterFromEnd
+import com.akane.akastudio.feature.studio.ui.controls.rememberCompareHintStore
 import com.akane.akastudio.feature.studio.ui.controls.ExportModalSheet
 import com.akane.akastudio.feature.studio.ui.controls.ModeDrawer
 import com.akane.akastudio.feature.studio.ui.controls.StudioTopBar
 import com.akane.akastudio.feature.studio.ui.dropzone.DropzoneScreen
 import com.akane.akastudio.feature.studio.ui.theme.DarkroomTheme
 
-/** Share of the screen height the bottom control panel takes in the workspace. */
-private const val CONTROL_PANEL_HEIGHT_FRACTION = 0.4f
 private const val SHIMMER_PERIOD_MS = 1400
 private const val SHIMMER_ALPHA = 0.10f
 
 /**
  * The studio, assembled by phase. Empty, Ingesting and Curating show the [DropzoneScreen] (which shows its own error
  * card); Preparing, Ready and Exporting show the workspace: [StudioTopBar], the [StoryCanvas] with its scope overlay
- * and the [ModeDrawer] over it, the bottom [ControlPanel], and the modal export sheet. Workspace errors and the
- * view model's messages appear in one snackbar host. System BACK follows [studioBackAction].
+ * and the [ModeDrawer] over it, the bottom [CollapsibleControlPanel] (collapsed at first), the one-time
+ * [CompareHintTooltip] on the first Ready, and the modal export sheet. Workspace errors and the view model's messages
+ * appear in one snackbar host. System BACK follows [studioBackAction].
  *
  * @param renderer The preview renderer, or null for a placeholder canvas (screenshots).
  * @param hitTest Slot index under a canvas point for the current composition, or null.
@@ -97,6 +98,18 @@ fun StudioScreen(
     hitTest: (Float, Float) -> Int?,
     modifier: Modifier = Modifier,
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
+) = StudioScreenContent(state, onIntent, renderer, hitTest, modifier, snackbarHostState)
+
+/** [StudioScreen] with the control panel's initial expansion exposed for screenshots (it starts collapsed). */
+@Composable
+internal fun StudioScreenContent(
+    state: StudioState,
+    onIntent: (StudioIntent) -> Unit,
+    renderer: StoryRenderer?,
+    hitTest: (Float, Float) -> Int?,
+    modifier: Modifier = Modifier,
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
+    panelInitiallyExpanded: Boolean = false,
 ) {
     val workspace = showsWorkspace(state.phase)
     // Both reset whenever the studio leaves or enters the workspace.
@@ -128,6 +141,7 @@ fun StudioScreen(
                 snackbarHostState = snackbarHostState,
                 exportShown = exportShown,
                 onExportOpenChange = { exportOpen = it },
+                panelInitiallyExpanded = panelInitiallyExpanded,
             )
             if (confirmDiscard) {
                 DiscardStoryDialog(
@@ -201,8 +215,18 @@ private fun StudioWorkspace(
     snackbarHostState: SnackbarHostState,
     exportShown: Boolean,
     onExportOpenChange: (Boolean) -> Unit,
+    panelInitiallyExpanded: Boolean,
 ) {
     val sideInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
+    var panelExpanded by rememberSaveable { mutableStateOf(panelInitiallyExpanded) }
+    val hintStore = rememberCompareHintStore()
+    var hintSeen by remember(hintStore) { mutableStateOf(hintStore.isSeen()) }
+    val dismissHint = {
+        hintStore.markSeen()
+        hintSeen = true
+    }
+    // Finding the compare tool on their own counts as having seen the hint.
+    LaunchedEffect(state.compare != null) { if (state.compare != null && !hintSeen) dismissHint() }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0),
@@ -218,16 +242,21 @@ private fun StudioWorkspace(
             )
         },
         bottomBar = {
-            ControlPanel(
-                state = state,
-                onIntent = onIntent,
-                modifier = Modifier
-                    .fillMaxHeight(CONTROL_PANEL_HEIGHT_FRACTION)
-                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                    .windowInsetsPadding(
-                        WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal),
-                    ),
-            )
+            // The bar is measured against the whole screen height; the panel's resting heights derive from it.
+            BoxWithConstraints {
+                CollapsibleControlPanel(
+                    state = state,
+                    onIntent = onIntent,
+                    expanded = panelExpanded,
+                    onExpandedChange = { panelExpanded = it },
+                    availableHeight = maxHeight,
+                    modifier = Modifier
+                        .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                        .windowInsetsPadding(
+                            WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal),
+                        ),
+                )
+            }
         },
     ) { padding ->
         Column(
@@ -258,6 +287,16 @@ private fun StudioWorkspace(
                     scopePixels = state.scopePixels,
                 )
                 if (state.phase == StudioPhase.Preparing) PreparingShimmer(Modifier.fillMaxSize())
+                if (!hintSeen && state.phase == StudioPhase.Ready && !state.modeDrawerOpen) {
+                    val endPadding = DarkroomTheme.spacing.s
+                    CompareHintTooltip(
+                        anchorFromEnd = compareToolCenterFromEnd() - endPadding,
+                        onDismiss = dismissHint,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(end = endPadding),
+                    )
+                }
                 ModeDrawer(
                     state = state,
                     onIntent = onIntent,

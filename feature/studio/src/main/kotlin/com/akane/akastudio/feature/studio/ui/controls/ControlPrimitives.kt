@@ -104,6 +104,18 @@ internal object ControlMetrics {
 
     /** Tab indicator thickness. */
     val TabIndicator: Dp = 2.dp
+
+    /** Collapsed control panel height, its drag handle included: the tab row and the top of the active tab. */
+    val PanelPeek: Dp = 240.dp
+
+    /** The panel's drag-handle pill. */
+    val HandleWidth: Dp = 32.dp
+    val HandleThickness: Dp = 4.dp
+
+    /** The first-use compare hint: its widest bubble and the caret pointing at the compare tool. */
+    val HintMaxWidth: Dp = 240.dp
+    val HintCaretWidth: Dp = 12.dp
+    val HintCaretHeight: Dp = 6.dp
 }
 
 /**

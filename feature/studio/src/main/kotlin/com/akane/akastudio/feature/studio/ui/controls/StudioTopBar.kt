@@ -31,6 +31,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import com.akane.akastudio.feature.studio.R
 import com.akane.akastudio.feature.studio.mvi.ScopeMode
 import com.akane.akastudio.feature.studio.mvi.StudioPhase
@@ -88,6 +89,18 @@ fun StudioTopBar(
         )
     }
 }
+
+/**
+ * Distance from the top bar's end edge to the centre of its compare tool, which is followed by the scope and export
+ * tools (48 dp each) inside the bar's [DarkroomSpacing.xs][com.akane.akastudio.feature.studio.ui.theme.DarkroomSpacing]
+ * end padding. Keep in step with [StudioTopBar]'s trailing tools.
+ */
+@Composable
+internal fun compareToolCenterFromEnd(): Dp =
+    DarkroomTheme.spacing.xs + ControlMetrics.TouchTarget * TOOLS_AFTER_COMPARE + ControlMetrics.TouchTarget / 2
+
+/** Scope and export follow compare at the bar's end. */
+private const val TOOLS_AFTER_COMPARE = 2
 
 @Composable
 private fun ModeChip(state: StudioState, onClick: () -> Unit, modifier: Modifier = Modifier) {
