@@ -33,6 +33,17 @@
       "priority": 15,
       "enabled": true,
       "include": []
+    },
+    {
+      "path": "rules/device-testing.md",
+      "hash": "87d0e44d8e91e23c653018bfd500af26a9e7eb7b4b72a3a30a07b8460511b059",
+      "description": "Device testing on the shared emulator",
+      "globs": [],
+      "dirs": [],
+      "prompt": [],
+      "priority": 15,
+      "enabled": true,
+      "include": []
     }
   ]
 }
