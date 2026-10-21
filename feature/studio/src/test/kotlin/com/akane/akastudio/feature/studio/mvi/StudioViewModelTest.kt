@@ -521,6 +521,25 @@ class StudioViewModelTest {
     }
 
     @Test
+    fun export_right_after_a_reprepare_shows_no_cancellation_error() = runTest {
+        val h = harness()
+        ready(h)
+        h.deps.preparer.releaseDelayMs = 1_000
+
+        h.vm.onIntent(StudioIntent.ForceMode(StoryMode.HERO))
+        advanceTimeBy(500)
+        assertEquals(StudioPhase.Ready, h.state.phase)
+        assertEquals("b is still being released", listOf("b"), h.deps.preparer.released)
+
+        h.vm.onIntent(StudioIntent.Export(share = false))
+        advanceUntilIdle()
+
+        assertEquals(StudioPhase.Ready, h.state.phase)
+        assertNull(h.state.error)
+        assertTrue(h.state.export.lastResult != null)
+    }
+
+    @Test
     fun cancel_while_exporting_returns_to_ready_without_a_result() = runTest {
         val h = harness()
         ready(h)

@@ -294,6 +294,9 @@ class StudioViewModel(
         stable = ready
         try {
             store.retainOnly(ids)
+        } catch (e: CancellationException) {
+            // retainOnly's release is non-cancellable; returning from it re-checks cancellation, which is not an error.
+            throw e
         } catch (e: Exception) {
             _state.update { it.copy(error = deps.errors.map(e)) }
         }
