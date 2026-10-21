@@ -17,6 +17,8 @@ import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import kotlin.math.abs
 import kotlin.math.max
 
@@ -50,6 +52,39 @@ class UltraHdrDeviceTest {
             bitmap.recycle()
         }
         record("ultraHdr.bytes", jpeg.size)
+        assertMpfMatchesTheFile(jpeg)
+    }
+
+    /**
+     * F-28: the platform file with our Exif APP1 spliced in. MP entry 0 (the primary, offset 0) must span up to the
+     * gain-map JPEG, and entry 1's offset, relative to the MP header, must land on that JPEG's SOI.
+     */
+    private fun assertMpfMatchesTheFile(jpeg: ByteArray) {
+        var position = 2
+        while (true) {
+            assertEquals("marker at $position", 0xFF, jpeg[position].toInt() and 0xFF)
+            val marker = jpeg[position + 1].toInt() and 0xFF
+            assertTrue("no MPF segment before SOS", marker != 0xDA)
+            val length = ((jpeg[position + 2].toInt() and 0xFF) shl 8) or (jpeg[position + 3].toInt() and 0xFF)
+            val payload = position + 4
+            if (marker == 0xE2 && String(jpeg, payload, 4, Charsets.ISO_8859_1) == "MPF\u0000") {
+                val header = payload + 4
+                val order = if (String(jpeg, header, 2, Charsets.ISO_8859_1) == "MM") ByteOrder.BIG_ENDIAN else ByteOrder.LITTLE_ENDIAN
+                val mp = ByteBuffer.wrap(jpeg, header, length - 2 - 4).slice().order(order)
+                val ifd = mp.getInt(4)
+                val tag = (0 until mp.getShort(ifd).toInt()).map { ifd + 2 + it * 12 }.single { mp.getShort(it) == 0xB002.toShort() }
+                val entries = mp.getInt(tag + 8)
+                val primarySize = mp.getInt(entries + 4)
+                val primaryOffset = mp.getInt(entries + 8)
+                val secondary = header + mp.getInt(entries + 16 + 8)
+                record("ultraHdr.mpf", "order=$order primarySize=$primarySize secondaryAt=$secondary fileSize=${jpeg.size}")
+                assertEquals("MP entry 0 is the primary at offset 0", 0, primaryOffset)
+                assertEquals("the gain-map JPEG starts with SOI", 0xFFD8, ((jpeg[secondary].toInt() and 0xFF) shl 8) or (jpeg[secondary + 1].toInt() and 0xFF))
+                assertEquals("MP entry 0's size spans the primary image up to the gain map", secondary, primarySize)
+                return
+            }
+            position += 2 + length
+        }
     }
 
     @Test

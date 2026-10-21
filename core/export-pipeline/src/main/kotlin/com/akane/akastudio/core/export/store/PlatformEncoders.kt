@@ -22,7 +22,8 @@ import kotlin.math.max
  * Ultra HDR JPEG through the platform: an sRGB ARGB_8888 base (blue-noise dithered), a single-channel ALPHA_8
  * [Gainmap] with the computed ratios, gamma and offsets, and `Bitmap.compress(JPEG)`, which writes the gain map
  * container on Android 14+. The compressed file is buffered and, when an EXIF block is given, an APP1 Exif segment is
- * spliced in right after SOI ([JpegSegments.insertApp1AfterSoi]; the MPF offsets stay valid).
+ * spliced in right after SOI ([JpegSegments.insertApp1AfterSoi]; the MPF offsets stay valid and the primary image's
+ * MPF size follows the splice).
  *
  * Chroma subsampling is the platform default (4:2:0): `Bitmap.compress` exposes no way to change it, unlike the
  * 4:4:4 [com.akane.akastudio.core.export.encode.JpegEncoder] used for SOCIAL_STORY_JPEG. Nothing here chooses it: the

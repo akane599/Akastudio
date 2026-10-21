@@ -82,6 +82,23 @@ class GainMapMathTest {
     }
 
     @Test
+    fun ratioMaxMatchesComputeWithoutTheBase() {
+        val random = Random(7)
+        val images = listOf(
+            halfImage(9, 7) { _, _ -> gray(0.6f) },
+            halfImage(9, 7) { x, y -> gray(if (x == 8 && y == 6) 1.004f else 0.9f) },
+            halfImage(16, 16) { x, _ -> gray(if (x < 8) 0.2f else 1.2f) },
+            halfImage(13, 11) { _, _ -> floatArrayOf(random.nextFloat() * 3f, random.nextFloat(), random.nextFloat() * 2f, 1f) },
+        )
+        for (image in images) {
+            for (downscale in listOf(1, 4)) {
+                assertEquals(GainMapMath.compute(image, downscale).ratioMax, GainMapMath.ratioMax(image, downscale), 0f)
+            }
+        }
+        assertEquals("a scene with no headroom reports exactly 1", 1f, GainMapMath.ratioMax(images[0]), 0f)
+    }
+
+    @Test
     fun partialEdgeCellsAverageOnlyCoveredPixels() {
         val src = halfImage(5, 5) { x, y -> gray(if (x == 4 && y == 4) 4f else 0f) }
         val r = GainMapMath.compute(src, gainDownscale = 4)
