@@ -36,4 +36,4 @@ _Work items, stories and blockers live on the Sidequest board. This file keeps w
 | Device QA | — | — | Mobile MCP (when configured) or android-emulator-qa fallback skill |
 
 ## Environment notes
-- No /dev/kvm on this machine: no local emulator; use JVM/screenshot checks or a physical/remote device.
+- No /dev/kvm on this machine, so no local AVD. A shared redroid Android 15 emulator (`emulator-5554`) is attached over adb and is approved for AkaStudio QA (2026-10-21); check `adb devices` at the start of each stage.

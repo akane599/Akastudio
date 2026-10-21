@@ -30,7 +30,7 @@ Android, developed on Ubuntu from the CLI.
 - Screenshots: `:app:updateDebugScreenshotTest` (write refs) · `:app:validateDebugScreenshotTest` (diff)
 - Full gate: `bash .claude/kit/gradle-check.sh :app:assembleDebug :app:testDebugUnitTest :app:validateDebugScreenshotTest :feature:studio:testDebugUnitTest :feature:studio:validateDebugScreenshotTest :core:ingestion:testDebugUnitTest :core:color-engine:testDebugUnitTest :core:vision-curator:testDebugUnitTest :core:collage-composer:testDebugUnitTest :core:export-pipeline:testDebugUnitTest --max-workers=2`
 - Device: `./gradlew :app:installDebug -q && adb shell am start -n com.akane.akastudio/.MainActivity` · logs: `adb logcat -d --pid=$(adb shell pidof -s com.akane.akastudio) | tail -80`
-- Emulator: `(no /dev/kvm on this machine: use JVM checks or a physical/remote device) emulator -avd <AVD> -no-window -no-audio &` then `adb wait-for-device shell 'while [[ -z $(getprop sys.boot_completed) ]]; do sleep 1; done'`
+- Emulator: run `adb devices` before deciding device QA is impossible. No /dev/kvm here means no local AVD, but a shared redroid Android 15 emulator (`emulator-5554`, x86_64, SwiftShader GL) is usually attached. It also hosts another session's app (com.akane.inspiration): install/uninstall only com.akane.akastudio, one ticket on the device at a time.
 
 ## Parallel execution
 
