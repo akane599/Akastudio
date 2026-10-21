@@ -148,8 +148,10 @@ private fun SliderTrack(fraction: Float, zeroFraction: Float, bipolar: Boolean, 
 }
 
 /**
- * Watches taps without consuming them (the slider still handles its own drag and tap-to-jump) and calls
- * [onDoubleTap] when two short taps land within the platform double-tap timeout and touch slop.
+ * Watches taps in the Initial pass and calls [onDoubleTap] when two short taps land within the platform
+ * double-tap timeout and touch slop. Only the second tap's up is consumed: the Slider's own tap-to-jump
+ * (`detectTapGestures` in the Main pass) then sees a consumed up and skips its `onTap`, which would otherwise
+ * overwrite the reset with the tapped position. Drags and single taps pass through untouched.
  * The gesture loop is keyed on nothing, so [onDoubleTap] must read its target through a stable state.
  */
 private fun Modifier.doubleTapToReset(enabled: Boolean, onDoubleTap: () -> Unit): Modifier = if (!enabled) {
@@ -172,6 +174,7 @@ private fun Modifier.doubleTapToReset(enabled: Boolean, onDoubleTap: () -> Unit)
             val nearLast = (down.position - lastUpPosition).getDistance() <= slop * 2
             if (lastUpMillis != Long.MIN_VALUE && sinceLast <= viewConfiguration.doubleTapTimeoutMillis && nearLast) {
                 lastUpMillis = Long.MIN_VALUE
+                up.consume()
                 onDoubleTap()
             } else {
                 lastUpMillis = up.uptimeMillis
