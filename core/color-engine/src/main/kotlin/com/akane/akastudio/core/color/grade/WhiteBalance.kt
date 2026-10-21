@@ -34,12 +34,25 @@ object WhiteBalance {
     }
 
     /**
+     * The source-white CCT that [matrix] adapts from at [temperature], as a Kelvin shift from D65 (6504 K).
+     * The mired scale is not linear in Kelvin, so the shift is asymmetric: about +4162 K at +1 and −1826 K at
+     * −1. [temperature] is clamped to [-1, 1] as in [matrix]; non-finite input is rejected.
+     */
+    fun kelvinShift(temperature: Float): Double {
+        require(temperature.isFinite()) { "temperature must be finite" }
+        return sourceKelvin(temperature.coerceIn(-1f, 1f) * MIRED_PER_UNIT) - D65_CCT
+    }
+
+    /** The source white's CCT for a [miredShift] from D65 (positive warms), clamped to the locus range. */
+    private fun sourceKelvin(miredShift: Double): Double =
+        (1e6 / (1e6 / D65_CCT - miredShift)).coerceIn(PlanckianLocus.MIN_K, PlanckianLocus.MAX_K)
+
+    /**
      * Same construction with a raw mired shift (positive warms) and a green-ward Duv offset; used by the
      * LUT baker for a look's `warmthMired`.
      */
     internal fun adaptation(miredShift: Double, greenDuv: Double): FloatArray {
-        val srcMired = 1e6 / D65_CCT - miredShift
-        val srcK = (1e6 / srcMired).coerceIn(PlanckianLocus.MIN_K, PlanckianLocus.MAX_K)
+        val srcK = sourceKelvin(miredShift)
 
         val ref = PlanckianLocus.uv(D65_CCT)
         val src = PlanckianLocus.uv(srcK)

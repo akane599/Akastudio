@@ -48,7 +48,7 @@ data class GradeParams(
     val lookIntensity: Float = 1f,           // 0..1
     val harmonization: HarmonizationParams = HarmonizationParams.IDENTITY,
     val exposureEv: Float = 0f,              // -2..2
-    val temperature: Float = 0f,             // -1..1 (cool..warm, maps to ±1500 K around the estimated scene white)
+    val temperature: Float = 0f,             // -1..1 (cool..warm, ±60 mired from D65: −1826 K..+4162 K; WhiteBalance)
     val tint: Float = 0f,                    // -1..1 (green..magenta)
     val contrast: Float = 0f,                // -1..1
     val saturation: Float = 0f,              // -1..1 (OKLCh chroma scale 0..2)

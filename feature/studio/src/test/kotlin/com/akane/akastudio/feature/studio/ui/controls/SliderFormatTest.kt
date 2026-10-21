@@ -1,5 +1,6 @@
 package com.akane.akastudio.feature.studio.ui.controls
 
+import com.akane.akastudio.core.color.grade.WhiteBalance
 import com.akane.akastudio.feature.studio.mvi.GradeField
 import com.akane.akastudio.feature.studio.mvi.ScopeMode
 import org.junit.Assert.assertEquals
@@ -39,18 +40,29 @@ class SliderFormatTest {
     }
 
     @Test
-    fun `temperature reads as a signed Kelvin shift of 1500 K per unit rounded to 10 K`() {
-        assertEquals("+450 K", text(GradeField.TEMPERATURE, 0.3f))
-        assertEquals("−1500 K", text(GradeField.TEMPERATURE, -1f))
+    fun `temperature reads as the engine's Kelvin shift of the source white, rounded to 10 K`() {
+        // ±60 mired around D65 (6504 K): 1e6 / (1e6 / 6504 − 60·t) − 6504.
+        assertEquals("+860 K", text(GradeField.TEMPERATURE, 0.3f))
+        assertEquals("+4160 K", text(GradeField.TEMPERATURE, 1f))
+        assertEquals("−1830 K", text(GradeField.TEMPERATURE, -1f))
         assertEquals("0 K", text(GradeField.TEMPERATURE, 0f))
-        assertEquals(20, SliderFormat.kelvinShift(0.0123f))
-        assertEquals(-750, SliderFormat.kelvinShift(-0.5f))
+        assertEquals(30, SliderFormat.kelvinShift(0.0123f))
+        assertEquals(-1060, SliderFormat.kelvinShift(-0.5f))
+    }
+
+    @Test
+    fun `the temperature readout tracks WhiteBalance across the slider range`() {
+        for (i in -20..20) {
+            val t = i / 20f
+            val engine = WhiteBalance.kelvinShift(t)
+            assertEquals("t=$t", engine, SliderFormat.kelvinShift(t).toDouble(), SliderFormat.KELVIN_STEP / 2.0)
+        }
     }
 
     @Test
     fun `out of range and non-finite values are clamped or read as zero`() {
         assertEquals("100%", text(GradeField.INTENSITY, 3f))
-        assertEquals("+1500 K", text(GradeField.TEMPERATURE, 9f))
+        assertEquals("+4160 K", text(GradeField.TEMPERATURE, 9f))
         assertEquals("0", text(GradeField.CONTRAST, Float.NaN))
         assertEquals("0%", text(GradeField.INTENSITY, Float.NaN))
     }

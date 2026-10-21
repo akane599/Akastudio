@@ -1,5 +1,6 @@
 package com.akane.akastudio.feature.studio.ui.controls
 
+import com.akane.akastudio.core.color.grade.WhiteBalance
 import com.akane.akastudio.feature.studio.mvi.GradeField
 import com.akane.akastudio.feature.studio.mvi.GradeUi
 import com.akane.akastudio.feature.studio.mvi.ScopeMode
@@ -14,7 +15,7 @@ internal enum class ReadoutKind {
     /** Bipolar -1..1 shown as a signed whole number of hundredths: `+35`, `−12`, `0`. */
     SIGNED,
 
-    /** Temperature shown as a signed Kelvin shift around the scene white: `+450 K`. */
+    /** Temperature shown as the signed Kelvin shift of the engine's source white from D65: `+860 K`. */
     KELVIN_SHIFT,
 
     /** Layout pixels in 1080-wide units: `12 px`. */
@@ -32,9 +33,6 @@ internal data class ReadoutPatterns(val percent: String, val kelvin: String, val
 
 /** Pure slider value formatting shared by the colour and layout tabs. */
 internal object SliderFormat {
-
-    /** Kelvin shift at temperature ±1 (matches `GradeParams.temperature`: ±1500 K around the scene white). */
-    const val KELVIN_PER_UNIT = 1500f
 
     /** Kelvin readouts are rounded to this step so the value does not flicker by single degrees while dragging. */
     const val KELVIN_STEP = 10
@@ -64,9 +62,12 @@ internal object SliderFormat {
     /** The readout of a pixel slider at [px]; non-finite values read as zero. */
     fun pixels(px: Float): Readout = Readout(ReadoutKind.PIXELS, if (px.isFinite()) px.roundToInt() else 0)
 
-    /** Temperature [value] in -1..1 as a Kelvin shift rounded to [KELVIN_STEP]. */
+    /**
+     * Temperature [value] in -1..1 as the Kelvin shift the engine applies ([WhiteBalance.kelvinShift]), rounded
+     * to [KELVIN_STEP]. The shift is asymmetric (±60 mired): +1 reads +4160 K and −1 reads −1830 K.
+     */
     fun kelvinShift(value: Float): Int {
-        val kelvin = value * KELVIN_PER_UNIT
+        val kelvin = WhiteBalance.kelvinShift(if (value.isFinite()) value else 0f)
         return (kelvin / KELVIN_STEP).roundToInt() * KELVIN_STEP
     }
 
