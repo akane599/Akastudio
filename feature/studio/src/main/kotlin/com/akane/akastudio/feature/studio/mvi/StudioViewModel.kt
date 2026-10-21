@@ -310,9 +310,12 @@ class StudioViewModel(
             _state.update { it.copy(modeDrawerOpen = false) }
             return
         }
-        reprepare { current ->
+        reprepare {
             val decided = withContext(deps.dispatchers.default) { deps.curation.decide(result, mode) }
-            StudioReducer.withSelection(current, decided, decided.chosen.photoIds, candidates)
+            val transition: (StudioState) -> StudioState = { current ->
+                StudioReducer.withSelection(current, decided, decided.chosen.photoIds, candidates)
+            }
+            transition
         }
     }
 
@@ -330,11 +333,15 @@ class StudioViewModel(
         val analysis = result.analyses[candidateId]
         if (candidateId !in candidates || analysis == null || analysis.rejectReason != null) return
         val newIds = ids.toMutableList().apply { this[slot] = candidateId }
-        reprepare { current -> StudioReducer.withSelection(current, result, newIds, candidates) }
+        reprepare { { current -> StudioReducer.withSelection(current, result, newIds, candidates) } }
     }
 
-    /** Leaves Ready for Preparing, applies [select] (a new selection) and prepares it; failures restore [stable]. */
-    private fun reprepare(select: suspend (StudioState) -> StudioState) {
+    /**
+     * Leaves Ready for Preparing, applies the new selection [select] computes and prepares it; failures restore
+     * [stable]. [select] may suspend off the main thread; the transition it returns is applied to the state current
+     * when it resumes, so edits made meanwhile are kept.
+     */
+    private fun reprepare(select: suspend () -> (StudioState) -> StudioState) {
         _state.update {
             it.copy(
                 phase = StudioPhase.Preparing,
@@ -344,8 +351,8 @@ class StudioViewModel(
         }
         launchWork {
             try {
-                val next = select(_state.value)
-                _state.value = next.copy(phase = StudioPhase.Preparing)
+                val transition = select()
+                _state.update { transition(it).copy(phase = StudioPhase.Preparing) }
                 prepareAndShow()
             } catch (e: CancellationException) {
                 throw e

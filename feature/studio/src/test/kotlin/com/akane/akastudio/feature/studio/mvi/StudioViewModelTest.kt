@@ -294,6 +294,20 @@ class StudioViewModelTest {
     }
 
     @Test
+    fun an_edit_made_while_force_mode_decides_survives_the_reprepare() = runTest {
+        val h = harness()
+        ready(h)
+        h.deps.curation.onDecide = { h.vm.onIntent(StudioIntent.AdjustGrade(GradeField.CONTRAST, 0.5f)) }
+
+        h.vm.onIntent(StudioIntent.ForceMode(StoryMode.COLLAGE_3))
+        advanceUntilIdle()
+
+        assertEquals(StudioPhase.Ready, h.state.phase)
+        assertEquals(listOf("a", "b", "c"), h.state.selection.photoIds)
+        assertTrue("the edit made during decide is kept", h.state.scene!!.layers.all { it.grade.contrast == 0.5f })
+    }
+
+    @Test
     fun swap_slots_reorders_without_preparing_and_moves_the_anchor() = runTest {
         val h = harness()
         ready(h)
