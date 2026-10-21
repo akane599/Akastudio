@@ -82,6 +82,12 @@ class StudioViewModel(
     private var debounceJob: Job? = null
     private var startRequested = false
 
+    /** True while a system picker is open: auto-curation waits for its result (see [StudioIntent.PickerOpened]). */
+    private var pickerOpen = false
+
+    /** True when the open picker is "+ Add more" (opened while reading): its result only extends this batch. */
+    private var addingMore = false
+
     /** The single running unit of work (curation, preparation or export). */
     private var work: Job? = null
 
@@ -101,6 +107,8 @@ class StudioViewModel(
             is StudioIntent.ImportPhotos ->
                 if (intent.uris.isNotEmpty()) import(IngestionRequest.PickedMedia(intent.uris.toList()))
             is StudioIntent.ImportZip -> import(IngestionRequest.ZipArchive(intent.uri, intent.displayName))
+            StudioIntent.PickerOpened -> onPickerOpened()
+            StudioIntent.PickerClosed -> onPickerClosed()
             StudioIntent.StartCuration -> requestCuration()
             StudioIntent.CancelWork -> cancelWork()
             is StudioIntent.ForceMode -> forceMode(intent.mode)
@@ -152,8 +160,14 @@ class StudioViewModel(
                 effect(StudioEffect.ShowMessage(StudioMessage.Busy))
                 return
             }
-            // Curation already ran for this batch: the new import starts a new story.
-            StudioPhase.Ready -> resetToEmpty(error = null)
+            // Curation already ran for this batch: the new import starts a new story, unless it is an
+            // "+ Add more" result, which only ever extends the batch it was picked for.
+            StudioPhase.Ready -> if (addingMore) {
+                effect(StudioEffect.ShowMessage(StudioMessage.Busy))
+                return
+            } else {
+                resetToEmpty(error = null)
+            }
             StudioPhase.Empty, StudioPhase.Ingesting -> Unit
         }
         pendingImports.addLast(request)
@@ -207,6 +221,8 @@ class StudioViewModel(
     }
 
     private fun onIngestionIdle() {
+        // An open picker may still add photos to this batch; PickerClosed re-arms curation.
+        if (pickerOpen) return
         if (startRequested) {
             startRequested = false
             startCuration()
@@ -216,6 +232,22 @@ class StudioViewModel(
                 debounceJob = null
                 startCuration()
             }
+        }
+    }
+
+    private fun onPickerOpened() {
+        pickerOpen = true
+        addingMore = _state.value.phase == StudioPhase.Ingesting
+        debounceJob?.cancel()
+        debounceJob = null
+    }
+
+    /** Runs after the picker's import, if any: curation follows once ingestion is idle, as after any import. */
+    private fun onPickerClosed() {
+        pickerOpen = false
+        addingMore = false
+        if (_state.value.phase == StudioPhase.Ingesting && ingestJob?.isActive != true && debounceJob == null) {
+            onIngestionIdle()
         }
     }
 
