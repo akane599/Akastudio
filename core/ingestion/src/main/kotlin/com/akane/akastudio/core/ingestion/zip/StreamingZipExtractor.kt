@@ -109,7 +109,10 @@ private class ExtractionRun(
     /** The latest space estimate, reported when a write fails with ENOSPC. */
     private var lastSpaceNeeded = 0L
 
-    /** Bytes inflated across all entries, written or drained; the ratio guard numerator. */
+    /**
+     * Bytes inflated across all entries, written or drained: the ratio guard numerator and the counter that
+     * [ZipLimits.maxTotalBytes] caps. A charset retry's replay of already handled entries is not counted again.
+     */
     private var totalInflated = 0L
 
     /** Entries already fully handled; a charset retry skips this many without re-emitting. */
@@ -153,7 +156,7 @@ private class ExtractionRun(
                 } ?: break
                 passEntryIndex++
                 if (passEntryIndex <= entriesHandled) {
-                    drain(zip, countTowardRatio = false)
+                    drain(zip, countTowardLimits = false)
                     continue
                 }
                 handleEntry(zip, entry)
@@ -178,7 +181,7 @@ private class ExtractionRun(
 
     private suspend fun skip(zip: ZipInputStream, name: String, reason: SkipReason) {
         emit(ZipExtractionEvent.EntrySkipped(name, reason))
-        drain(zip, countTowardRatio = true)
+        drain(zip, countTowardLimits = true)
     }
 
     private suspend fun extractImage(zip: ZipInputStream, entry: ZipEntry, image: EntryClassification.Image) {
@@ -221,14 +224,7 @@ private class ExtractionRun(
             if (read < 0) return entryBytes
             entryBytes += read
             totalWritten += read
-            totalInflated += read
-            if (entryBytes > limits.maxEntryBytes) {
-                fail(IngestionError.LimitExceeded("entry larger than ${limits.maxEntryBytes} bytes"))
-            }
-            if (totalWritten > limits.maxTotalBytes) {
-                fail(IngestionError.LimitExceeded("archive larger than ${limits.maxTotalBytes} bytes"))
-            }
-            checkRatio()
+            accountInflated(entryBytes, read)
             currentCoroutineContext().ensureActive()
             out.write(buffer, 0, read)
             sinceSpaceCheck += read
@@ -241,18 +237,33 @@ private class ExtractionRun(
 
     /**
      * Reads a skipped entry to its end ourselves rather than letting `nextEntry` do it, so a bomb hidden in a
-     * skipped entry still hits the ratio guard and cancellation stays responsive.
+     * skipped entry still hits the per-entry, cumulative and ratio guards, and cancellation stays responsive.
+     * [countTowardLimits] is false only for a charset retry replaying entries the first pass already counted.
      */
-    private suspend fun drain(zip: ZipInputStream, countTowardRatio: Boolean) {
+    private suspend fun drain(zip: ZipInputStream, countTowardLimits: Boolean) {
+        var entryBytes = 0L
         while (true) {
             val read = zip.read(buffer)
             if (read < 0) return
-            if (countTowardRatio) {
-                totalInflated += read
-                checkRatio()
-            }
+            entryBytes += read
+            if (countTowardLimits) accountInflated(entryBytes, read)
             currentCoroutineContext().ensureActive()
         }
+    }
+
+    /**
+     * Charges [read] freshly inflated bytes of an entry now [entryBytes] long, whether written or drained, against
+     * the per-entry and cumulative inflated budgets and the ratio guard.
+     */
+    private fun accountInflated(entryBytes: Long, read: Int) {
+        totalInflated += read
+        if (entryBytes > limits.maxEntryBytes) {
+            fail(IngestionError.LimitExceeded("entry larger than ${limits.maxEntryBytes} bytes"))
+        }
+        if (totalInflated > limits.maxTotalBytes) {
+            fail(IngestionError.LimitExceeded("archive larger than ${limits.maxTotalBytes} bytes"))
+        }
+        checkRatio()
     }
 
     /** Compressed bytes are counted under the read-ahead buffer, so they never trail actual archive reads. */

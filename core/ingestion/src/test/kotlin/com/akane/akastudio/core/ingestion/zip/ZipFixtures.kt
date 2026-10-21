@@ -28,6 +28,16 @@ val plentyOfSpace: (File) -> Long = { Long.MAX_VALUE / 2 }
 
 fun randomBytes(size: Int, seed: Long = size.toLong()): ByteArray = ByteArray(size).also { Random(seed).nextBytes(it) }
 
+/**
+ * Random bytes over a four-letter alphabet: DEFLATE shrinks them only about 3-4:1, far below any ratio limit, so
+ * an archive of them can trip the inflated-byte caps without the ratio guard or the compressed-size cap firing.
+ */
+fun compressibleBytes(size: Int, seed: Long = size.toLong()): ByteArray {
+    val alphabet = "ACGT".toByteArray()
+    val random = Random(seed)
+    return ByteArray(size) { alphabet[random.nextInt(alphabet.size)] }
+}
+
 fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
 fun sha256(file: File): String = sha256(file.readBytes())
