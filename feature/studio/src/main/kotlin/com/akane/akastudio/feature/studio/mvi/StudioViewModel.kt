@@ -470,13 +470,19 @@ class StudioViewModel(
                     it.copy(
                         phase = StudioPhase.Ready,
                         export = it.export.copy(progress = null, sharing = false),
-                        error = deps.errors.map(e),
+                        error = exportError(e),
                     )
                 }
                 // Layout edits made while exporting are part of the story now.
                 stable = _state.value
             }
         }
+    }
+
+    /** An export failure the mapper has no specific variant for is an [StudioError.Export] carrying its cause. */
+    private fun exportError(e: Exception): StudioError = when (val mapped = deps.errors.map(e)) {
+        is StudioError.Unknown -> StudioError.Export(mapped.message)
+        else -> mapped
     }
 
     private suspend fun runExport(): ExportResult {

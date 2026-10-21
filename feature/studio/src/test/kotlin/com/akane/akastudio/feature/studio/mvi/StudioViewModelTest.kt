@@ -749,14 +749,14 @@ class StudioViewModelTest {
     }
 
     @Test
-    fun export_failure_returns_to_ready_with_the_mapped_error() = runTest {
+    fun export_failure_returns_to_ready_with_an_export_error() = runTest {
         val h = harness()
         ready(h)
         h.deps.exporter.failWith = IllegalStateException("disk full")
         h.vm.onIntent(StudioIntent.Export(share = true))
         advanceUntilIdle()
         assertEquals(StudioPhase.Ready, h.state.phase)
-        assertEquals(StudioError.Unknown("disk full"), h.state.error)
+        assertEquals(StudioError.Export("disk full"), h.state.error)
         assertNull(h.state.export.progress)
         assertTrue(h.effects.none { it is StudioEffect.ShareExport })
     }
