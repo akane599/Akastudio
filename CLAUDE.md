@@ -7,7 +7,7 @@ Android, developed on Ubuntu from the CLI.
 <!-- STACK:BEGIN (filled by /bootstrap) -->
 - Origin: new · Integration branch: main
 - Language: kotlin · UI: Compose · screenshot tests: compose-preview
-- JDK target 17 · Gradle 9.8.0 · AGP 9.4.1 · Kotlin 2.4.20 (built-in) · compileSdk 37 · minSdk 31
+- JDK target 17 · Gradle 9.8.2 · AGP 9.4.1 · Kotlin 2.4.21 (built-in) · compileSdk 37 · minSdk 31
 - Modules: :app, :core:ingestion, :core:vision-curator, :core:color-engine, :core:collage-composer, :core:export-pipeline, :feature:studio · Architecture: Clean Architecture + MVI · DI/DB/Net: none (StudioContainer, constructor injection) / none / none
 - App id: com.akane.akastudio · Launcher: .MainActivity
 - Baseline: full gate green at ba0f14a (all module unit tests + app/studio screenshot tests); lint 0 errors (PROGRESS.md)

@@ -10,6 +10,10 @@
 - Device tests (module `src/androidTest`): `ANDROID_SERIAL=emulator-5554 flock $HOME/.cache/akastudio-emulator-5554.lock bash .claude/kit/gradle-check.sh :<module>:connectedDebugAndroidTest --max-workers=2`.
 - Device: `./gradlew :app:installDebug -q && adb shell am start -n com.akane.akastudio/.MainActivity`.
 
+## CI (`.github/workflows/ci.yml`, GitHub Actions, JDK 21 Temurin)
+- Runs on every push to `main`, every PR, and manual dispatch. Job `check` runs the full gate plus `:app:lintDebug` with `--continue` and uploads `app-debug-apk` (reports only on failure). Job `release` runs `:app:assembleRelease :app:bundleRelease` (R8) and uploads the mapping.
+- Device suites (`connectedDebugAndroidTest`) are not in CI; run them locally on emulator-5554.
+
 ## Environment
 - `ANDROID_HOME=/home/akane/android-sdk`; do not create `local.properties`.
 - No `/dev/kvm`, so no local AVD. A shared redroid Android 15 emulator (`emulator-5554`, x86_64, SwiftShader GLES 3.2) is normally attached: run `adb devices` first. It also hosts another session's app (`com.akane.inspiration`); touch only `com.akane.akastudio` and its `.test` packages, always under the flock lock. GPU grading, ML models, MediaStore, codecs and Compose window/BACK behaviour are verified there by the androidTest suites (see patterns.md).

@@ -3,9 +3,9 @@
 
 | Item | Value | Source of truth |
 |---|---|---|
-| Gradle | 9.8.0 | `gradle/wrapper/gradle-wrapper.properties` |
+| Gradle | 9.8.2 | `gradle/wrapper/gradle-wrapper.properties` |
 | AGP | 9.4.1 (built-in Kotlin) | `gradle/libs.versions.toml` |
-| Kotlin | 2.4.20 + Compose compiler plugin | `gradle/libs.versions.toml` |
+| Kotlin | 2.4.21 + Compose compiler plugin | `gradle/libs.versions.toml` |
 | Compose BOM | 2026.09.00 (Material 3) | `gradle/libs.versions.toml` |
 | SDK | compileSdk/targetSdk 37, minSdk 31 | `app/build.gradle.kts` |
 | JVM target | 17 | module `build.gradle.kts` |
@@ -32,4 +32,4 @@ OpenGL ES 3 via `EglCore` on a dedicated GL thread; RGBA16F FBOs, 3D LUT texture
 - R8 keeps: MediaPipe framework + protobuf lite, LiteRT, Flogger (`allowshrinking`; inlining broke MediaPipe's caller lookup, so every model fell back in release), and `RoomDatabase` constructors.
 - The manifest strips transitive permissions with `tools:node="remove"`: INTERNET, ACCESS_NETWORK_STATE, WAKE_LOCK, RECEIVE_BOOT_COMPLETED, FOREGROUND_SERVICE and FOREGROUND_SERVICE_DATA_SYNC. It also removes the data-transport CCT backend meta-data, so MediaPipe telemetry is dropped. The datatransport library itself stays, because MediaPipe references it.
 - `check<Variant>NoInternetPermission` (`CheckNoInternetPermission` in `app/build.gradle.kts`) fails when the merged manifest declares INTERNET. It runs in `check`, and `assembleRelease`/`bundleRelease` depend on it.
-- The manifest removes `androidx.work.WorkManagerInitializer` (WorkManager arrives only transitively via LiteRT → play:ai-delivery → asset-delivery).
+- The manifest removes `androidx.work.WorkManagerInitializer` (WorkManager arrives only transitively via LiteRT → play:ai-delivery → asset-delivery). Its `InitializationProvider` entry carries `tools:ignore="MissingClass"`, because `:app`'s lint classpath doesn't see the transitive class.
