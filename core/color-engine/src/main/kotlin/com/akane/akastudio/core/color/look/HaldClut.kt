@@ -10,7 +10,7 @@ import kotlin.math.roundToInt
  */
 object HaldClut {
     private const val MIN_LEVEL = 2
-    private const val MAX_LEVEL = 16
+    private const val MAX_LEVEL = 8
 
     /** Resamples [lut] (tetrahedral) onto a level-[level] cube and packs it as opaque ARGB. */
     fun encode(lut: Lut3D, level: Int = 8): ImagePixels {
