@@ -8,9 +8,11 @@ import com.akane.akastudio.core.curator.api.FaceObservation
 import com.akane.akastudio.core.curator.api.PhotoAnalysis
 import com.akane.akastudio.core.ingestion.model.PhotoCandidate
 import com.akane.akastudio.feature.studio.domain.TestData
+import com.akane.akastudio.feature.studio.domain.studioTestDispatchers
 import java.io.IOException
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -61,6 +63,12 @@ class DefaultPhotoPreparerTest {
         var registerContext: CoroutineContext? = null
         val failUnregister = mutableSetOf<String>()
 
+        /** When set, [decodeFull] decodes on this context, like the real decoder's hop to its IO dispatcher. */
+        var decodeContext: CoroutineContext? = null
+
+        /** Runs on [decodeContext] once the image exists, as the blocking decode returns. */
+        var afterDecode: (() -> Unit)? = null
+
         /** How long [register] suspends before recording the registration. */
         var registerDelayMs = 0L
         var inFlight = 0
@@ -75,7 +83,13 @@ class DefaultPhotoPreparerTest {
                 delay(10)
                 decodeEdges += candidate.id to maxLongEdge
                 if (candidate.id in failDecode) throw IOException("truncated ${candidate.id}")
-                return FakeImage(candidate.id, candidate.widthPx, candidate.heightPx, events).also { images += it }
+                val decode = {
+                    FakeImage(candidate.id, candidate.widthPx, candidate.heightPx, events)
+                        .also { images += it }
+                        .also { afterDecode?.invoke() }
+                }
+                val context = decodeContext ?: return decode()
+                return withContext(context) { decode() }
             } finally {
                 inFlight--
             }
@@ -175,8 +189,9 @@ class DefaultPhotoPreparerTest {
     }
 
     @Test
-    fun releaseFreesEveryImageWhenAnUnregisterFailsAndThenRethrows() = runTest {
+    fun releaseKeepsAnImageWhoseUnregisterFailedAndRetriesItOnTheNextRelease() = runTest {
         preparer.prepare(listOf(a, b), analyses, hero = false)
+        val (imageA, imageB) = backend.images
         backend.failUnregister += "a"
         try {
             preparer.release(listOf("a", "bb"))
@@ -184,8 +199,45 @@ class DefaultPhotoPreparerTest {
         } catch (e: IllegalStateException) {
             assertEquals("unregister a failed", e.message)
         }
-        assertEquals(listOf("a", "bb"), backend.unregistered)
-        assertTrue(backend.images.all { it.freed == 1 })
+        assertEquals("the renderer may still hold a's pixels, so they must not be freed", 0, imageA.freed)
+        assertEquals(1, imageB.freed)
+
+        // Later releases retry "a" though their callers no longer name it; a retry that fails again stays quiet.
+        preparer.release(listOf("unknown"))
+        assertEquals(0, imageA.freed)
+        backend.failUnregister.clear()
+        preparer.release(listOf("unknown"))
+
+        assertEquals(1, imageA.freed)
+        assertEquals(
+            listOf("unregister:a", "unregister:bb", "free:bb", "unregister:a", "unregister:a", "free:a"),
+            backend.events,
+        )
+        preparer.release(listOf("a"))
+        assertEquals(1, imageA.freed)
+        assertEquals(listOf("a", "bb", "a", "a"), backend.unregistered)
+    }
+
+    @Test
+    fun preparingAnIdWhoseUnregisterFailedReplacesItAndStopsTheRetry() = runTest {
+        preparer.prepare(listOf(a), analyses, hero = false)
+        backend.failUnregister += "a"
+        try {
+            preparer.release(listOf("a"))
+            fail("expected IllegalStateException")
+        } catch (e: IllegalStateException) {
+            assertEquals("unregister a failed", e.message)
+        }
+        backend.failUnregister.clear()
+
+        preparer.prepare(listOf(a), analyses, hero = false)
+        val (old, new) = backend.images
+        assertEquals("the new registration replaced the old pixels", 1, old.freed)
+
+        preparer.release(listOf("unknown"))
+        assertEquals("the retry must not unregister the new registration", listOf("a"), backend.unregistered)
+        assertSame(new, backend.registry["a"])
+        assertEquals(0, new.freed)
     }
 
     @Test
@@ -260,6 +312,25 @@ class DefaultPhotoPreparerTest {
 
         assertEquals(listOf("unregister:a", "free:a"), backend.events)
         assertTrue(backend.registry.isEmpty())
+    }
+
+    @Test
+    fun cancellingAsTheDecodeReturnsAcrossADispatcherSwitchFreesTheDecode() = runTest {
+        val dispatchers = studioTestDispatchers(testScheduler)
+        backend.decodeContext = dispatchers.io
+        lateinit var job: Job
+        // The user discards while the blocking decode finishes on the IO thread, so withContext would drop its result.
+        backend.afterDecode = { job.cancel() }
+        job = launch(dispatchers.main) { preparer.prepare(listOf(a), analyses, hero = false) }
+        advanceUntilIdle()
+
+        assertTrue(job.isCancelled)
+        val image = backend.images.single()
+        assertEquals("a decode the caller never used must be freed", 1, image.freed)
+        assertTrue("nothing is registered for a cancelled decode", backend.registry.isEmpty())
+        preparer.release(listOf("a"))
+        assertTrue(backend.unregistered.isEmpty())
+        assertEquals(1, image.freed)
     }
 
     @Test
