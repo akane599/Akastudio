@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dropzone: welcome -->
+    <string name="dropzone_tagline">Ham yığından editoryal hikayeye.</string>
+    <string name="dropzone_select_photos">Fotoğrafları Seç</string>
+    <string name="dropzone_import_zip">.ZIP Arşivi Yükle</string>
+    <string name="dropzone_import_zip_subtitle">Güvenle akışla açılır; gereksiz dosyalar atlanır</string>
+
+    <!-- Dropzone: pipeline header and actions -->
+    <string name="dropzone_title_reading">Fotoğraflarınız okunuyor</string>
+    <string name="dropzone_title_curating">Seçki hazırlanıyor</string>
+    <string name="dropzone_title_decided">Hikaye seçildi</string>
+    <string name="dropzone_add_more">+ Daha fazla ekle</string>
+    <string name="dropzone_add_more_photos">Fotoğraflar</string>
+    <string name="dropzone_add_more_zip">.ZIP arşivi</string>
+    <string name="dropzone_curate_now">Şimdi seç</string>
+    <string name="dropzone_progress_description">İşlem ilerlemesi yüzde %1$d</string>
+
+    <!-- Dropzone: telemetry steps -->
+    <plurals name="dropzone_photos_read">
+        <item quantity="one">%1$d fotoğraf okundu</item>
+        <item quantity="other">%1$d fotoğraf okundu</item>
+    </plurals>
+    <plurals name="dropzone_skipped">
+        <item quantity="one">%1$d atlandı</item>
+        <item quantity="other">%1$d atlandı</item>
+    </plurals>
+    <string name="dropzone_step_cluster">Seriler kümeleniyor</string>
+    <plurals name="dropzone_bursts_clustered">
+        <item quantity="one">%1$d seri kümelendi</item>
+        <item quantity="other">%1$d seri kümelendi</item>
+    </plurals>
+    <string name="dropzone_analyzed">%2$d fotoğraftan %1$d tanesi incelendi</string>
+    <string name="dropzone_step_focus">Göz / odak kontrolü</string>
+    <string name="dropzone_step_focus_done">Göz / odak kontrolü tamamlandı</string>
+    <plurals name="dropzone_rejected">
+        <item quantity="one">%1$d elendi</item>
+        <item quantity="other">%1$d elendi</item>
+    </plurals>
+    <string name="dropzone_step_synergy">Sinerji matrisi</string>
+    <string name="dropzone_synergy_collage">Sinerji matrisi: %1$d fotoğraflı editoryal kolaj (%2$s uyum) seçildi</string>
+    <string name="dropzone_synergy_hero">Sinerji matrisi: tek kare kahraman fotoğraf (%1$s skor) seçildi</string>
+    <string name="dropzone_step_pending">Bekliyor</string>
+    <string name="dropzone_step_active">Sürüyor</string>
+    <string name="dropzone_step_done">Tamamlandı</string>
+
+    <!-- Dropzone: errors that have no common string -->
+    <string name="dropzone_error_decode">“%1$s” tam çözünürlükte açılamadı. Yeniden deneyin ya da başka fotoğraflar seçin.</string>
+    <string name="dropzone_error_export">Dışa aktarma başarısız oldu: %1$s</string>
+    <string name="dropzone_error_unknown">Bir şeyler ters gitti. Yeniden deneyin.</string>
+</resources>

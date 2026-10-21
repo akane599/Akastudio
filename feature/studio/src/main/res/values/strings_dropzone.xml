@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dropzone: welcome -->
+    <string name="dropzone_tagline">From a raw pile to an editorial story.</string>
+    <string name="dropzone_select_photos">Select Photos</string>
+    <string name="dropzone_select_photos_formats" translatable="false">JPEG · HEIC · PNG · WebP · DNG</string>
+    <string name="dropzone_import_zip">Import .ZIP Archive</string>
+    <string name="dropzone_import_zip_subtitle">Streams safely; junk files are skipped</string>
+
+    <!-- Dropzone: pipeline header and actions -->
+    <string name="dropzone_title_reading">Reading your photos</string>
+    <string name="dropzone_title_curating">Curating</string>
+    <string name="dropzone_title_decided">Story chosen</string>
+    <string name="dropzone_add_more">+ Add more</string>
+    <string name="dropzone_add_more_photos">Photos</string>
+    <string name="dropzone_add_more_zip">.ZIP archive</string>
+    <string name="dropzone_curate_now">Curate now</string>
+    <!-- %1$d is the whole percentage of the pipeline that is complete -->
+    <string name="dropzone_progress_description">Pipeline progress %1$d percent</string>
+
+    <!-- Dropzone: telemetry steps -->
+    <string name="dropzone_detail_separator" translatable="false">" · "</string>
+    <plurals name="dropzone_photos_read">
+        <item quantity="one">%1$d photo read</item>
+        <item quantity="other">%1$d photos read</item>
+    </plurals>
+    <plurals name="dropzone_skipped">
+        <item quantity="one">%1$d skipped</item>
+        <item quantity="other">%1$d skipped</item>
+    </plurals>
+    <string name="dropzone_step_cluster">Clustering bursts</string>
+    <plurals name="dropzone_bursts_clustered">
+        <item quantity="one">%1$d burst clustered</item>
+        <item quantity="other">%1$d bursts clustered</item>
+    </plurals>
+    <!-- %1$d analyzed so far, %2$d to analyze -->
+    <string name="dropzone_analyzed">%1$d of %2$d analyzed</string>
+    <string name="dropzone_step_focus">Eye / focus check</string>
+    <string name="dropzone_step_focus_done">Eye / focus check complete</string>
+    <plurals name="dropzone_rejected">
+        <item quantity="one">%1$d rejected</item>
+        <item quantity="other">%1$d rejected</item>
+    </plurals>
+    <string name="dropzone_step_synergy">Synergy matrix</string>
+    <!-- %1$d photos in the collage, %2$s formatted percentage (note_percent) -->
+    <string name="dropzone_synergy_collage">Synergy matrix: %1$d-photo editorial collage (%2$s harmony) selected</string>
+    <!-- %1$s formatted percentage (note_percent) -->
+    <string name="dropzone_synergy_hero">Synergy matrix: single hero frame (%1$s score) selected</string>
+    <string name="dropzone_step_pending">Pending</string>
+    <string name="dropzone_step_active">In progress</string>
+    <string name="dropzone_step_done">Done</string>
+
+    <!-- Dropzone: errors that have no common string -->
+    <!-- %1$s is the photo's file name -->
+    <string name="dropzone_error_decode">“%1$s” couldn\'t be opened at full resolution. Try again or pick other photos.</string>
+    <!-- %1$s is a short cause -->
+    <string name="dropzone_error_export">The export failed: %1$s</string>
+    <string name="dropzone_error_unknown">Something went wrong. Try again.</string>
+</resources>
