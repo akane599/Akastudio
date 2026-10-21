@@ -15,11 +15,14 @@ import kotlin.math.abs
  * The stream is flushed but not closed.
  */
 object PngEncoder {
-    /** Encodes 8-bit RGBA (colour type 6) when [alpha], otherwise 8-bit RGB (colour type 2). */
+    /**
+     * Encodes 8-bit RGBA (colour type 6) when [alpha], otherwise 8-bit RGB (colour type 2). PNG alpha is straight, so
+     * with [alpha] the rows must be straight colour; without it the alpha byte is dropped and RGB is written as given.
+     */
     fun write8(out: OutputStream, width: Int, height: Int, alpha: Boolean, rows: Rgba8Rows, exif: ByteArray?, level: Int = 6) =
         write8(out, width, height, alpha, rows, exif, level, forcedFilter = null)
 
-    /** Encodes 16-bit big-endian RGBA (colour type 6). */
+    /** Encodes 16-bit big-endian RGBA (colour type 6); PNG alpha is straight, so the rows must be straight colour. */
     fun write16(out: OutputStream, width: Int, height: Int, rows: Rgba16Rows, exif: ByteArray?, level: Int = 6) =
         write16(out, width, height, rows, exif, level, forcedFilter = null)
 

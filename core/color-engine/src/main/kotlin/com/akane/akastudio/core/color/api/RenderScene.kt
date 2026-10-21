@@ -38,7 +38,12 @@ data class RenderScene(
     val overlays: List<TextOverlay> = emptyList(),
 )
 
-/** Linear-light (sRGB primaries, may exceed 1.0) RGBA half-float pixels, row-major, top row first. */
+/**
+ * Linear-light (sRGB primaries, may exceed 1.0) RGBA half-float pixels, row-major, top row first.
+ *
+ * Colour is premultiplied by alpha (RGB = straight colour x A), as the renderer composites and reads it back.
+ * Consumers writing a straight-alpha format must unpremultiply in linear light; dropping alpha composites over black.
+ */
 class HalfFloatImage(val width: Int, val height: Int, val rgba: ShortArray) {
     init { require(rgba.size == width * height * 4) }
 }
