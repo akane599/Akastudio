@@ -94,16 +94,16 @@ object DecisionEngine {
     }
 
     /**
-     * Re-decides for the user's mode switch, keeping [previous]'s clusters, rejections and champions.
+     * Re-decides for the user's mode switch, keeping [previous]'s clusters, rejections, champions and alternatives.
+     * A switch never re-scores: the offered options and their scores stay those of the original curation.
      *
      * - [forcedMode] null: a plain [decide].
-     * - HERO: the top champion.
-     * - COLLAGE_m: the best subset of size m over all champions (top [DecisionConfig.subsetPoolSize]) with no quality
-     *   gate. With fewer than m champions, all champions are filled up with the best non-champion member of distinct
-     *   clusters, then with the remaining cluster members by quality. Rejected photos are never used. With fewer than
-     *   m non-rejected photos, the largest feasible mode is chosen instead.
-     *
-     * Alternatives are built the same way for HERO and every collage size up to the non-rejected photo count.
+     * - With fewer than m non-rejected photos, the largest feasible mode is used instead of [forcedMode].
+     * - A mode [previous] already offers: exactly that alternative.
+     * - Otherwise HERO is the top champion, and COLLAGE_m is the best subset of size m over all champions (top
+     *   [DecisionConfig.subsetPoolSize]) with no quality gate. With fewer than m champions, all champions are filled up
+     *   with the best non-champion member of distinct clusters, then with the remaining cluster members by quality.
+     *   Rejected photos are never used. That option is added to the alternatives for its mode alone.
      *
      * @throws IllegalArgumentException when [analyses] has duplicate ids or lacks an id referenced by [previous].
      * @throws IllegalStateException with message "all candidates rejected" when [previous] has no clusters.
@@ -125,15 +125,16 @@ object DecisionEngine {
         val clusters = previous.clusters.map { cluster -> cluster.memberIds.map(::lookup) }
         val champions = previous.champions.map(::lookup)
         val available = clusters.sumOf { it.size }
-        val hero = heroOption(champions)
-
-        val alternatives = linkedMapOf(StoryMode.HERO to hero)
-        for (mode in COLLAGE_MODES) {
-            if (mode.photoCount > available) break
-            alternatives[mode] = forcedCollage(mode, clusters, champions, captureTimes, config)
-        }
         val feasible = StoryMode.entries.last { it.photoCount <= minOf(forcedMode.photoCount, available) }
-        return previous.copy(chosen = alternatives.getValue(feasible), alternatives = alternatives)
+        previous.alternatives[feasible]?.let { return previous.copy(chosen = it) }
+
+        val chosen = if (feasible == StoryMode.HERO) {
+            heroOption(champions)
+        } else {
+            forcedCollage(feasible, clusters, champions, captureTimes, config)
+        }
+        val alternatives = LinkedHashMap(previous.alternatives).apply { put(feasible, chosen) }
+        return previous.copy(chosen = chosen, alternatives = alternatives)
     }
 
     /**

@@ -218,6 +218,7 @@ class DefaultCurationEngineTest {
         assertEquals(CurationResults.suggestedLook(hero.analyses.getValue(hero.chosen.photoIds[0])), hero.suggestedLook)
         assertEquals(collage.clusters, hero.clusters)
         assertEquals(collage.analyses, hero.analyses)
+        assertEquals(collage.alternatives, hero.alternatives)   // SQ-67: a switch never re-scores the options
 
         val pair = engine.decide(hero, StoryMode.COLLAGE_2)
         assertEquals(StoryMode.COLLAGE_2, pair.chosen.mode)

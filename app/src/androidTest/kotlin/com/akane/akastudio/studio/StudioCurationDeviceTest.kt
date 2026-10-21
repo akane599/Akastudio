@@ -1,5 +1,7 @@
 package com.akane.akastudio.studio
 
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotSelected
@@ -107,6 +109,33 @@ class StudioCurationDeviceTest {
         assertAiBadge(ai, present = true)
         assertAiBadge(forced, present = false)
         assertEquals(ai, studio.state.selection.mode)
+    }
+
+    /** SQ-67: forcing a mode changes the composition only; the drawer keeps the original options and scores. */
+    @Test
+    fun forcingAModeKeepsTheDrawersOptionsAndScores() {
+        val ai = studio.curateStory()
+        val original = checkNotNull(studio.state.curation).alternatives
+        val forced = checkNotNull(original.keys.firstOrNull { it != ai }) { "curation offered only $ai" }
+
+        openDrawer(studio.aiPickLabel(ai))
+        val before = drawerRows()
+        assertEquals(original.keys.map { studio.modeName(it) }, before.map { it.substringBefore(", ") })
+        modeRow(forced).performClick()
+        studio.awaitReady()
+
+        assertEquals(forced, studio.state.selection.mode)
+        assertEquals(original, checkNotNull(studio.state.curation).alternatives)
+        openDrawer(studio.userPickLabel(forced))
+        assertEquals(before, drawerRows())
+    }
+
+    /** The drawer's mode rows, top to bottom, as their "mode, score" descriptions. */
+    private fun drawerRows(): List<String> {
+        val names = StoryMode.entries.map { "${studio.modeName(it)}, " }
+        return compose.onAllNodes(isSelectable()).fetchSemanticsNodes()
+            .mapNotNull { it.config.getOrNull(SemanticsProperties.ContentDescription)?.firstOrNull() }
+            .filter { description -> names.any { description.startsWith(it) } }
     }
 
     private fun openDrawer(chipLabel: String) {
