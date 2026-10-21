@@ -108,8 +108,8 @@ class ArchiveRejectionTest {
         val kept = completed.candidates.mapNotNull { (it.source as? PhotoSource.ExtractedFile)?.path }.map(::File)
         kept.forEach { assertTrue("good.zip photo kept on disk: $it", it.isFile) }
         assertEquals(
-            "only good.zip's files remain under the work dir",
-            listOf("a.jpg", "b.jpg", "corrupt.jpg"),
+            "only good.zip's accepted photos remain under the work dir (the undecodable one is deleted)",
+            listOf("a.jpg", "b.jpg"),
             filesUnder(session.workDir).map { it.name.substringAfterLast('_') }.sorted(),
         )
         session.close()

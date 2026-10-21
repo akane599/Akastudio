@@ -18,6 +18,7 @@ import com.akane.akastudio.core.ingestion.picker.PickedItem
 import java.io.File
 import java.io.InputStream
 import java.nio.file.Files
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -37,6 +38,10 @@ import kotlinx.coroutines.sync.Semaphore
  * Turns picker selections and zip archives into one cold [IngestionEvent] stream. Archives are extracted one at a
  * time and published only once complete; metadata parsing runs concurrently (at most [parseParallelism] at once)
  * and overlaps the extraction of later archives.
+ *
+ * Duplicates are detected across every [ingest] call of the session, so re-importing a photo or an archive adds
+ * nothing. An extracted file that is skipped (duplicate, undecodable, unreadable) is deleted at once rather than
+ * waiting for [close].
  */
 class DefaultIngestionSession(
     override val workDir: File,
@@ -50,6 +55,12 @@ class DefaultIngestionSession(
 ) : IngestionSession {
 
     private val closed = AtomicBoolean(false)
+
+    /**
+     * Source identities (picker URI, or archive URI + entry name) claimed by any run of this session. A run that
+     * does not complete (cancelled or failed) releases its claims, so retrying the same import parses it again.
+     */
+    private val seenIdentities: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     init {
         require(parseParallelism >= 1) { "parseParallelism must be >= 1, was $parseParallelism" }
@@ -74,23 +85,28 @@ class DefaultIngestionSession(
         private val telemetry = TelemetryAccumulator()
         private val parseSlots = Semaphore(parseParallelism)
 
-        /** Confined to the producer coroutine, which handles requests sequentially. */
-        private val seenIdentities = HashSet<String>()
+        /** This run's claims in [seenIdentities]. Confined to the producer coroutine, which enqueues sequentially. */
+        private val claimed = ArrayList<String>()
 
         /** Mutated only inside [TelemetryAccumulator.record], i.e. under its lock. */
         private val accepted = ArrayList<PhotoCandidate>()
 
         suspend fun execute(requests: List<IngestionRequest>) {
-            coroutineScope {
-                for (request in requests) {
-                    when (request) {
-                        is IngestionRequest.PickedMedia -> ingestPicked(request.uris)
-                        is IngestionRequest.ZipArchive -> ingestZip(request)
+            try {
+                coroutineScope {
+                    for (request in requests) {
+                        when (request) {
+                            is IngestionRequest.PickedMedia -> ingestPicked(request.uris)
+                            is IngestionRequest.ZipArchive -> ingestZip(request)
+                        }
                     }
                 }
-            }
-            telemetry.record({ it }) { snapshot ->
-                out.send(IngestionEvent.Completed(accepted.sortedWith(COMPLETION_ORDER), snapshot))
+                telemetry.record({ it }) { snapshot ->
+                    out.send(IngestionEvent.Completed(accepted.sortedWith(COMPLETION_ORDER), snapshot))
+                }
+            } catch (failure: Throwable) {
+                seenIdentities.removeAll(claimed.toSet())
+                throw failure
             }
         }
 
@@ -154,9 +170,11 @@ class DefaultIngestionSession(
         /** Duplicates are rejected before parsing; otherwise waits for a parse slot (backpressure on extraction). */
         private suspend fun CoroutineScope.enqueueParse(source: PhotoSource, identity: String) {
             if (!seenIdentities.add(identity)) {
+                discard(source)
                 skip(source.displayName, SkipReason.DUPLICATE)
                 return
             }
+            claimed += identity
             parseSlots.acquire()
             launch {
                 try {
@@ -173,9 +191,13 @@ class DefaultIngestionSession(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                discard(source)
                 return parseSkipped(source.displayName, SkipReason.UNREADABLE, e)
             }
-            if (parsed == null) return parseSkipped(source.displayName, SkipReason.UNDECODABLE)
+            if (parsed == null) {
+                discard(source)
+                return parseSkipped(source.displayName, SkipReason.UNDECODABLE)
+            }
 
             val candidate = PhotoCandidate(
                 id = stableCandidateId(identity),
@@ -207,6 +229,11 @@ class DefaultIngestionSession(
                 }
             }
             return parser.parse(source)
+        }
+
+        /** A skipped extracted file is never read again, so it leaves the session folder now rather than at close. */
+        private fun discard(source: PhotoSource) {
+            if (source is PhotoSource.ExtractedFile) File(source.path).delete()
         }
 
         private suspend fun emitProgress(change: (IngestionTelemetry) -> IngestionTelemetry) =
