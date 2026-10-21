@@ -659,6 +659,46 @@ class StudioViewModelTest {
         assertTrue(h.effects.none { it is StudioEffect.ShareExport })
     }
 
+    @Test
+    fun a_template_chosen_during_a_failed_export_survives_a_later_failed_reprepare() = runTest {
+        val h = harness()
+        ready(h)
+        h.deps.exporter.failWith = IllegalStateException("disk full")
+        h.vm.onIntent(StudioIntent.Export(share = false))
+        runCurrent()
+        h.vm.onIntent(StudioIntent.SelectTemplate(StoryTemplate.DUO_FLOATING_GALLERY))
+        advanceUntilIdle()
+        assertEquals(StudioPhase.Ready, h.state.phase)
+        h.vm.onIntent(StudioIntent.DismissError)
+
+        h.deps.preparer.failWith = IllegalStateException("decoder died")
+        h.vm.onIntent(StudioIntent.ForceMode(StoryMode.COLLAGE_3))
+        advanceUntilIdle()
+
+        assertEquals(StudioPhase.Ready, h.state.phase)
+        assertEquals(listOf("a", "b"), h.state.selection.photoIds)
+        assertEquals(StoryTemplate.DUO_FLOATING_GALLERY, h.state.template)
+    }
+
+    @Test
+    fun a_template_chosen_during_a_cancelled_export_survives_a_later_failed_reprepare() = runTest {
+        val h = harness()
+        ready(h)
+        h.vm.onIntent(StudioIntent.Export(share = false))
+        runCurrent()
+        h.vm.onIntent(StudioIntent.SelectTemplate(StoryTemplate.DUO_FLOATING_GALLERY))
+        h.vm.onIntent(StudioIntent.CancelWork)
+        advanceUntilIdle()
+
+        h.deps.preparer.failWith = IllegalStateException("decoder died")
+        h.vm.onIntent(StudioIntent.ForceMode(StoryMode.COLLAGE_3))
+        advanceUntilIdle()
+
+        assertEquals(StudioPhase.Ready, h.state.phase)
+        assertEquals(listOf("a", "b"), h.state.selection.photoIds)
+        assertEquals(StoryTemplate.DUO_FLOATING_GALLERY, h.state.template)
+    }
+
     // endregion
 
     // region lifecycle

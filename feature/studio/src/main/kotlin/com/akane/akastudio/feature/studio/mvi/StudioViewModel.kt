@@ -441,6 +441,8 @@ class StudioViewModel(
                         error = deps.errors.map(e),
                     )
                 }
+                // Layout edits made while exporting are part of the story now.
+                stable = _state.value
             }
         }
     }
@@ -515,6 +517,7 @@ class StudioViewModel(
                 _state.update {
                     it.copy(phase = StudioPhase.Ready, export = it.export.copy(progress = null, sharing = false))
                 }
+                stable = _state.value
             }
         }
     }
