@@ -11,6 +11,7 @@ import com.akane.akastudio.feature.studio.domain.TestData
 import com.akane.akastudio.feature.studio.domain.studioTestDispatchers
 import java.io.IOException
 import kotlin.coroutines.CoroutineContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -69,6 +70,15 @@ class DefaultPhotoPreparerTest {
         /** Runs on [decodeContext] once the image exists, as the blocking decode returns. */
         var afterDecode: (() -> Unit)? = null
 
+        /** Candidates whose first decode attempt runs out of memory; the half-size retry then succeeds. */
+        val oomOnFirstAttempt = mutableSetOf<String>()
+
+        /** Runs as a first attempt runs out of memory, before the retry checks the caller. */
+        var onOutOfMemory: (() -> Unit)? = null
+
+        /** Every decode attempt, the out-of-memory retry included. */
+        val decodeAttempts = mutableListOf<String>()
+
         /** How long [register] suspends before recording the registration. */
         var registerDelayMs = 0L
         var inFlight = 0
@@ -76,11 +86,22 @@ class DefaultPhotoPreparerTest {
 
         override suspend fun maxTextureSize(): Int = maxTexture
 
-        override suspend fun decodeFull(candidate: PhotoCandidate, maxLongEdge: Int): FullResolutionImage {
+        override suspend fun decodeFull(
+            candidate: PhotoCandidate,
+            maxLongEdge: Int,
+            callerCancelled: () -> Boolean,
+        ): FullResolutionImage {
             inFlight++
             maxInFlight = maxOf(maxInFlight, inFlight)
             try {
                 delay(10)
+                decodeAttempts += candidate.id
+                if (candidate.id in oomOnFirstAttempt) {
+                    // Like FullResolutionDecoder: the retry is skipped once the caller is cancelled.
+                    onOutOfMemory?.invoke()
+                    if (callerCancelled()) throw CancellationException("${candidate.id}: cancelled before the retry")
+                    decodeAttempts += candidate.id
+                }
                 decodeEdges += candidate.id to maxLongEdge
                 if (candidate.id in failDecode) throw IOException("truncated ${candidate.id}")
                 val decode = {
@@ -331,6 +352,30 @@ class DefaultPhotoPreparerTest {
         preparer.release(listOf("a"))
         assertTrue(backend.unregistered.isEmpty())
         assertEquals(1, image.freed)
+    }
+
+    @Test
+    fun anOutOfMemoryDecodeIsRetriedForAnActiveCaller() = runTest {
+        backend.oomOnFirstAttempt += "a"
+        val photo = preparer.prepare(listOf(a), analyses, hero = false).single()
+
+        assertEquals("a", photo.id)
+        assertEquals(listOf("a", "a"), backend.decodeAttempts)
+        assertSame(backend.images.single(), backend.registry["a"])
+    }
+
+    @Test
+    fun aCancelledCallerSkipsTheOutOfMemoryRetryThoughTheDecodeIsNonCancellable() = runTest {
+        backend.oomOnFirstAttempt += "a"
+        lateinit var job: Job
+        backend.onOutOfMemory = { job.cancel() }
+        job = launch { preparer.prepare(listOf(a), analyses, hero = false) }
+        advanceUntilIdle()
+
+        assertTrue(job.isCancelled)
+        assertEquals("no second decode once memory ran short after a cancel", listOf("a"), backend.decodeAttempts)
+        assertTrue(backend.images.isEmpty())
+        assertTrue(backend.registry.isEmpty())
     }
 
     @Test

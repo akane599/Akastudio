@@ -1,5 +1,6 @@
 package com.akane.akastudio.feature.studio.di
 
+import android.util.Log
 import com.akane.akastudio.core.color.api.ImagePixels
 import com.akane.akastudio.core.composer.api.ComposerPhoto
 import com.akane.akastudio.core.composer.horizon.HorizonDetector
@@ -10,6 +11,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -35,8 +37,16 @@ internal interface PreparerBackend {
     /** GL_MAX_TEXTURE_SIZE of the renderer's context. */
     suspend fun maxTextureSize(): Int
 
-    /** Decodes [candidate] upright with its long edge at most [maxLongEdge]; throws when it cannot. */
-    suspend fun decodeFull(candidate: PhotoCandidate, maxLongEdge: Int): FullResolutionImage
+    /**
+     * Decodes [candidate] upright with its long edge at most [maxLongEdge]; throws when it cannot. Runs under
+     * NonCancellable, so [callerCancelled] tells whether the caller has since been cancelled, which skips work such
+     * as a retry after running out of memory.
+     */
+    suspend fun decodeFull(
+        candidate: PhotoCandidate,
+        maxLongEdge: Int,
+        callerCancelled: () -> Boolean,
+    ): FullResolutionImage
 
     /** Registers [image] with the renderer under [key], replacing an earlier registration of that key. */
     suspend fun register(key: String, image: FullResolutionImage)
@@ -97,10 +107,12 @@ internal class DefaultPhotoPreparer(
                 backend.unregister(id)
             } catch (t: Throwable) {
                 // The renderer may still hold the pixels, so they stay ours to retry. A retry nobody asked for here
-                // was already reported when it first failed.
+                // was already reported to its caller when it first failed, so it is only logged.
                 unregisterFailed += id
                 if (id in requested) {
                     if (failure == null) failure = t else failure.addSuppressed(t)
+                } else {
+                    Log.w(TAG, "Retried unregister of '$id' failed again; its pixels stay held", t)
                 }
                 continue
             }
@@ -157,13 +169,17 @@ internal class DefaultPhotoPreparer(
      * Decodes [candidate] so that the result always has an owner. The decoder hops to its IO dispatcher, and a
      * `withContext` whose caller was cancelled meanwhile discards the finished decode, which nobody could then free.
      * So the decode runs to completion even after a cancel (it blocks on the IO thread either way), and a decode the
-     * cancelled caller will not register is freed here.
+     * cancelled caller will not register is freed here. The backend still sees the caller's cancellation, so it can
+     * skip a retry.
      */
     private suspend fun decodeOwned(candidate: PhotoCandidate, edge: Int): FullResolutionImage {
-        currentCoroutineContext().ensureActive()
+        val caller = currentCoroutineContext()
+        caller.ensureActive()
         var decoded: FullResolutionImage? = null
         try {
-            val image = withContext(NonCancellable) { backend.decodeFull(candidate, edge).also { decoded = it } }
+            val image = withContext(NonCancellable) {
+                backend.decodeFull(candidate, edge, callerCancelled = { !caller.isActive }).also { decoded = it }
+            }
             currentCoroutineContext().ensureActive()
             return image
         } catch (e: CancellationException) {
@@ -188,6 +204,8 @@ internal class DefaultPhotoPreparer(
     }
 
     internal companion object {
+        private const val TAG = "PhotoPreparer"
+
         /** Long-edge cap for a single hero photo. */
         const val HERO_EDGE_PX = 4096
 

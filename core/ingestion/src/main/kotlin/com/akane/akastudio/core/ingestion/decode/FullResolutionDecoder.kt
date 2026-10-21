@@ -15,6 +15,7 @@ import com.akane.akastudio.core.ingestion.model.PhotoCandidate
 import com.akane.akastudio.core.ingestion.model.PhotoSource
 import java.io.File
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -50,19 +51,28 @@ class FullResolutionDecoder(
     /**
      * Upright RGBA_F16 bitmap in ColorSpace LINEAR_EXTENDED_SRGB, long edge <= [maxLongEdge] (never upscaled).
      *
-     * On [OutOfMemoryError] the decode is retried once at half of [maxLongEdge].
+     * On [OutOfMemoryError] the decode is retried once at half of [maxLongEdge], unless this coroutine or the caller
+     * ([callerCancelled], for a caller that runs the decode under NonCancellable) was cancelled meanwhile.
      *
      * @throws IngestionException with [IngestionError.Io] when the source cannot be read or decoded, or when the
      *   retry also runs out of memory.
      * @throws IllegalArgumentException when [maxLongEdge] is not positive.
+     * @throws CancellationException when the first attempt ran out of memory after a cancel.
      */
-    suspend fun decode(candidate: PhotoCandidate, maxLongEdge: Int): DecodedPhoto {
+    suspend fun decode(
+        candidate: PhotoCandidate,
+        maxLongEdge: Int,
+        callerCancelled: () -> Boolean = { false },
+    ): DecodedPhoto {
         require(maxLongEdge > 0) { "maxLongEdge must be positive: $maxLongEdge" }
         return withContext(ioDispatcher) {
             val decoded = try {
                 decodeBounded(candidate.source, maxLongEdge)
             } catch (firstOom: OutOfMemoryError) {
                 ensureActive()
+                if (callerCancelled()) {
+                    throw CancellationException("Decode of ${candidate.source.displayName} cancelled before its retry")
+                }
                 val retryEdge = (maxLongEdge / 2).coerceAtLeast(1)
                 try {
                     decodeBounded(candidate.source, retryEdge)
