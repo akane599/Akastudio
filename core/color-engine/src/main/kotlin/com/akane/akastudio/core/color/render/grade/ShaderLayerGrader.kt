@@ -11,6 +11,7 @@ import com.akane.akastudio.core.color.gl.GlFramebuffer
 import com.akane.akastudio.core.color.gl.GlTexture
 import com.akane.akastudio.core.color.gl.ShaderProgram
 import com.akane.akastudio.core.color.gl.checkGlError
+import com.akane.akastudio.core.color.render.GradeSlotSpace
 import com.akane.akastudio.core.color.render.LayerGrader
 import com.akane.akastudio.core.color.render.Mat3
 import com.akane.akastudio.core.color.render.PixelRect
@@ -269,7 +270,7 @@ internal class ShaderLayerGrader(
         finish.setFloat(GradeUniformNames.GRAIN_SIZE, u.grainSizePx)
         finish.setFloat(GradeUniformNames.GRAIN_LUMA, u.grainLuma)
         finish.setFloat(GradeUniformNames.GRAIN_CHROMA, u.grainChromaGain)
-        finish.setInt(GradeUniformNames.GRAIN_SEED, slot)
+        finish.setInt(GradeUniformNames.GRAIN_SEED, GradeSlotSpace.layerSlot(slot))
         finish.setVec2(GradeUniformNames.GRAIN_ORIGIN, plan.regionLeft, plan.regionTop)
         finish.setVec2(GradeUniformNames.GRAIN_SCALE, plan.outPerTexelX, plan.outPerTexelY)
     }

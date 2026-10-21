@@ -59,9 +59,10 @@ internal class SceneCompositor(
 
     /**
      * Resolves everything that does not depend on the target. [scaleX]/[scaleY] are target pixels per canvas
-     * pixel (a grading resolution hint). Binds framebuffers as a side effect; bind the target afterwards.
+     * pixel (a grading resolution hint). Layers grade into [space]'s slots, so callers rendering at different sizes
+     * keep their own cached grades. Binds framebuffers as a side effect; bind the target afterwards.
      */
-    fun prepare(scene: RenderScene, scaleX: Float, scaleY: Float, withNeutral: Boolean): PreparedScene {
+    fun prepare(scene: RenderScene, scaleX: Float, scaleY: Float, withNeutral: Boolean, space: GradeSlotSpace): PreparedScene {
         require(scene.canvasWidth > 0 && scene.canvasHeight > 0) { "scene canvas must be positive: ${scene.canvasWidth}x${scene.canvasHeight}" }
         val owned = ArrayList<GlFramebuffer>()
         try {
@@ -73,9 +74,9 @@ internal class SceneCompositor(
                 val region = RectF(crop.left * source.width, crop.top * source.height, crop.right * source.width, crop.bottom * source.height)
                 val outWidth = max(1, (layer.dst.width * abs(scaleX)).roundToInt())
                 val outHeight = max(1, (layer.dst.height * abs(scaleY)).roundToInt())
-                val graded = grader.grade(source, region, outWidth, outHeight, layer.grade, 2 * index)
+                val graded = grader.grade(source, region, outWidth, outHeight, layer.grade, space.slot(2 * index))
                 val neutral = if (withNeutral) {
-                    grader.grade(source, region, outWidth, outHeight, GradeParams.NEUTRAL, 2 * index + 1)
+                    grader.grade(source, region, outWidth, outHeight, GradeParams.NEUTRAL, space.slot(2 * index + 1))
                 } else {
                     null
                 }

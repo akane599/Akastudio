@@ -18,7 +18,8 @@ internal interface LayerGrader : AutoCloseable {
      * use for [source] (t = 0 is the top row, the full [0, 1] range spans the whole source image), because a
      * rotated crop samples slightly outside [region]. A grader may use any resolution; [outWidth] x
      * [outHeight] is the layer's size in target pixels, a hint for the texel density that is actually seen.
-     * Slots: layer i of a scene uses slot 2i for its own grade and 2i + 1 for the neutral A/B half.
+     * Slots: layer i of a scene uses layer slot 2i for its own grade and 2i + 1 for the neutral A/B half, mapped
+     * into the caller's [GradeSlotSpace] so preview, scope and export never share a slot.
      */
     fun grade(source: GlTexture, region: RectF, outWidth: Int, outHeight: Int, params: GradeParams, slot: Int): GlTexture
 }

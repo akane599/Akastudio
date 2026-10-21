@@ -154,7 +154,7 @@ internal class GlStoryRenderer(
         val scaleY = height.toFloat() / scene.canvasHeight
         val split = options.compareSplit?.coerceIn(0f, 1f)
         frame(rt) {
-            val prepared = rt.compositor.prepare(scene, scaleX, scaleY, withNeutral = split != null)
+            val prepared = rt.compositor.prepare(scene, scaleX, scaleY, withNeutral = split != null, GradeSlotSpace.PREVIEW)
             val sceneTarget = try {
                 rt.pool.acquire(width, height, caps.workingFormat)
             } catch (e: RuntimeException) {
@@ -202,7 +202,7 @@ internal class GlStoryRenderer(
         val tileWidth = tiles.maxOf { it.width }
         val tileHeight = tiles.maxOf { it.height }
         val output = ShortArray(canvasWidth * canvasHeight * 4)
-        val prepared = rt.compositor.prepare(scene, 1f, 1f, withNeutral = false)
+        val prepared = rt.compositor.prepare(scene, 1f, 1f, withNeutral = false, GradeSlotSpace.EXPORT)
         try {
             val target = rt.pool.acquire(tileWidth, tileHeight, caps.workingFormat)
             try {
@@ -236,7 +236,7 @@ internal class GlStoryRenderer(
         require(scene.canvasWidth > 0 && scene.canvasHeight > 0) { "scene canvas must be positive" }
         val scaleX = width.toFloat() / scene.canvasWidth
         val scaleY = height.toFloat() / scene.canvasHeight
-        val prepared = rt.compositor.prepare(scene, scaleX, scaleY, withNeutral = false)
+        val prepared = rt.compositor.prepare(scene, scaleX, scaleY, withNeutral = false, GradeSlotSpace.SCOPE)
         try {
             val sceneTarget = rt.pool.acquire(width, height, caps.workingFormat)
             try {
