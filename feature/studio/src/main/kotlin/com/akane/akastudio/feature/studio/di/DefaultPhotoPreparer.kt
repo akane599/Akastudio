@@ -7,8 +7,12 @@ import com.akane.akastudio.core.curator.api.PhotoAnalysis
 import com.akane.akastudio.core.ingestion.model.PhotoCandidate
 import com.akane.akastudio.feature.studio.domain.PhotoPreparer
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /**
  * A full-resolution decode handed to the renderer. The renderer keeps a reference to the pixels while the image is
@@ -110,7 +114,9 @@ internal class DefaultPhotoPreparer(
             throw PhotoDecodeException(candidate.source.displayName, e)
         }
         try {
-            backend.register(candidate.id, image)
+            // Not cancellable: a cancelled caller would otherwise get CancellationException after the GL thread had
+            // already registered the image, then free pixels the renderer holds and never unregister the texture.
+            withContext(NonCancellable) { backend.register(candidate.id, image) }
         } catch (t: Throwable) {
             // The renderer keeps its earlier registration of this id (if any); only the new decode is ours to free.
             image.free()
@@ -118,6 +124,8 @@ internal class DefaultPhotoPreparer(
         }
         // A replaced registration no longer references the older pixels, so they can go now.
         registered.put(candidate.id, image)?.takeIf { it !== image }?.free()
+        // Tracked before the cancellation check, so releasing this batch's ids unregisters it, then frees it.
+        currentCoroutineContext().ensureActive()
         return ComposerPhoto(
             id = candidate.id,
             imageKey = candidate.id,

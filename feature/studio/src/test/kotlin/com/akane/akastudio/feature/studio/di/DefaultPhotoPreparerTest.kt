@@ -9,10 +9,17 @@ import com.akane.akastudio.core.curator.api.PhotoAnalysis
 import com.akane.akastudio.core.ingestion.model.PhotoCandidate
 import com.akane.akastudio.feature.studio.domain.TestData
 import java.io.IOException
+import kotlin.coroutines.CoroutineContext
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -23,11 +30,16 @@ import org.junit.Test
 
 class DefaultPhotoPreparerTest {
 
-    private class FakeImage(val candidateId: String, override val sourceWidth: Int, override val sourceHeight: Int) :
-        FullResolutionImage {
+    private class FakeImage(
+        val candidateId: String,
+        override val sourceWidth: Int,
+        override val sourceHeight: Int,
+        private val events: MutableList<String>,
+    ) : FullResolutionImage {
         var freed = 0
         override fun free() {
             freed++
+            events += "free:$candidateId"
         }
     }
 
@@ -40,6 +52,13 @@ class DefaultPhotoPreparerTest {
         val failDecode = mutableSetOf<String>()
         val failRegister = mutableSetOf<String>()
         val failAnalysis = mutableSetOf<String>()
+
+        /** Unregister and free calls in order. */
+        val events = mutableListOf<String>()
+
+        /** When set, [register] uploads on [registerContext] and waits for this gate first. */
+        var registerGate: CompletableDeferred<Unit>? = null
+        var registerContext: CoroutineContext? = null
         var inFlight = 0
         var maxInFlight = 0
 
@@ -52,7 +71,7 @@ class DefaultPhotoPreparerTest {
                 delay(10)
                 decodeEdges += candidate.id to maxLongEdge
                 if (candidate.id in failDecode) throw IOException("truncated ${candidate.id}")
-                return FakeImage(candidate.id, candidate.widthPx, candidate.heightPx).also { images += it }
+                return FakeImage(candidate.id, candidate.widthPx, candidate.heightPx, events).also { images += it }
             } finally {
                 inFlight--
             }
@@ -60,11 +79,22 @@ class DefaultPhotoPreparerTest {
 
         override suspend fun register(key: String, image: FullResolutionImage) {
             if (key in failRegister) throw IllegalArgumentException("too large")
-            registry[key] = image as FakeImage
+            val gate = registerGate
+            if (gate == null) {
+                registry[key] = image as FakeImage
+                return
+            }
+            // Like GlStoryRenderer: the upload runs to completion on another thread, and a caller cancelled
+            // meanwhile still gets CancellationException when the result is handed back to it.
+            withContext(checkNotNull(registerContext) + NonCancellable) {
+                gate.await()
+                registry[key] = image as FakeImage
+            }
         }
 
         override suspend fun unregister(key: String) {
             unregistered += key
+            events += "unregister:$key"
             registry.remove(key)
         }
 
@@ -188,6 +218,31 @@ class DefaultPhotoPreparerTest {
     }
 
     @Test
+    fun cancellingMidRegisterLeavesTheRegistrationTrackedAndFreesOnlyAfterUnregister() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        backend.registerGate = gate
+        backend.registerContext = StandardTestDispatcher(testScheduler, name = "gl")
+        val job = launch { preparer.prepare(listOf(a), analyses, hero = false) }
+        advanceUntilIdle()
+        assertTrue("register must be in flight", backend.registry.isEmpty() && !job.isCompleted)
+
+        // The user discards while the texture uploads; the upload still finishes on the GL thread.
+        job.cancel()
+        gate.complete(Unit)
+        advanceUntilIdle()
+
+        assertTrue(job.isCancelled)
+        assertSame(backend.images.single(), backend.registry["a"])
+        assertEquals("the renderer still holds the pixels, so they must not be freed yet", 0, backend.images.single().freed)
+        assertTrue(backend.analysisEdges.isEmpty())
+
+        preparer.release(listOf("a"))
+
+        assertEquals(listOf("unregister:a", "free:a"), backend.events)
+        assertTrue(backend.registry.isEmpty())
+    }
+
+    @Test
     fun unreadableAnalysisImageLeavesThePhotoUnrotated() = runTest {
         backend.failAnalysis += "a"
         val photo = preparer.prepare(listOf(a), analyses, hero = false).single()
@@ -200,7 +255,7 @@ class DefaultPhotoPreparerTest {
             preparer.prepare(listOf(a), emptyMap(), hero = false)
             fail("expected IllegalStateException")
         } catch (e: IllegalStateException) {
-            assertTrue(e.message.orEmpty().contains("a"))
+            assertEquals("No curator analysis for photo a", e.message)
         }
         assertTrue(backend.decodeEdges.isEmpty())
     }

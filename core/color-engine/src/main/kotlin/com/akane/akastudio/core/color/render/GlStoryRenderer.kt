@@ -21,6 +21,7 @@ import com.akane.akastudio.core.color.gl.GlEnvironment
 import com.akane.akastudio.core.color.gl.GlFormat
 import com.akane.akastudio.core.color.gl.GlThread
 import com.akane.akastudio.core.color.gl.checkGlError
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -60,12 +61,14 @@ internal class GlStoryRenderer(
     private var egl: EglCore? = null
     private var runtime: Runtime? = null
 
-    override suspend fun registerImage(key: String, bitmap: Bitmap) = onGl { rt ->
-        images.register(key, bitmap, rt.capabilities)
+    // Registration and unregistration are all-or-nothing: once called they run to completion even if the caller is
+    // cancelled, so a caller never frees a Bitmap the registry still holds or loses track of an uploaded texture.
+    override suspend fun registerImage(key: String, bitmap: Bitmap) = withContext(NonCancellable) {
+        onGl { rt -> images.register(key, bitmap, rt.capabilities) }
     }
 
-    override suspend fun unregisterImage(key: String) = onGl {
-        images.unregister(key)
+    override suspend fun unregisterImage(key: String) = withContext(NonCancellable) {
+        onGl { images.unregister(key) }
     }
 
     override suspend fun maxTextureSize(): Int = onGl { rt -> rt.capabilities.maxTextureSize }
