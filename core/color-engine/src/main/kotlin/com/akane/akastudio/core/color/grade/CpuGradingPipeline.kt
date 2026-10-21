@@ -4,6 +4,7 @@ import com.akane.akastudio.core.color.analysis.SkinMask
 import com.akane.akastudio.core.color.api.GradeParams
 import com.akane.akastudio.core.color.api.HarmonizationParams
 import com.akane.akastudio.core.color.api.OkLab
+import com.akane.akastudio.core.color.harmonize.Harmonizer
 import com.akane.akastudio.core.color.look.LookLibrary
 import com.akane.akastudio.core.color.look.clamp01
 import com.akane.akastudio.core.color.math.ColorMath
@@ -97,11 +98,7 @@ internal class PixelGrader(grade: GradeParams, private val luts: LookLuts) {
 
         // 1. Harmonize.
         harmonization?.let { h ->
-            val lab = ColorMath.linearSrgbToOkLab(r, g, b)
-            ColorMath.okLabToLinearSrgb(
-                OkLab(h.scaleL * lab.l + h.offsetL, h.scaleA * lab.a + h.offsetA, h.scaleB * lab.b + h.offsetB),
-                lin,
-            )
+            ColorMath.okLabToLinearSrgb(Harmonizer.apply(ColorMath.linearSrgbToOkLab(r, g, b), h), lin)
             r = lin[0]; g = lin[1]; b = lin[2]
         }
 

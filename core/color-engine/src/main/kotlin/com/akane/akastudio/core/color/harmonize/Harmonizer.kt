@@ -62,7 +62,7 @@ object Harmonizer {
         }
     }
 
-    /** Applies params to one OKLab colour (reference implementation used by the CPU and GPU pipelines). */
+    /** Applies params to one OKLab colour: the CPU reference pipeline's harmonize stage, which the GPU shader mirrors. */
     fun apply(lab: OkLab, p: HarmonizationParams): OkLab = OkLab(
         l = p.scaleL * lab.l + p.offsetL,
         a = p.scaleA * lab.a + p.offsetA,
