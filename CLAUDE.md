@@ -8,9 +8,9 @@ Android, developed on Ubuntu from the CLI.
 - Origin: new · Integration branch: main
 - Language: kotlin · UI: Compose · screenshot tests: compose-preview
 - JDK target 17 · Gradle 9.8.0 · AGP 9.4.1 · Kotlin 2.4.20 (built-in) · compileSdk 37 · minSdk 31
-- Modules: :app (planned: :core:ingestion, :core:vision-curator, :core:color-engine, :core:collage-composer, :core:export-pipeline, :feature:studio) · Architecture: Clean Architecture + MVI · DI/DB/Net: none / none / none
+- Modules: :app, :core:ingestion, :core:vision-curator, :core:color-engine, :core:collage-composer, :core:export-pipeline, :feature:studio · Architecture: Clean Architecture + MVI · DI/DB/Net: none (StudioContainer, constructor injection) / none / none
 - App id: com.akane.akastudio · Launcher: .MainActivity
-- Baseline: build ok · 1 unit test, 0 pre-existing failures (PROGRESS.md)
+- Baseline: full gate green at ba0f14a (all module unit tests + app/studio screenshot tests); lint 0 errors (PROGRESS.md)
 <!-- STACK:END -->
 
 ## How work flows here
@@ -28,6 +28,7 @@ Android, developed on Ubuntu from the CLI.
 ## Commands
 - Build: `./gradlew :app:assembleDebug --console=plain -q` · Unit: `:app:testDebugUnitTest` · Lint: `:app:lintDebug`
 - Screenshots: `:app:updateDebugScreenshotTest` (write refs) · `:app:validateDebugScreenshotTest` (diff)
+- Full gate: `bash .claude/kit/gradle-check.sh :app:assembleDebug :app:testDebugUnitTest :app:validateDebugScreenshotTest :feature:studio:testDebugUnitTest :feature:studio:validateDebugScreenshotTest :core:ingestion:testDebugUnitTest :core:color-engine:testDebugUnitTest :core:vision-curator:testDebugUnitTest :core:collage-composer:testDebugUnitTest :core:export-pipeline:testDebugUnitTest --max-workers=2`
 - Device: `./gradlew :app:installDebug -q && adb shell am start -n com.akane.akastudio/.MainActivity` · logs: `adb logcat -d --pid=$(adb shell pidof -s com.akane.akastudio) | tail -80`
 - Emulator: `(no /dev/kvm on this machine: use JVM checks or a physical/remote device) emulator -avd <AVD> -no-window -no-audio &` then `adb wait-for-device shell 'while [[ -z $(getprop sys.boot_completed) ]]; do sleep 1; done'`
 

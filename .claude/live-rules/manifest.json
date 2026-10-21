@@ -3,7 +3,7 @@
   "rules": [
     {
       "path": "rules/android-build.md",
-      "hash": "b792f5a08b202d1423d4e6fcb337fdddd435ece5eaf767384f5a551e0efa4306",
+      "hash": "4cf17bfc35113e594d9c8e3cd9f57cde01376971fec17c07be70e3d668c5eac2",
       "description": "Android build, test and dependency rules",
       "globs": [],
       "dirs": [],

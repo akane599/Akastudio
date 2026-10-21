@@ -21,6 +21,8 @@ _Work items, stories and blockers live on the Sidequest board. This file keeps w
 - 2026-10-21: look LUTs are sampled tetrahedrally with texelFetch. Trilinear reached max 2.83/255 against the CPU reference (the contract allows 2/255); tetrahedral reached 0.378/255 on Mesa. (SQ-11, US-3)
 - 2026-10-21: SceneLayer.rotationDegrees is positive clockwise (Android Canvas convention). HorizonDetector returns +tilt for a horizon rising to the right, and the renderer must use the same sign. (SQ-16, US-4)
 - 2026-10-21: export downscaling is CPU Lanczos-3, using our own PNG 8/16, 4:4:4 JPEG, sRGB ICC and lossless WebP writers, because platform encoders can't guarantee 4:4:4, the ICC tag or 16-bit output. A zero-headroom Ultra HDR request exports a plain Social JPEG, and the UI shows the actual format. (SQ-19/SQ-33, US-4)
+- 2026-10-21: Turkish UI keeps product and format names in English (Ultra HDR, Social Story Master, HDR Story Boost, PNG, WebP) but translates the Hero mode as "Tek kare", because format names are what users see in other apps and in the gallery. (SQ-40)
+- 2026-10-21: pending telemetry steps use the Tertiary token (#8E8A82, ≥4.5:1) instead of a dimmed grey, because they're content rather than disabled controls, so the WCAG AA contrast minimum applies. (SQ-27/SQ-39)
 - 2026-10-21: the renderer, the curator models and the StudioContainer are process-wide and never closed. GlStoryRenderer keeps registered Bitmaps for context-loss re-upload, so the preparer recycles one only after unregisterImage. (SQ-26)
 
 ## Audit status
