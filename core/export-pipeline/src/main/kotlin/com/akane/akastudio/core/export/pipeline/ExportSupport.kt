@@ -2,6 +2,7 @@ package com.akane.akastudio.core.export.pipeline
 
 import com.akane.akastudio.core.export.api.ExportFormat
 import com.akane.akastudio.core.export.api.ExportProgress
+import com.akane.akastudio.core.export.api.ExportResult
 import com.akane.akastudio.core.export.api.ExportStage
 import kotlinx.coroutines.channels.ProducerScope
 import kotlinx.coroutines.ensureActive
@@ -11,6 +12,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.math.min
 
 /** File naming and MIME types of exported stories. */
 internal object ExportNaming {
@@ -68,6 +70,47 @@ internal class ProgressReporter(private val scope: ProducerScope<ExportProgress>
         ensureActive()
         scope.trySend(ExportProgress.Stage(stage, fraction)).getOrThrow()
     }
+
+    /**
+     * Reports a file the sink has already published: WRITE at 1, then [ExportProgress.Done] with [result]. Neither
+     * emission checks cancellation (the file is visible whatever happens next); callers run this under
+     * `NonCancellable` with no cancellation point between the sink's return and this call.
+     */
+    suspend fun published(result: ExportResult) {
+        scope.send(ExportProgress.Stage(ExportStage.WRITE, 1f))
+        scope.send(ExportProgress.Done(result))
+    }
+}
+
+/**
+ * Forwards to [out] in slices of at most [sliceBytes], checking cancellation and reporting WRITE as the fraction of
+ * [total] bytes written after each slice. [close] only flushes: the wrapped stream belongs to the sink.
+ */
+internal class WriteProgressStream(
+    out: OutputStream,
+    private val total: Long,
+    private val progress: ProgressReporter,
+    private val sliceBytes: Int,
+) : FilterOutputStream(out) {
+
+    private var written = 0L
+
+    override fun write(b: Int) = write(byteArrayOf(b.toByte()), 0, 1)
+
+    override fun write(b: ByteArray, off: Int, len: Int) {
+        var offset = off
+        val end = off + len
+        while (offset < end) {
+            progress.ensureActive()
+            val length = min(sliceBytes, end - offset)
+            out.write(b, offset, length)
+            offset += length
+            written += length
+            progress.stage(ExportStage.WRITE, (written.toDouble() / total).toFloat().coerceAtMost(1f))
+        }
+    }
+
+    override fun close() = flush()
 }
 
 /**

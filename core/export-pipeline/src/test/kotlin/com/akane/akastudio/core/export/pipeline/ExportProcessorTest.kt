@@ -14,16 +14,22 @@ import com.akane.akastudio.core.export.api.ExportRequest
 import com.akane.akastudio.core.export.api.ExportResolution
 import com.akane.akastudio.core.export.api.ExportResult
 import com.akane.akastudio.core.export.api.ExportStage
+import com.akane.akastudio.core.export.encode.ExifFields
+import com.akane.akastudio.core.export.encode.ExifWriter
 import com.akane.akastudio.core.export.encode.JpegEncoder
 import com.akane.akastudio.core.export.encode.Rgba8Rows
+import com.akane.akastudio.core.export.encode.SrgbIccProfile
+import com.akane.akastudio.core.export.encode.WebpContainer
 import com.akane.akastudio.core.export.process.Dither
 import com.akane.akastudio.core.export.process.GainMapResult
 import com.akane.akastudio.core.export.process.Half
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -122,8 +128,34 @@ class ExportProcessorTest {
         val gain = checkNotNull(encoder.gain)
         assertEquals(270 to 480, gain.gainWidth to gain.gainHeight)
         assertTrue("the boosted highlights give headroom", gain.ratioMax > 1f)
+        val expectedExif = ExifWriter.tiff(ExifFields(captureMillis, "Lisbon", "AkaStudio", 1080, 1920))
+        assertArrayEquals("the encoder receives the same EXIF block as the other encoders", expectedExif, encoder.exif)
         val decoded = ImageIO.read(ByteArrayInputStream(run.bytes))
         assertEquals(1080, decoded.width)
+    }
+
+    @Test
+    fun ultraHdrWithoutHeadroom_writesPlainSocialJpegAtTargetSize() {
+        val encoder = FakeUltraHdrEncoder()
+        val run = export(ExportFormat.ULTRA_HDR_JPEG, renderer = FakeRenderer(peak = 1f), ultraHdr = encoder, hdrBoost = false)
+        assertEquals(ExportFormat.SOCIAL_STORY_JPEG, run.result.format)
+        assertEquals("the gain-map encoder is never called", -1, encoder.quality)
+        assertEquals(listOf(ExportStage.RENDER, ExportStage.SHARPEN, ExportStage.ENCODE, ExportStage.WRITE), run.stages)
+        assertEquals(listOf(0f, 0.5f, 1f), run.fractions(ExportStage.RENDER))
+        assertFile(run, "image/jpeg", "SOCIAL_STORY_JPEG", "jpg", 1080, 1920)
+        val decoded = ImageIO.read(ByteArrayInputStream(run.bytes))
+        assertEquals(1080, decoded.width)
+        assertEquals(1920, decoded.height)
+    }
+
+    @Test
+    fun webpLossless_streamedFileIsByteIdenticalToBufferedContainer() {
+        // A bitstream several WRITE slices long, odd so the VP8L chunk needs its pad byte.
+        val run = export(ExportFormat.WEBP_LOSSLESS, webpEncoder = FakeWebpEncoder(bitstreamBytes = 200_001))
+        val lossless = FakeWebpEncoder(bitstreamBytes = 200_001).encode(1080, 1920) { _, _ -> }
+        val exif = ExifWriter.tiff(ExifFields(captureMillis, "Lisbon", "AkaStudio", 1080, 1920))
+        assertArrayEquals(WebpContainer.withMetadata(lossless, SrgbIccProfile.bytes, exif), run.bytes)
+        assertTrue("WRITE reported per slice: ${run.fractions(ExportStage.WRITE)}", run.fractions(ExportStage.WRITE).size > 4)
     }
 
     @Test
@@ -175,6 +207,45 @@ class ExportProcessorTest {
     }
 
     @Test
+    fun cancelRightAfterPublish_stillReportsDoneWithThePublishedFile() {
+        val collectorParked = CountDownLatch(1)
+        val cancelled = CountDownLatch(1)
+        lateinit var collecting: Job
+        val sink = MemorySink(afterPublish = {
+            // The entry is visible now; cancel the collector exactly here, like a cancel tap racing the publish step.
+            check(collectorParked.await(30, TimeUnit.SECONDS)) { "collector never reached WRITE 0" }
+            collecting.cancel()
+            cancelled.countDown()
+        })
+        val processor = ExportProcessor(FakeRenderer(), sink, null, FakeWebpEncoder(), clock = { captureMillis })
+        val seen = ArrayList<ExportProgress>()
+        runBlocking {
+            collecting = launch {
+                val self = coroutineContext.job
+                processor.export(request(ExportFormat.PNG_8)).collect { progress ->
+                    seen += progress
+                    if (progress == ExportProgress.Stage(ExportStage.WRITE, 0f)) {
+                        // Stay busy (not suspended in receive) until the export has finished, so the cancellation
+                        // cannot discard what the exporter sent after the publish.
+                        collectorParked.countDown()
+                        check(cancelled.await(30, TimeUnit.SECONDS)) { "sink never cancelled the collector" }
+                        awaitExportFinished(self)
+                    }
+                }
+            }
+            collecting.join()
+        }
+        assertTrue(collecting.isCancelled)
+        val published = checkNotNull(sink.published) { "the sink published the file" }
+        val done = seen.last()
+        assertTrue("expected a trailing Done, saw ${seen.takeLast(3)}", done is ExportProgress.Done)
+        val result = (done as ExportProgress.Done).result
+        assertEquals("content://test/${sink.displayName}", result.uri)
+        assertEquals(published.size.toLong(), result.byteSize)
+        assertEquals(ExportProgress.Stage(ExportStage.WRITE, 1f), seen[seen.size - 2])
+    }
+
+    @Test
     fun fileName_usesClockTimestampFormatAndExtension() {
         val millis = Instant.parse("2026-10-21T13:04:05Z").toEpochMilli()
         assertEquals("AkaStudio_20261021_130405_PNG_8.png", ExportNaming.fileName(ExportFormat.PNG_8, millis, ZoneOffset.UTC))
@@ -211,6 +282,18 @@ class ExportProcessorTest {
         val events = runBlocking { processor.export(request(format, hdrBoost = hdrBoost)).toList() }
         assertWellFormed(events)
         return Run(events, (events.last() as ExportProgress.Done).result, sink)
+    }
+
+    /**
+     * Blocks until the export's producer has completed. The flow runs it under `collect`'s scope, a child of
+     * [collecting]; that scope stays open while the collector is busy, so its remaining children are the export.
+     */
+    private fun awaitExportFinished(collecting: Job) {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
+        while (collecting.children.any { scope -> scope.children.any() }) {
+            check(System.nanoTime() < deadline) { "the export never finished" }
+            Thread.sleep(1)
+        }
     }
 
     /** Exactly one trailing Done; every stage is one contiguous run whose fractions start at 0, end at 1 and never fall. */
@@ -304,8 +387,15 @@ class ExportProcessorTest {
         private fun unused(): Nothing = throw UnsupportedOperationException("the exporter only renders offscreen")
     }
 
-    /** In-memory sink following the publish-or-abort protocol; can fail after N bytes or hold its first write. */
-    private class MemorySink(private val failAfterBytes: Int? = null, private val holdFirstWrite: Boolean = false) : EncodedSink {
+    /**
+     * In-memory sink following the publish-or-abort protocol; can fail after N bytes, hold its first write, or run
+     * [afterPublish] once the entry is published, just before returning its uri.
+     */
+    private class MemorySink(
+        private val failAfterBytes: Int? = null,
+        private val holdFirstWrite: Boolean = false,
+        private val afterPublish: () -> Unit = {},
+    ) : EncodedSink {
         @Volatile var displayName: String? = null
         @Volatile var mimeType: String? = null
         @Volatile var dateTaken: Long? = null
@@ -338,12 +428,16 @@ class ExportProcessorTest {
                 throw failure
             }
             published = buffer.toByteArray()
+            afterPublish()
             return "content://test/$displayName"
         }
     }
 
-    /** Pulls every row and returns a minimal simple-lossless WebP (`VP8L` header plus a stand-in bitstream). */
-    private class FakeWebpEncoder : WebpLosslessEncoder {
+    /**
+     * Pulls every row and returns a minimal simple-lossless WebP (`VP8L` header plus a deterministic stand-in
+     * bitstream of [bitstreamBytes]).
+     */
+    private class FakeWebpEncoder(private val bitstreamBytes: Int = 7) : WebpLosslessEncoder {
         @Volatile var rowsPulled = 0
         @Volatile var size: Pair<Int, Int>? = null
 
@@ -355,7 +449,7 @@ class ExportProcessorTest {
                 rowsPulled++
             }
             val bits = (width - 1) or ((height - 1) shl 14)
-            val payload = byteArrayOf(0x2F) + le32(bits) + byteArrayOf(1, 2, 3, 4, 5, 6, 7)
+            val payload = byteArrayOf(0x2F) + le32(bits) + ByteArray(bitstreamBytes) { (it * 31 + 1).toByte() }
             val chunk = "VP8L".toByteArray(Charsets.ISO_8859_1) + le32(payload.size) + payload +
                 if (payload.size % 2 == 1) byteArrayOf(0) else byteArrayOf()
             return "RIFF".toByteArray(Charsets.ISO_8859_1) + le32(4 + chunk.size) + "WEBP".toByteArray(Charsets.ISO_8859_1) + chunk
@@ -369,13 +463,15 @@ class ExportProcessorTest {
         @Volatile var quality = -1
         @Volatile var sdrSize: Pair<Int, Int>? = null
         @Volatile var gain: GainMapResult? = null
+        @Volatile var exif: ByteArray? = null
 
-        override fun encode(sdr: HalfFloatImage, gain: GainMapResult, out: OutputStream, quality: Int) {
+        override fun encode(sdr: HalfFloatImage, gain: GainMapResult, out: OutputStream, quality: Int, exifTiff: ByteArray?) {
             this.quality = quality
             this.sdrSize = sdr.width to sdr.height
             this.gain = gain
+            this.exif = exifTiff
             check(sdr === gain.sdr) { "the encoder receives the sharpened base as both arguments" }
-            JpegEncoder.write(out, sdr.width, sdr.height, { y, row -> Dither.toSrgb8Row(sdr, y, row) }, quality, exifTiff = null)
+            JpegEncoder.write(out, sdr.width, sdr.height, { y, row -> Dither.toSrgb8Row(sdr, y, row) }, quality, exifTiff = exifTiff)
         }
     }
 }

@@ -171,6 +171,32 @@ class WebpContainerTest {
         assertFalse(chunks.any { it.type == "ICCP" || it.type == "EXIF" })
     }
 
+    @Test
+    fun syntheticImage_bytesMatchPreStreamingImplementation() {
+        // Odd payload, ICC and EXIF sizes exercise every pad byte. The digest was taken from the buffered
+        // implementation before the container learned to stream, so it pins byte identity with the old path.
+        val seed = java.util.Random(0x5EED)
+        val payload = vp8l(37, 21, alpha = false, fakeBytes = 1001)
+        ByteArray(1001).also(seed::nextBytes).copyInto(payload, destinationOffset = 5)
+        val image = riff(chunk("VP8L", payload))
+        val randomIcc = ByteArray(333).also(seed::nextBytes)
+        val randomExif = ByteArray(77).also(seed::nextBytes)
+        val buffered = WebpContainer.withMetadata(image, randomIcc, randomExif)
+        assertEquals(PRE_STREAMING_SHA256, sha256(buffered))
+
+        val container = WebpContainer.assemble(image, randomIcc, randomExif)
+        val streamed = ByteArrayOutputStream().also(container::writeTo).toByteArray()
+        assertEquals(streamed.size.toLong(), container.size)
+        assertArrayEquals(buffered, streamed)
+    }
+
+    private fun sha256(bytes: ByteArray): String =
+        java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+
+    private companion object {
+        const val PRE_STREAMING_SHA256 = "748d9c895d062eaab6f1e6c695a4f7f1d4a8696ca18765e15fa108055ebc6f88"
+    }
+
     private fun assertThrowsIae(name: String, block: () -> Unit) {
         try {
             block()
