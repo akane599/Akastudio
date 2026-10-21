@@ -7,7 +7,7 @@ interface StoryRenderer : AutoCloseable {
     suspend fun unregisterImage(key: String)
     /** Renders to a window surface (TextureView/SurfaceView). Display output is sRGB-encoded 8-bit. */
     suspend fun renderToSurface(scene: RenderScene, surface: android.view.Surface, surfaceWidth: Int, surfaceHeight: Int, options: PreviewOptions = PreviewOptions())
-    /** Offscreen full-quality render at the scene canvas size into linear half-float. */
+    /** Offscreen full-quality render at the scene canvas size into premultiplied linear half-float, with no matte. */
     suspend fun renderOffscreen(scene: RenderScene): HalfFloatImage
     /** Small sRGB-encoded readback for scopes (waveform/histogram). */
     suspend fun renderPreviewPixels(scene: RenderScene, width: Int, height: Int): ImagePixels
