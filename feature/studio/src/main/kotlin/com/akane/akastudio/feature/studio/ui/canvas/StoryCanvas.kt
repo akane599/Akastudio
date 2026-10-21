@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
@@ -43,6 +44,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -54,6 +56,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.akane.akastudio.core.color.api.ImagePixels
 import com.akane.akastudio.core.color.api.RenderScene
@@ -97,13 +100,20 @@ internal data class SlotDrag(val from: Int, val start: Offset, val current: Offs
  * GPU surface, with direct-manipulation gestures on top.
  *
  * - Tap selects a cell (outlined); double-tap selects it and resets its crop override.
- * - Long-press then drag swaps the picked cell with the one it is dropped on ([StudioIntent.SwapSlots]).
+ * - Long-press then drag swaps the picked cell with the one it is dropped on ([StudioIntent.SwapSlots]); only while
+ *   [editable], since the studio rejects a swap outside its Ready phase.
  * - Two-finger pinch or pan zooms (1..4) and pans (-1..1) the cell under the fingers, or the selected cell, sending
  *   at most one [StudioIntent.SetCellOverride] per display frame.
  * - With [compare] set, a draggable split handle sends [StudioIntent.SetCompare]; "Before"/"After" mark each side.
+ * - Accessibility services get custom actions for the same edits: select next cell, swap with next cell, zoom in,
+ *   zoom out and reset crop (see [CanvasActions]); the editing ones only while [editable].
  *
  * With a null [renderer] (previews, screenshot tests) the canvas draws the scene's cell layout as hairline outlines
  * instead of a GPU surface.
+ *
+ * The canvas is image space, so it lays out left to right even in a right-to-left locale: the render, the compare
+ * split (ungraded on the left) and the scope traces are drawn in unmirrored image coordinates, and the frame, the
+ * compare handle and labels and the docked scope must not mirror around them.
  *
  * @param scene The preview scene, or null before a story exists.
  * @param revision The scene revision; each new value (or [compare] change) triggers one render.
@@ -112,6 +122,8 @@ internal data class SlotDrag(val from: Int, val start: Offset, val current: Offs
  * @param overrides The current per-photo overrides; a pinch starts from the cell's current override.
  * @param scope The scope to dock at the top-right of the canvas, or [ScopeMode.OFF].
  * @param scopePixels The scope readback for [scope].
+ * @param editable Whether the studio accepts edits now (its Ready phase); when false the swap gesture and the editing
+ *   accessibility actions are off, so none reports an edit the studio would reject.
  */
 @Composable
 fun StoryCanvas(
@@ -121,6 +133,7 @@ fun StoryCanvas(
     compare: Float?,
     onIntent: (StudioIntent) -> Unit,
     hitTest: (Float, Float) -> Int?,
+    editable: Boolean,
     modifier: Modifier = Modifier,
     photoIds: ImmutableList<String> = persistentListOf(),
     overrides: ImmutableMap<String, CellOverride> = persistentMapOf(),
@@ -141,6 +154,7 @@ fun StoryCanvas(
         overrides = overrides,
         scope = scope,
         scopePixels = scopePixels,
+        editable = editable,
         modifier = modifier,
     )
 }
@@ -160,6 +174,7 @@ internal fun StoryCanvasLayout(
     overrides: ImmutableMap<String, CellOverride>,
     scope: ScopeMode,
     scopePixels: ImagePixels?,
+    editable: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val cellCount = scene?.layers?.size ?: 0
@@ -170,64 +185,69 @@ internal fun StoryCanvasLayout(
     val spacing = DarkroomTheme.spacing
     val dragState = remember { mutableStateOf<SlotDrag?>(null) }
 
-    BoxWithConstraints(modifier.background(DarkroomTheme.colors.canvasBackdrop)) {
-        val viewWidth = if (constraints.hasBoundedWidth) constraints.maxWidth.toFloat() else 0f
-        val viewHeight = if (constraints.hasBoundedHeight) {
-            constraints.maxHeight.toFloat()
-        } else {
-            viewWidth * canvasHeight / canvasWidth
-        }
-        val transform = remember(viewWidth, viewHeight, canvasWidth, canvasHeight) {
-            CanvasTransform(viewWidth, viewHeight, canvasWidth, canvasHeight)
-        }
-        val viewSize = with(density) { DpSize(viewWidth.toDp(), viewHeight.toDp()) }
-        Box(
-            Modifier
-                .size(viewSize)
-                .canvasSemantics(cellCount, selected, onSelect, onIntent)
-                .canvasGestures(
-                    transform = transform,
-                    scene = scene,
-                    selectedSlot = selected,
-                    onSelect = onSelect,
-                    onIntent = onIntent,
-                    hitTest = hitTest,
-                    photoIds = photoIds,
-                    overrides = overrides,
-                    dragState = dragState,
-                ),
-        ) {
-            val frame = transform.frame ?: return@Box
-            val frameSize = with(density) { DpSize(frame.width.toDp(), frame.height.toDp()) }
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        BoxWithConstraints(modifier.background(DarkroomTheme.colors.canvasBackdrop)) {
+            val viewWidth = if (constraints.hasBoundedWidth) constraints.maxWidth.toFloat() else 0f
+            val viewHeight = if (constraints.hasBoundedHeight) {
+                constraints.maxHeight.toFloat()
+            } else {
+                viewWidth * canvasHeight / canvasWidth
+            }
+            val transform = remember(viewWidth, viewHeight, canvasWidth, canvasHeight) {
+                CanvasTransform(viewWidth, viewHeight, canvasWidth, canvasHeight)
+            }
+            val viewSize = with(density) { DpSize(viewWidth.toDp(), viewHeight.toDp()) }
             Box(
                 Modifier
-                    .offset { IntOffset(frame.left.roundToInt(), frame.top.roundToInt()) }
-                    .size(frameSize)
-                    .clipToBounds(),
+                    .size(viewSize)
+                    .canvasSemantics(cellCount, selected, editable, photoIds, overrides, onSelect, onIntent)
+                    .canvasGestures(
+                        transform = transform,
+                        scene = scene,
+                        selectedSlot = selected,
+                        onSelect = onSelect,
+                        onIntent = onIntent,
+                        hitTest = hitTest,
+                        photoIds = photoIds,
+                        overrides = overrides,
+                        editable = editable,
+                        dragState = dragState,
+                    ),
             ) {
-                if (renderer != null) {
-                    PreviewSurface(scene, revision, compare, renderer, Modifier.fillMaxSize())
-                }
-                if (renderer == null || scene == null) {
-                    PlaceholderScene(scene, canvasWidth, canvasHeight, Modifier.fillMaxSize())
-                }
-                SelectionOverlay(scene, canvasWidth, canvasHeight, selected, dragState.value, Modifier.fillMaxSize())
-                if (compare != null) {
-                    CompareHandle(compare, { onIntent(StudioIntent.SetCompare(it)) }, Modifier.fillMaxSize())
-                    CompareLabel(before = true, modifier = Modifier.align(Alignment.TopStart).padding(spacing.s))
-                }
-                Column(
-                    modifier = Modifier.align(Alignment.TopEnd).padding(spacing.s),
-                    horizontalAlignment = Alignment.End,
-                    verticalArrangement = Arrangement.spacedBy(spacing.s),
+                val frame = transform.frame ?: return@Box
+                val frameSize = with(density) { DpSize(frame.width.toDp(), frame.height.toDp()) }
+                Box(
+                    Modifier
+                        .offset { IntOffset(frame.left.roundToInt(), frame.top.roundToInt()) }
+                        .size(frameSize)
+                        .clipToBounds(),
                 ) {
-                    if (compare != null) CompareLabel(before = false)
-                    if (scope != ScopeMode.OFF) {
-                        ScopeOverlay(
-                            pixels = scopePixels,
-                            mode = scope,
-                            modifier = Modifier.width(scopePanelWidth(frameSize.width, spacing.s)),
-                        )
+                    if (renderer != null) {
+                        PreviewSurface(scene, revision, compare, renderer, Modifier.fillMaxSize())
+                    }
+                    if (renderer == null || scene == null) {
+                        PlaceholderScene(scene, canvasWidth, canvasHeight, Modifier.fillMaxSize())
+                    }
+                    SelectionOverlay(
+                        scene, canvasWidth, canvasHeight, selected, dragState.value, Modifier.fillMaxSize(),
+                    )
+                    if (compare != null) {
+                        CompareHandle(compare, { onIntent(StudioIntent.SetCompare(it)) }, Modifier.fillMaxSize())
+                        CompareLabel(before = true, modifier = Modifier.align(Alignment.TopStart).padding(spacing.s))
+                    }
+                    Column(
+                        modifier = Modifier.align(Alignment.TopEnd).padding(spacing.s),
+                        horizontalAlignment = Alignment.End,
+                        verticalArrangement = Arrangement.spacedBy(spacing.s),
+                    ) {
+                        if (compare != null) CompareLabel(before = false)
+                        if (scope != ScopeMode.OFF) {
+                            ScopeOverlay(
+                                pixels = scopePixels,
+                                mode = scope,
+                                modifier = Modifier.width(scopePanelWidth(frameSize.width, spacing.s)),
+                            )
+                        }
                     }
                 }
             }
@@ -235,10 +255,17 @@ internal fun StoryCanvasLayout(
     }
 }
 
+/**
+ * The canvas's accessibility node: its description, the selection as state, and the [CanvasActions] custom actions
+ * that stand in for the gestures (select, swap, zoom and reset crop).
+ */
 @Composable
 private fun Modifier.canvasSemantics(
     cellCount: Int,
     selected: Int?,
+    editable: Boolean,
+    photoIds: ImmutableList<String>,
+    overrides: ImmutableMap<String, CellOverride>,
     onSelect: (Int?) -> Unit,
     onIntent: (StudioIntent) -> Unit,
 ): Modifier {
@@ -248,22 +275,31 @@ private fun Modifier.canvasSemantics(
     } else {
         pluralStringResource(R.plurals.canvas_state_cells, cellCount, cellCount)
     }
-    val swapLabel = stringResource(R.string.canvas_action_swap_next)
+    val labels = CanvasAction.entries.associateWith { stringResource(it.labelRes()) }
+    val actions = CanvasActions.available(cellCount, selected, editable, photoIds, overrides)
     return semantics {
         contentDescription = description
         stateDescription = state
-        if (cellCount >= 2) {
-            customActions = listOf(
-                CustomAccessibilityAction(swapLabel) {
-                    val from = selected ?: 0
-                    val to = (from + 1) % cellCount
-                    onIntent(StudioIntent.SwapSlots(from, to))
-                    onSelect(to)
+        if (actions.isNotEmpty()) {
+            customActions = actions.map { action ->
+                CustomAccessibilityAction(labels.getValue(action)) {
+                    val result = CanvasActions.perform(action, cellCount, selected, photoIds, overrides)
+                        ?: return@CustomAccessibilityAction false
+                    result.intent?.let(onIntent)
+                    onSelect(result.select)
                     true
-                },
-            )
+                }
+            }
         }
     }
+}
+
+private fun CanvasAction.labelRes(): Int = when (this) {
+    CanvasAction.SELECT_NEXT -> R.string.canvas_action_select_next
+    CanvasAction.SWAP_NEXT -> R.string.canvas_action_swap_next
+    CanvasAction.ZOOM_IN -> R.string.canvas_action_zoom_in
+    CanvasAction.ZOOM_OUT -> R.string.canvas_action_zoom_out
+    CanvasAction.RESET_CROP -> R.string.canvas_action_reset_crop
 }
 
 /** Adds the pointer input for tap, double-tap, long-press drag and two-finger transform. */
@@ -277,6 +313,7 @@ private fun Modifier.canvasGestures(
     hitTest: (Float, Float) -> Int?,
     photoIds: ImmutableList<String>,
     overrides: ImmutableMap<String, CellOverride>,
+    editable: Boolean,
     dragState: MutableState<SlotDrag?>,
 ): Modifier {
     val haptics = LocalHapticFeedback.current
@@ -289,6 +326,7 @@ private fun Modifier.canvasGestures(
     val currentHitTest by rememberUpdatedState(hitTest)
     val currentPhotoIds by rememberUpdatedState(photoIds)
     val currentOverrides by rememberUpdatedState(overrides)
+    val currentEditable by rememberUpdatedState(editable)
 
     fun slotAt(point: Offset): Int? {
         val cells = currentScene?.layers?.size ?: return null
@@ -310,6 +348,7 @@ private fun Modifier.canvasGestures(
         .pointerInput(Unit) {
             detectDragGesturesAfterLongPress(
                 onDragStart = { point ->
+                    if (!currentEditable) return@detectDragGesturesAfterLongPress
                     val slot = slotAt(point) ?: return@detectDragGesturesAfterLongPress
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                     dragState.value = SlotDrag(from = slot, start = point, current = point, target = null)
@@ -323,7 +362,7 @@ private fun Modifier.canvasGestures(
                     val active = dragState.value
                     dragState.value = null
                     val target = active?.let { slotAt(it.current) }
-                    if (active != null && target != null && target != active.from) {
+                    if (currentEditable && active != null && target != null && target != active.from) {
                         currentOnIntent(StudioIntent.SwapSlots(active.from, target))
                         currentOnSelect(target)
                         haptics.performHapticFeedback(HapticFeedbackType.Confirm)

@@ -6,10 +6,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.akane.akastudio.core.color.api.ImagePixels
 import com.akane.akastudio.core.color.api.NormRect
@@ -41,23 +44,37 @@ private val TrioScene = RenderScene(
     ),
 )
 
+/** [content] laid out right to left, as under an Arabic, Hebrew or Persian locale, when [rtl]. */
 @Composable
-private fun CanvasShot(compare: Float?, selectedSlot: Int?) = DarkroomTheme {
-    StoryCanvasLayout(
-        scene = TrioScene,
-        revision = 1L,
-        renderer = null,
-        compare = compare,
-        onIntent = {},
-        hitTest = { _, _ -> null },
-        selectedSlot = selectedSlot,
-        onSelect = {},
-        photoIds = persistentListOf("a", "b", "c"),
-        overrides = persistentMapOf(),
-        scope = ScopeMode.OFF,
-        scopePixels = null,
-        modifier = Modifier.fillMaxSize(),
-    )
+private fun Direction(rtl: Boolean, content: @Composable () -> Unit) {
+    if (rtl) CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl, content = content) else content()
+}
+
+@Composable
+private fun CanvasShot(
+    compare: Float?,
+    selectedSlot: Int?,
+    scope: ScopeMode = ScopeMode.OFF,
+    rtl: Boolean = false,
+) = DarkroomTheme {
+    Direction(rtl) {
+        StoryCanvasLayout(
+            scene = TrioScene,
+            revision = 1L,
+            renderer = null,
+            compare = compare,
+            onIntent = {},
+            hitTest = { _, _ -> null },
+            selectedSlot = selectedSlot,
+            onSelect = {},
+            photoIds = persistentListOf("a", "b", "c"),
+            overrides = persistentMapOf(),
+            scope = scope,
+            scopePixels = null,
+            editable = true,
+            modifier = Modifier.fillMaxSize(),
+        )
+    }
 }
 
 /** A 270x480 synthetic "dusk" frame: a warm-to-cool sky over a darker, textured ground. */
@@ -88,11 +105,13 @@ private fun syntheticPixels(): ImagePixels {
 private val NarrowFrame = 195.dp
 
 @Composable
-private fun ScopeShot(mode: ScopeMode, width: Dp = 320.dp) = DarkroomTheme {
+private fun ScopeShot(mode: ScopeMode, width: Dp = 320.dp, rtl: Boolean = false) = DarkroomTheme {
     val colors = DarkroomTheme.colors
     val data = remember(mode) { ScopeData.compute(syntheticPixels(), mode, colors) }
-    Box(Modifier.background(colors.canvasBackdrop).padding(DarkroomTheme.spacing.l)) {
-        ScopePanel(data = data, mode = mode, modifier = Modifier.width(width))
+    Direction(rtl) {
+        Box(Modifier.background(colors.canvasBackdrop).padding(DarkroomTheme.spacing.l)) {
+            ScopePanel(data = data, mode = mode, modifier = Modifier.width(width))
+        }
     }
 }
 
@@ -105,6 +124,16 @@ private fun NarrowScopeShot(mode: ScopeMode) = ScopeShot(mode, scopePanelWidth(N
 
 @PreviewTest @Preview(name = "compare-handle", widthDp = 360, heightDp = 640, showBackground = true, backgroundColor = 0xFF070809)
 @Composable fun CanvasCompareHandle() = CanvasShot(compare = 0.42f, selectedSlot = 1)
+
+@PreviewTest @Preview(name = "compare-scope", widthDp = 360, heightDp = 640, showBackground = true, backgroundColor = 0xFF070809)
+@Composable fun CanvasCompareScope() = CanvasShot(compare = 0.42f, selectedSlot = null, scope = ScopeMode.RGB_PARADE)
+
+// Right-to-left: the image-space overlays must not mirror, so each RTL shot matches its left-to-right twin.
+@PreviewTest @Preview(name = "compare-handle-rtl", widthDp = 360, heightDp = 640, showBackground = true, backgroundColor = 0xFF070809)
+@Composable fun CanvasCompareHandleRtl() = CanvasShot(compare = 0.42f, selectedSlot = 1, rtl = true)
+
+@PreviewTest @Preview(name = "compare-scope-rtl", widthDp = 360, heightDp = 640, showBackground = true, backgroundColor = 0xFF070809)
+@Composable fun CanvasCompareScopeRtl() = CanvasShot(compare = 0.42f, selectedSlot = null, scope = ScopeMode.RGB_PARADE, rtl = true)
 
 @PreviewTest @Preview(name = "scope-luma", widthDp = 352, showBackground = true, backgroundColor = 0xFF070809)
 @Composable fun CanvasScopeLuma() = ScopeShot(ScopeMode.LUMA_WAVEFORM)
@@ -135,3 +164,12 @@ private fun NarrowScopeShot(mode: ScopeMode) = ScopeShot(mode, scopePanelWidth(N
 @PreviewTest
 @Preview(name = "scope-histogram-narrow-tr-large-font", widthDp = 195, locale = "tr", fontScale = 1.3f, showBackground = true, backgroundColor = 0xFF070809)
 @Composable fun CanvasScopeHistogramNarrowTrLargeFont() = NarrowScopeShot(ScopeMode.HISTOGRAM)
+
+@PreviewTest @Preview(name = "scope-luma-rtl", widthDp = 352, showBackground = true, backgroundColor = 0xFF070809)
+@Composable fun CanvasScopeLumaRtl() = ScopeShot(ScopeMode.LUMA_WAVEFORM, rtl = true)
+
+@PreviewTest @Preview(name = "scope-parade-rtl", widthDp = 352, showBackground = true, backgroundColor = 0xFF070809)
+@Composable fun CanvasScopeParadeRtl() = ScopeShot(ScopeMode.RGB_PARADE, rtl = true)
+
+@PreviewTest @Preview(name = "scope-histogram-rtl", widthDp = 352, showBackground = true, backgroundColor = 0xFF070809)
+@Composable fun CanvasScopeHistogramRtl() = ScopeShot(ScopeMode.HISTOGRAM, rtl = true)

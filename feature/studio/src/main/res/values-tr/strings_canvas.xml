@@ -11,6 +11,10 @@
         <item quantity="other">%1$d hücre</item>
     </plurals>
     <string name="canvas_action_swap_next">Sonraki hücreyle yer değiştir</string>
+    <string name="canvas_action_select_next">Sonraki hücreyi seç</string>
+    <string name="canvas_action_zoom_in">Yakınlaştır</string>
+    <string name="canvas_action_zoom_out">Uzaklaştır</string>
+    <string name="canvas_action_reset_crop">Kırpmayı sıfırla</string>
 
     <!-- Before/after compare -->
     <string name="canvas_compare_before">Önce</string>
