@@ -90,7 +90,8 @@ class DefaultIngestionSessionTest {
         assertEquals(stableCandidateId(uri + "\u0000" + "dir/e1"), completed.candidates.single { it.source.displayName == "e1" }.id)
         val call = extractor.calls.single()
         assertEquals(uri, call.archiveIdentity)
-        assertEquals(File(session.workDir, stableCandidateId(uri).take(16)), call.destinationDir)
+        assertEquals(session.workDir, call.destinationDir.parentFile)
+        assertTrue(call.destinationDir.name, call.destinationDir.name.startsWith(stableCandidateId(uri).take(16) + "-"))
         assertTrue("destination dir is created before extraction", call.destinationExisted)
         assertEquals(listOf(uri), opened)
     }
@@ -218,13 +219,15 @@ class DefaultIngestionSessionTest {
     }
 
     @Test
-    fun cancellationMidRun_emitsNoCompletedAndRunsExtractorCleanup() = runTest {
+    fun cancellationMidRun_emitsNoCompletedRunsExtractorCleanupAndDropsTheStagedArchive() = runTest {
         val uri = "content://zip/slow"
+        var midFlight = false
         var cleanedUp = false
         val extractor = FakeExtractor(
             uri to flow {
                 try {
                     emit(extracted("first", 10))
+                    midFlight = true
                     awaitCancellation()
                 } finally {
                     cleanedUp = true
@@ -236,12 +239,14 @@ class DefaultIngestionSessionTest {
 
         val job = launch { session.ingest(listOf(IngestionRequest.ZipArchive(uri, "Slow.zip"))).collect { events += it } }
         advanceUntilIdle()
-        assertTrue("run should be mid-flight", events.any { it is IngestionEvent.CandidateReady })
+        assertTrue("run should be mid-flight", midFlight)
+        assertTrue("an unfinished archive publishes nothing: $events", events.isEmpty())
         job.cancel()
         job.join()
 
         assertFalse(events.any { it is IngestionEvent.Completed })
         assertTrue("extractor cleanup must run on cancellation", cleanedUp)
+        assertFalse("staging folder deleted on cancellation", extractor.calls.single().destinationDir.exists())
     }
 
     @Test
