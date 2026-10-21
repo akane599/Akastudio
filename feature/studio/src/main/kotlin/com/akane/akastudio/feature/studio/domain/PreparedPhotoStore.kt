@@ -23,9 +23,6 @@ internal class PreparedPhotoStore(
 
     private val entries = LinkedHashMap<String, Entry>()
 
-    /** Ids currently prepared, in preparation order. */
-    val preparedIds: Set<String> get() = entries.keys.toSet()
-
     /** True when every id in [ids] is prepared with the [hero] budget. */
     fun covers(ids: List<String>, hero: Boolean): Boolean = ids.all { entries[it]?.hero == hero }
 

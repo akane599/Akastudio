@@ -77,7 +77,7 @@ class PreparedPhotoStoreTest {
         advanceUntilIdle()
 
         assertEquals(listOf("a", "b"), preparer.released)
-        assertTrue(store.preparedIds.isEmpty())
+        assertTrue(store.detachAll().isEmpty())
     }
 
     @Test
@@ -92,7 +92,7 @@ class PreparedPhotoStoreTest {
             assertTrue(e.message!!.contains("Preparer returned"))
         }
         assertEquals(setOf("a", "b"), preparer.released.toSet())
-        assertTrue(store.preparedIds.isEmpty())
+        assertTrue(store.detachAll().isEmpty())
     }
 
     @Test
@@ -103,9 +103,10 @@ class PreparedPhotoStoreTest {
 
         store.retainOnly(listOf("b"))
         assertEquals(listOf("a", "c"), preparer.released)
-        assertEquals(setOf("b"), store.preparedIds)
+        assertTrue(store.covers(listOf("b"), hero = false))
 
         assertEquals(listOf("b"), store.detachAll())
-        assertTrue(store.preparedIds.isEmpty())
+        assertTrue(store.detachAll().isEmpty())
+        assertEquals("detachAll only forgets; the caller releases", listOf("a", "c"), preparer.released)
     }
 }
