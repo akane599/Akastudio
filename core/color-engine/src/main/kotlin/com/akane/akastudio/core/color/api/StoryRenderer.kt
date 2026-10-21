@@ -13,4 +13,18 @@ interface StoryRenderer : AutoCloseable {
     suspend fun renderPreviewPixels(scene: RenderScene, width: Int, height: Int): ImagePixels
     /** GL_MAX_TEXTURE_SIZE of the context (for full-resolution decode bounds). */
     suspend fun maxTextureSize(): Int
+
+    /**
+     * Frees GPU memory the renderer holds only to make the next frame cheaper: pooled render targets, cached grades,
+     * text rasters and the cached window surface. The renderer stays fully usable (the next render rebuilds what it
+     * needs) and registered images are kept. Asynchronous, queued after work already submitted, never throws; call it
+     * when the UI is hidden or the system asks to trim memory.
+     */
+    fun trimMemory() = Unit
+
+    /**
+     * Drops the renderer's window surface for [surface], if it holds one, before the caller releases [surface]
+     * (a TextureView's SurfaceTexture being destroyed). Asynchronous, queued after work already submitted.
+     */
+    fun releaseSurface(surface: android.view.Surface) = Unit
 }

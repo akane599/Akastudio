@@ -11,6 +11,7 @@ import com.akane.akastudio.core.color.gl.GlFramebuffer
 import com.akane.akastudio.core.color.gl.GlTexture
 import com.akane.akastudio.core.color.gl.ShaderProgram
 import com.akane.akastudio.core.color.gl.checkGlError
+import com.akane.akastudio.core.color.render.GradeSlotSpace
 import com.akane.akastudio.core.color.render.LayerGrader
 import com.akane.akastudio.core.color.render.Mat3
 import com.akane.akastudio.core.color.render.PixelRect
@@ -67,13 +68,11 @@ internal class ShaderLayerGrader(
         val params: GradeParams,
     )
 
-    private class Slot(val output: GlFramebuffer, var key: SlotKey?)
-
     private val capabilities: GlCapabilities = environment.capabilities
     private val pool: FboPool = environment.fboPool
     private val quad = environment.quad
     private val luts = LookLutTextures()
-    private val slots = HashMap<Int, Slot>()
+    private val outputs = GradeSlotOutputs<SlotKey> { width, height -> GlFramebuffer.create(width, height, variant.format) }
 
     private val resample: ShaderProgram
     private val blur: ShaderProgram
@@ -101,40 +100,24 @@ internal class ShaderLayerGrader(
     /** [grade], returning the slot's framebuffer (the parity probe reads it back). */
     fun gradeInto(source: GlTexture, region: RectF, outWidth: Int, outHeight: Int, params: GradeParams, slot: Int): GlFramebuffer {
         val key = SlotKey(source, source.id, region.left, region.top, region.right, region.bottom, outWidth, outHeight, params)
-        val cached = slots[slot]
-        if (cached != null && cached.key == key && !cached.output.isReleased) return cached.output
+        outputs.cached(slot, key)?.let { return it }
 
         val uniforms = GradeUniforms.from(params)
         val plan = GradePlanner.plan(
             source.width, source.height, region.left, region.top, region.right, region.bottom,
             outWidth, outHeight, capabilities.maxTargetWidth, capabilities.maxTargetHeight,
         )
-        val output = outputFor(slot, plan)
-        output.key = null
-        render(source, plan, uniforms, slot, output.output)
-        output.key = key
-        return output.output
+        return outputs.grade(slot, key, plan.width, plan.height) { output -> render(source, plan, uniforms, slot, output) }
+    }
+
+    override fun trim(space: GradeSlotSpace) {
+        outputs.release { it in space }
     }
 
     override fun close() {
-        slots.values.forEach { it.output.release() }
-        slots.clear()
+        outputs.releaseAll()
         luts.release()
         listOf(resample, blur, pixel, bright, finish).forEach { it.release() }
-    }
-
-    private fun outputFor(slot: Int, plan: GradePlan): Slot {
-        val existing = slots[slot]
-        if (existing != null && !existing.output.isReleased &&
-            existing.output.width == plan.width && existing.output.height == plan.height
-        ) {
-            return existing
-        }
-        existing?.output?.release()
-        slots.remove(slot)
-        val created = Slot(GlFramebuffer.create(plan.width, plan.height, variant.format), key = null)
-        slots[slot] = created
-        return created
     }
 
     private fun render(source: GlTexture, plan: GradePlan, uniforms: GradeUniforms, slot: Int, output: GlFramebuffer) {
@@ -269,7 +252,7 @@ internal class ShaderLayerGrader(
         finish.setFloat(GradeUniformNames.GRAIN_SIZE, u.grainSizePx)
         finish.setFloat(GradeUniformNames.GRAIN_LUMA, u.grainLuma)
         finish.setFloat(GradeUniformNames.GRAIN_CHROMA, u.grainChromaGain)
-        finish.setInt(GradeUniformNames.GRAIN_SEED, slot)
+        finish.setInt(GradeUniformNames.GRAIN_SEED, GradeSlotSpace.layerSlot(slot))
         finish.setVec2(GradeUniformNames.GRAIN_ORIGIN, plan.regionLeft, plan.regionTop)
         finish.setVec2(GradeUniformNames.GRAIN_SCALE, plan.outPerTexelX, plan.outPerTexelY)
     }
