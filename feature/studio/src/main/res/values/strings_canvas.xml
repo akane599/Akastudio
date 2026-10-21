@@ -22,4 +22,8 @@
     <string name="canvas_scope_luma">Luma waveform</string>
     <string name="canvas_scope_parade">RGB parade</string>
     <string name="canvas_scope_histogram">Histogram</string>
+    <!-- Shown instead of the full caption when it does not fit the scope panel -->
+    <string name="canvas_scope_luma_short">Luma</string>
+    <string name="canvas_scope_parade_short">RGB</string>
+    <string name="canvas_scope_histogram_short">Hist.</string>
 </resources>

@@ -51,6 +51,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -62,6 +63,7 @@ import com.akane.akastudio.core.composer.api.CellOverride
 import com.akane.akastudio.feature.studio.R
 import com.akane.akastudio.feature.studio.mvi.ScopeMode
 import com.akane.akastudio.feature.studio.mvi.StudioIntent
+import com.akane.akastudio.feature.studio.ui.canvas.scope.ScopeMinWidth
 import com.akane.akastudio.feature.studio.ui.canvas.scope.ScopeOverlay
 import com.akane.akastudio.feature.studio.ui.theme.DarkroomTheme
 import kotlinx.collections.immutable.ImmutableList
@@ -76,6 +78,15 @@ private const val GHOST_FILL_ALPHA = 0.16f
 private const val PICKED_DIM_ALPHA = 0.45f
 private const val TARGET_ALPHA = 0.6f
 private const val FALLBACK_REFRESH_HZ = 60f
+
+/**
+ * The docked scope's width in a frame [frameWidth] wide: 40% of the frame but at least [ScopeMinWidth], so its labels
+ * stay readable on a small canvas, and never wider than the frame inside its [inset] on each side.
+ */
+internal fun scopePanelWidth(frameWidth: Dp, inset: Dp): Dp {
+    val available = (frameWidth - inset * 2).coerceAtLeast(0.dp)
+    return (frameWidth * SCOPE_WIDTH_FRACTION).coerceAtLeast(ScopeMinWidth).coerceAtMost(available)
+}
 
 /** A long-press drag of the cell in slot [from], from view point [start] to [current], over slot [target]. */
 @Immutable
@@ -215,7 +226,7 @@ internal fun StoryCanvasLayout(
                         ScopeOverlay(
                             pixels = scopePixels,
                             mode = scope,
-                            modifier = Modifier.width(frameSize.width * SCOPE_WIDTH_FRACTION),
+                            modifier = Modifier.width(scopePanelWidth(frameSize.width, spacing.s)),
                         )
                     }
                 }

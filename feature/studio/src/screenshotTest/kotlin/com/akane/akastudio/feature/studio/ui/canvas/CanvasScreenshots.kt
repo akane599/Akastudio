@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.akane.akastudio.core.color.api.ImagePixels
 import com.akane.akastudio.core.color.api.NormRect
@@ -83,14 +84,21 @@ private fun syntheticPixels(): ImagePixels {
     return ImagePixels(w, h, argb)
 }
 
+/** The story frame on the QA emulator (SQ-52), where the docked scope used to shrink to 78 dp. */
+private val NarrowFrame = 195.dp
+
 @Composable
-private fun ScopeShot(mode: ScopeMode) = DarkroomTheme {
+private fun ScopeShot(mode: ScopeMode, width: Dp = 320.dp) = DarkroomTheme {
     val colors = DarkroomTheme.colors
     val data = remember(mode) { ScopeData.compute(syntheticPixels(), mode, colors) }
     Box(Modifier.background(colors.canvasBackdrop).padding(DarkroomTheme.spacing.l)) {
-        ScopePanel(data = data, mode = mode, modifier = Modifier.width(320.dp))
+        ScopePanel(data = data, mode = mode, modifier = Modifier.width(width))
     }
 }
+
+/** The scope at the width the studio docks it at on a [NarrowFrame]-wide canvas. */
+@Composable
+private fun NarrowScopeShot(mode: ScopeMode) = ScopeShot(mode, scopePanelWidth(NarrowFrame, DarkroomTheme.spacing.s))
 
 @PreviewTest @Preview(name = "placeholder-trio", widthDp = 360, heightDp = 640, showBackground = true, backgroundColor = 0xFF070809)
 @Composable fun CanvasPlaceholderTrio() = CanvasShot(compare = null, selectedSlot = null)
@@ -106,3 +114,24 @@ private fun ScopeShot(mode: ScopeMode) = DarkroomTheme {
 
 @PreviewTest @Preview(name = "scope-histogram", widthDp = 352, showBackground = true, backgroundColor = 0xFF070809)
 @Composable fun CanvasScopeHistogram() = ScopeShot(ScopeMode.HISTOGRAM)
+
+@PreviewTest @Preview(name = "scope-luma-narrow", widthDp = 195, showBackground = true, backgroundColor = 0xFF070809)
+@Composable fun CanvasScopeLumaNarrow() = NarrowScopeShot(ScopeMode.LUMA_WAVEFORM)
+
+@PreviewTest @Preview(name = "scope-parade-narrow", widthDp = 195, showBackground = true, backgroundColor = 0xFF070809)
+@Composable fun CanvasScopeParadeNarrow() = NarrowScopeShot(ScopeMode.RGB_PARADE)
+
+@PreviewTest @Preview(name = "scope-histogram-narrow", widthDp = 195, showBackground = true, backgroundColor = 0xFF070809)
+@Composable fun CanvasScopeHistogramNarrow() = NarrowScopeShot(ScopeMode.HISTOGRAM)
+
+@PreviewTest
+@Preview(name = "scope-luma-narrow-tr-large-font", widthDp = 195, locale = "tr", fontScale = 1.3f, showBackground = true, backgroundColor = 0xFF070809)
+@Composable fun CanvasScopeLumaNarrowTrLargeFont() = NarrowScopeShot(ScopeMode.LUMA_WAVEFORM)
+
+@PreviewTest
+@Preview(name = "scope-parade-narrow-tr-large-font", widthDp = 195, locale = "tr", fontScale = 1.3f, showBackground = true, backgroundColor = 0xFF070809)
+@Composable fun CanvasScopeParadeNarrowTrLargeFont() = NarrowScopeShot(ScopeMode.RGB_PARADE)
+
+@PreviewTest
+@Preview(name = "scope-histogram-narrow-tr-large-font", widthDp = 195, locale = "tr", fontScale = 1.3f, showBackground = true, backgroundColor = 0xFF070809)
+@Composable fun CanvasScopeHistogramNarrowTrLargeFont() = NarrowScopeShot(ScopeMode.HISTOGRAM)
