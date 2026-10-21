@@ -88,7 +88,7 @@ sealed interface StudioPhase {
     /** A story is on screen and editable. */
     data object Ready : StudioPhase
 
-    /** An export is running; the story stays editable but mode and photo changes wait. */
+    /** An export is running; grade and layout stay editable but crop, mode and photo changes wait. */
     data object Exporting : StudioPhase
 }
 

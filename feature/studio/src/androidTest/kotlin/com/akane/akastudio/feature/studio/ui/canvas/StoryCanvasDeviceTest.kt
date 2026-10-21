@@ -9,9 +9,11 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.doubleClick
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.pinch
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.akane.akastudio.core.color.api.NormRect
@@ -135,6 +137,53 @@ class StoryCanvasDeviceTest {
 
         val state = resources.getQuantityString(R.plurals.canvas_state_selected, 2, 2, 2)
         canvas().assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, state))
+    }
+
+    /** Spreads two fingers apart horizontally over the top cell. */
+    private fun pinchOutOnTop() {
+        canvas().performTouchInput {
+            val y = height * 0.25f
+            pinch(
+                start0 = Offset(centerX - 40f, y),
+                end0 = Offset(centerX - 200f, y),
+                start1 = Offset(centerX + 40f, y),
+                end1 = Offset(centerX + 200f, y),
+                durationMillis = 400L,
+            )
+        }
+        compose.waitForIdle()
+    }
+
+    @Test
+    fun editablePinchZoomsTheCell() {
+        setCanvas(editable = true)
+        pinchOutOnTop()
+        val crops = intents.filterIsInstance<StudioIntent.SetCellOverride>()
+        assertTrue(intents.toString(), crops.isNotEmpty() && crops.all { it.photoId == "a" })
+        assertTrue(intents.toString(), (crops.last().override?.zoom ?: 1f) > 1f)
+    }
+
+    @Test
+    fun lockedPinchSendsNoCropEdit() {
+        setCanvas(editable = false)
+        pinchOutOnTop()
+        assertTrue(intents.toString(), intents.none { it is StudioIntent.SetCellOverride })
+    }
+
+    @Test
+    fun doubleTapResetsTheCropOnlyWhileEditable() {
+        setCanvas(editable = false)
+        canvas().performTouchInput { doubleClick(Offset(centerX, height * 0.75f)) }
+        compose.waitForIdle()
+        assertTrue(intents.toString(), intents.none { it is StudioIntent.SetCellOverride })
+        val state = resources.getQuantityString(R.plurals.canvas_state_selected, 2, 2, 2)
+        canvas().assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, state))
+
+        editable.value = true
+        compose.waitForIdle()
+        canvas().performTouchInput { doubleClick(Offset(centerX, height * 0.75f)) }
+        compose.waitForIdle()
+        assertEquals(listOf<StudioIntent>(StudioIntent.SetCellOverride("b", null)), intents)
     }
 
     @Test
