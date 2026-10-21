@@ -24,5 +24,5 @@ Clean Architecture + MVI. Android calls sit in thin adapters; the logic is pure 
 7. **UI/MVI** (`:feature:studio`): `StudioViewModel` holds `StudioState` (phases Empty, Ingesting, Curating, Preparing, Ready, Exporting), applies `StudioReducer` to `StudioIntent`s, runs the pipeline steps above, emits `StudioEffect` (share, snackbar).
 
 ## Cross-cutting
-- Dispatchers injected via `StudioDispatchers`; heavy objects (renderer, models) are process-wide and never closed.
+- Dispatchers injected via `StudioDispatchers`; heavy objects (renderer, models) are process-wide and never closed; the renderer's GPU memory is trimmed after export and when the UI is hidden (`StoryRenderer.trimMemory`).
 - Errors: module exceptions (`IngestionException`, `NoUsablePhotosException`, …) mapped by `StudioContainerErrorMapper` to `StudioError`; UI owns message text (en + tr resources).

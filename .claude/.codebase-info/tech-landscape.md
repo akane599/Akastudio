@@ -15,7 +15,7 @@
 | ML | MediaPipe tasks-vision 1.1.1, LiteRT 2.3.0 (`:core:vision-curator` only) | catalog |
 | Tests | JUnit 4, coroutines-test, Compose Preview Screenshot Testing 0.0.1-alpha16; device: androidx.test runner/core/rules 1.7.0, ext-junit 1.3.0, Compose ui-test-junit4 (BOM) | catalog (`bundles.androidx.test`) |
 
-Repositories locked to `google()` + `mavenCentral()` in `settings.gradle.kts`. No DI framework, no KSP, no Robolectric, no network, no database.
+Repositories locked to `google()` + `mavenCentral()` in `settings.gradle.kts`. No DI framework, no KSP, no Robolectric, no network permission, no database.
 
 ## ML models (`core/vision-curator/src/main/assets/models/`, provenance + sha256 in `MODELS.md`, mirrored in `ml/ModelManifest.kt`)
 - `face_landmarker.task` (MediaPipe; blink blendshapes for eye openness)
@@ -30,4 +30,6 @@ OpenGL ES 3 via `EglCore` on a dedicated GL thread; RGBA16F FBOs, 3D LUT texture
 ## Release packaging (`app/build.gradle.kts`, `app/proguard-rules.pro`, `app/src/main/AndroidManifest.xml`)
 - Ships as an App Bundle (`bundleRelease`, `bundle { abi { enableSplit = true } }`); ABIs `arm64-v8a`, `armeabi-v7a`, `x86_64`. `-Pakastudio.abiSplits=true` emits per-ABI APKs instead of the universal APK.
 - R8 keeps: MediaPipe framework + protobuf lite, LiteRT, Flogger (`allowshrinking`; inlining broke MediaPipe's caller lookup, so every model fell back in release), and `RoomDatabase` constructors.
+- The manifest strips transitive permissions with `tools:node="remove"`: INTERNET, ACCESS_NETWORK_STATE, WAKE_LOCK, RECEIVE_BOOT_COMPLETED, FOREGROUND_SERVICE and FOREGROUND_SERVICE_DATA_SYNC. It also removes the data-transport CCT backend meta-data, so MediaPipe telemetry is dropped. The datatransport library itself stays, because MediaPipe references it.
+- `check<Variant>NoInternetPermission` (`CheckNoInternetPermission` in `app/build.gradle.kts`) fails when the merged manifest declares INTERNET. It runs in `check`, and `assembleRelease`/`bundleRelease` depend on it.
 - The manifest removes `androidx.work.WorkManagerInitializer` (WorkManager arrives only transitively via LiteRT → play:ai-delivery → asset-delivery).
