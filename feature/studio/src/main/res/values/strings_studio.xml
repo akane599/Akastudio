@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Studio screen: snackbar messages (StudioMessage) and the canvas while preparing -->
+    <string name="studio_message_busy">Still working on the current step. Cancel it first, or wait for it to finish.</string>
+    <!-- %1$s source file name, %2$s why it was rejected -->
+    <string name="studio_message_source_failed">“%1$s” was skipped. %2$s</string>
+    <!-- %1$s the export format actually written (Ultra HDR falls back to Social Story Master without HDR headroom) -->
+    <string name="studio_message_export_saved">%1$s saved to Pictures/AkaStudio</string>
+    <string name="studio_share_chooser">Share story</string>
+    <string name="studio_action_dismiss">Dismiss</string>
+    <string name="studio_preparing">Preparing full-resolution photos</string>
+</resources>

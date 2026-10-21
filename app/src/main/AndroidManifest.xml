@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- No media permissions: photos come from the system photo picker (images only), archives from the document picker. -->
     <application
+        android:name=".AkaStudioApp"
         android:allowBackup="true"
         android:label="@string/app_name"
+        android:largeHeap="true"
         android:supportsRtl="true"
         android:theme="@style/Theme.AkaStudio">
         <activity

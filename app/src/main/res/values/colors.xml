@@ -1,0 +1,4 @@
+<resources>
+    <!-- Matches DarkroomPalette.Background. -->
+    <color name="darkroom_background">#FF0B0C0E</color>
+</resources>

@@ -1,4 +1,11 @@
 <resources>
-    <!-- Window theme only; all UI styling lives in ui/theme/*.kt -->
-    <style name="Theme.AkaStudio" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- Window theme only; all UI styling lives in DarkroomTheme. The Darkroom background paints the window
+         before the first frame, so the app never flashes white. -->
+    <style name="Theme.AkaStudio" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/darkroom_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
 </resources>

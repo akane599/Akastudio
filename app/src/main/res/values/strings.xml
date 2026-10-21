@@ -1,6 +1,3 @@
 <resources>
-    <string name="app_name">AkaStudio</string>
-    <string name="home_title">AkaStudio</string>
-    <string name="home_empty">Nothing here yet.</string>
-    <string name="home_add">Add item</string>
+    <string name="app_name" translatable="false">AkaStudio</string>
 </resources>

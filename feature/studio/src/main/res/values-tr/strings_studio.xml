@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="studio_message_busy">Geçerli adım hâlâ sürüyor. Önce iptal edin ya da bitmesini bekleyin.</string>
+    <string name="studio_message_source_failed">“%1$s” atlandı. %2$s</string>
+    <string name="studio_message_export_saved">%1$s, Resimler/AkaStudio klasörüne kaydedildi</string>
+    <string name="studio_share_chooser">Hikâyeyi paylaş</string>
+    <string name="studio_action_dismiss">Kapat</string>
+    <string name="studio_preparing">Tam çözünürlüklü fotoğraflar hazırlanıyor</string>
+</resources>
