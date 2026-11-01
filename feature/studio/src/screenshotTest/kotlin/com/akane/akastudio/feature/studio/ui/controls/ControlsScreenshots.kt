@@ -63,6 +63,11 @@ private fun RtlSlider(value: Float, range: ClosedFloatingPointRange<Float>, bipo
     }
 }
 
+/** [Panel] laid out right to left, as under an Arabic, Hebrew or Persian locale. */
+@Composable
+private fun RtlPanel(state: StudioState) =
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) { Panel(state) }
+
 /** The modal export sheet's surface, handle and body, drawn inline because a modal sheet opens its own window. */
 @Composable
 private fun SheetSurface(state: StudioState, sdkInt: Int) = DarkroomTheme {
@@ -104,6 +109,10 @@ private fun SheetSurface(state: StudioState, sdkInt: Int) = DarkroomTheme {
 
 @PreviewTest @Preview(name = "export-sheet-exporting-tr", widthDp = 360, heightDp = 720, locale = "tr", showBackground = true, backgroundColor = 0xFF070809)
 @Composable fun ExportSheetExportingTurkishShot() = SheetSurface(ControlsFixtures.exporting(), API_34)
+
+// Right-to-left: rows and labels mirror, while signed readouts keep their order (`+12`, not `12+`).
+@PreviewTest @Preview(name = "tab-color-rtl", widthDp = 360, heightDp = 1040, showBackground = true, backgroundColor = 0xFF141518)
+@Composable fun ColorTabRtlShot() = RtlPanel(ControlsFixtures.state(ControlTab.COLOR))
 
 @PreviewTest @Preview(name = "tab-curation-large-font", widthDp = 360, heightDp = 640, fontScale = 1.5f, showBackground = true, backgroundColor = 0xFF141518)
 @Composable fun CurationTabLargeFontShot() = Panel(ControlsFixtures.state(ControlTab.CURATION))
