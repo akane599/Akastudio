@@ -11,7 +11,6 @@ Needs an emulator (emulator-5554 not attached on 2026-11-01):
 - Direct SwiftShader (API 36) GL failures are an environment limitation; use `-gpu swangle` for emulator GL QA (`GL_DIAGNOSIS.md`).
 - L1: a replacement prepare can briefly overlap retired photo allocations (needs a memory measurement).
 Needs a decision or a scoped change:
-- RTL slider track: `SliderTrack` (ControlSlider.kt) fills left-to-right while the Material thumb mirrors, so under RTL the fill and thumb disagree; the `tab-color-rtl` screenshot reference records the current behaviour (found 2026-11-01).
 - Lint reports 5 version-availability warnings (AGP 9.4.1→9.5.0 ×2, screenshot alpha16→17, MediaPipe 1.1.1→1.2.0, LiteRT 2.3.0→2.3.2); bumping is a toolchain decision.
 
 ## Baseline
