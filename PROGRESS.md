@@ -5,9 +5,10 @@ _This file keeps decisions, audit status and open issues that outlive a single c
 ## Open issues
 Needs the phone (per-session authorization):
 - Physical evidence still missing: gallery/share-app display policy, signed release runtime, RSS/thermal measurements, and emitted (calibrated) luminance. Night C1 headroom was confirmed on 2026-11-01 (current ratio 5.0 ≥ 2.54 required; `M1_COMPLETION.md`).
-Needs an emulator (emulator-5554 not attached on 2026-11-01):
-- Release APK never installed/run; process death and memory stress not run; no API 31–34 device run (`COVERAGE.md`).
-- API 37: 5 original Compose BACK/configuration tests fail in Espresso's hidden `InputManager.getInstance` lookup (recorded failures; native replacements 4/4 pass but don't cover large-font geometry or preview RGB) (`API37_TEST_INFRA.md`).
+Needs an emulator (emulator-5554 not attached on 2026-11-01; akane-linux emulators used on 2026-11-02, see `REMOTE_QA.md`):
+- No API 31–34 device run: akane-linux has only API 35/36/37 system images, and installing older images on that PC needs the user's go-ahead (`COVERAGE.md`).
+- Release runtime was checked only on an API 37 emulator with a throwaway signature (import, curation, Social and Ultra HDR export, process death, critical trim memory); a release signed with the real key has not run on a phone.
+- API 37: every test that uses the Compose test rule fails in Espresso's hidden `InputManager.getInstance` lookup before its behaviour runs, 26 in the full suites on 2026-11-02 (app 14, studio 12); the native lifecycle tests, the launch smoke and the physical workflow test pass (6/6). Needs a test-dependency update or more native replacements (`API37_TEST_INFRA.md`).
 - Direct SwiftShader (API 36) GL failures are an environment limitation; use `-gpu swangle` for emulator GL QA (`GL_DIAGNOSIS.md`).
 - L1: a replacement prepare can briefly overlap retired photo allocations (needs a memory measurement).
 - `connectedDebugAndroidTest` on the phone (SM-S938B, API 37) fails the Gradle task with "There were failing tests" although the XML, the HTML report and raw `am instrument` all show every test passing (seen 2026-11-01 with `AlphaContractDeviceTest`, 4/4 OK; `test-result-exit-code.txt` is 1). Read results from the XML or `am instrument` there until the UTP exit code is understood.
@@ -66,7 +67,8 @@ Needs a decision or a scoped change:
 | Audit fixes (2nd) | 2026-10-21 @ ae48ee2 | AUD-01..AUD-08 fixed (ownership contract: PhotoOwner / StoryGeneration, owner-qualified renderer keys); review on Opus/xhigh only, no GPT | `/audit-remediate` (standalone, Sidequest off) |
 | UI / design | — | — | `/ui-overhaul` phase review |
 | Lint | 2026-10-21 @ ae48ee2 | 0 errors, all modules (944 JVM unit tests green in the same gate) | `lintDebug` (in the full gate) |
-| Device QA | 2026-10-21 @ ae48ee2 | 117/117 pass (app 15, studio 12, ingestion 19, color 25, composer 14, export 19, curator 13); software renderer only, no physical GPU | `connectedDebugAndroidTest` per module on emulator-5554 (SwiftShader) under the flock lock |
+| Device QA | 2026-11-02 @ 508b691 | API 35 (akane-linux, ANGLE/SwiftShader): 142/142 across all 7 suites. API 37: 5 core suites 109/109; app 6 pass / 14 fail and studio 0 / 12, every failure the Espresso `InputManager.getInstance` lookup. Release APK (throwaway signature) on API 37: import, curation, Social + Ultra HDR export (gain map present), trim memory, process death; no crash or ANR. Alpha device tests 4/4 on the phone (SM-S938B) | instrument runs on akane-linux emulators under owner-host locks; evidence `docs/stabilization/evidence/remote-qa-20261102/` (gitignored) |
+| Device QA (previous) | 2026-10-21 @ ae48ee2 | 117/117 pass (app 15, studio 12, ingestion 19, color 25, composer 14, export 19, curator 13); software renderer only, no physical GPU | `connectedDebugAndroidTest` per module on emulator-5554 (SwiftShader) under the flock lock |
 
 ## Environment notes
 - No /dev/kvm on this machine, so no local AVD. A shared redroid Android 15 emulator (`emulator-5554`) is attached over adb and is approved for AkaStudio QA (2026-10-21); check `adb devices` at the start of each stage.

@@ -98,3 +98,15 @@ The VPS follow-up build exited 0 (`.claude/kit/logs/gradle.1tx6g8Dj.log`), sourc
 The remote directory contains `host-inventory.txt`, per-guest JSON with exact launch arguments, `api*-avd-config.txt`, `api*-emulator.log`, `api*-kvm-fds.txt`, device identities, exact test plans, full instrumentation output, filtered measurement logcat, and source/artifact metadata. A local copy of these small evidence files is retained in [evidence/remote-qa](evidence/remote-qa/). APKs remain only in the dedicated remote cache and existing VPS build outputs. Buffers were never cleared.
 
 Cleanup completed on 2026-10-25 at 22:05 UTC. The final owned emulator PIDs 120763 and 115486 were verified against their expected AVD/port/read-only command identities and terminated gracefully under their respective owner-host locks. Both `/proc` entries are absent. The first discovery-locked postcheck briefly showed `emulator-5558` offline; the subsequent final inventory is empty ([cleanup record](evidence/remote-qa/cleanup.json)). Earlier API 36 processes exited during the controlled backend restarts. The existing adb server and AVD data were preserved, along with the dedicated APK/log cache. Final available RAM was 14,066,556,928 bytes ([resource record](evidence/remote-qa/resources-after-cleanup.json)); final retained APK sizes/hashes are recorded in [retained-artifacts-final.json](evidence/remote-qa/retained-artifacts-final.json). The unused studio APK placeholder is zero bytes and was never installed or executed.
+
+## 2026-11-02 session
+
+Source `508b691` (local main). APKs built on build-server and copied to `/home/akane/.cache/akastudio-remote-qa-20261102/apk/` (checksums verified with `SHA256SUMS`). Emulators `pixel-api35` on 5556 and `pixel-api37` on 5558, both `-read-only -no-snapshot-load -no-snapshot-save -no-window -no-audio -no-boot-anim -accel on -gpu swangle -memory 2048 -cores 4`, started without holding the lock and stopped with `adb emu kill` at the end. Every device step ran under `~/.cache/akastudio-emulator-<port>.lock` with explicit `adb -H localhost -P 5037 -s emulator-<port>`. Scripts `run-suites.sh` and `ui.sh` are in that directory. Gotchas: the remote login shell is zsh (run scripts with bash), and `adb shell` reads stdin, so it eats the rest of a script piped over SSH; run scripts from a file. Pushed photos need `content call --uri content://media --method scan_volume --arg external_primary` before the photo picker shows them.
+
+| Run | Result |
+| --- | --- |
+| API 35, all 7 instrumentation APKs | 142/142: app 21, studio 12, ingestion 19, color 33, curator 13, composer 14, export 30 |
+| API 37, all 7 instrumentation APKs | core 109/109; app 6 pass / 14 fail / 1 assumption; studio 0 / 12. All 26 failures are `NoSuchMethodException: InputManager.getInstance` from Espresso under the Compose test rule |
+| API 37, release APK (throwaway signature) | launch, photo picker import (5), curation, Social and Ultra HDR export, trim memory, process death: no crash or ANR |
+
+Evidence (gitignored): `docs/stabilization/evidence/remote-qa-20261102/`.
