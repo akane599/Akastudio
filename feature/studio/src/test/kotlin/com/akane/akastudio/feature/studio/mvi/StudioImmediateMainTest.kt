@@ -21,6 +21,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -198,6 +199,45 @@ class StudioImmediateMainTest {
         assertNull("the import's photos are curated, not reported missing", h.state.error)
         assertEquals(StudioPhase.Ready, h.state.phase)
         assertEquals(listOf(listOf(a, b, c)), h.deps.curation.curated)
+    }
+
+    @Test
+    fun work_after_an_export_cancelled_before_it_started_still_follows_the_trailing_release() = runTest {
+        val h = harness()
+        ready(h)
+        h.send(StudioIntent.ForceMode(StoryMode.COLLAGE_3))
+        advanceUntilIdle()
+        assertEquals(listOf("a", "b", "c"), h.state.selection.photoIds)
+        h.deps.preparer.releaseDelayMs = 1_000
+
+        // Back to two photos: Ready is shown, then the work releases c for a second.
+        h.send(StudioIntent.ForceMode(StoryMode.COLLAGE_2))
+        var guard = 0
+        while ("c" !in h.deps.preparer.released && guard++ < 10_000) advanceTimeBy(1)
+        assertEquals(StudioPhase.Ready, h.state.phase)
+        assertEquals(listOf("c"), h.deps.preparer.released)
+
+        // An export cancelled from inside its own phase write, before its job ever started.
+        val fired = reenterOnce(h, StudioIntent.CancelWork) { it.phase == StudioPhase.Exporting }
+        h.send(StudioIntent.Export(share = false))
+        assertTrue(fired())
+        assertEquals(StudioPhase.Ready, h.state.phase)
+
+        // Three photos again: preparing c must wait for the release of c still in flight.
+        val preparedBefore = h.deps.preparer.prepareCalls.count { "c" in it.first }
+        h.send(StudioIntent.ForceMode(StoryMode.COLLAGE_3))
+        advanceTimeBy(500)
+        assertEquals(
+            "c is not prepared while its release is still running",
+            preparedBefore,
+            h.deps.preparer.prepareCalls.count { "c" in it.first },
+        )
+        advanceUntilIdle()
+
+        assertEquals(StudioPhase.Ready, h.state.phase)
+        assertEquals(listOf("a", "b", "c"), h.state.selection.photoIds)
+        assertEquals(preparedBefore + 1, h.deps.preparer.prepareCalls.count { "c" in it.first })
+        assertNull(h.state.error)
     }
 
     @Test

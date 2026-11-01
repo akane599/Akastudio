@@ -87,11 +87,24 @@ internal class StoryGeneration(private val host: StoryHost, parent: CoroutineSco
 
     private enum class WorkKind { INITIAL, REPREPARE, RESTORE, EXPORT }
 
-    private class Work(val kind: WorkKind) {
+    private class Work(val kind: WorkKind, after: Work?) {
         lateinit var job: Job
 
         /** True until the previous work has ended and this one begins: nothing of its own has run yet. */
         var waiting = true
+
+        /** The work this one follows, kept until this one begins (see [tail]). */
+        var after: Work? = after
+    }
+
+    /**
+     * The job the next work must follow. A work cancelled while still waiting has run nothing of its own, and if it
+     * was cancelled before it ever started it never joins the work before it either, so the real tail is further back.
+     */
+    private fun tail(): Job? {
+        var w = work
+        while (w != null && w.waiting && w.job.isCancelled) w = w.after
+        return w?.job
     }
 
     private val deps: StudioDependencies get() = host.deps
@@ -453,14 +466,15 @@ internal class StoryGeneration(private val host: StoryHost, parent: CoroutineSco
      * transition announcing the work; it is published once the work is registered, before the work starts.
      */
     private fun launchWork(kind: WorkKind, enter: ((StudioState) -> StudioState)? = null, block: suspend () -> Unit) {
-        val previous = work?.job
-        val next = Work(kind)
+        val previous = tail()
+        val next = Work(kind, after = work)
         next.job = scope.launch(start = CoroutineStart.LAZY) {
             // Waited out even when cancelled meanwhile: a cancelled waiter that ran on would overlap the previous
             // work's tail (a release, a render) instead of following it, and so would whatever is launched after it.
             if (previous != null && previous !== coroutineContext.job) withContext(NonCancellable) { previous.join() }
             ensureActive()
             next.waiting = false
+            next.after = null
             try {
                 block()
             } catch (e: CancellationException) {
