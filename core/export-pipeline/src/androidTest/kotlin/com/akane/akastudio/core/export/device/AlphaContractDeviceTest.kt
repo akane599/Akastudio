@@ -210,10 +210,12 @@ class AlphaContractDeviceTest {
                 )
             for (format in formats) {
                 val sink = MemorySink()
+                // The JPEG writers flatten the frame over black in place, so its alpha is checked as it is rendered.
+                renderer.inspect = { assertFrostedFrame(format, it) }
                 val result = ExportProcessor(renderer, sink, ultra, PlatformWebpLosslessEncoder()).exportBlocking(frostedRequest(format))
+                renderer.inspectFailure?.let { throw it }
                 val frame = checkNotNull(renderer.last) { "no frame captured for $format" }
                 renderer.last = null
-                assertFrostedFrame(format, frame)
                 val bytes = sink.files.single().bytes
                 record("alphaContract.frosted.$format", "${result.format} ${result.width}x${result.height} ${bytes.size} bytes")
                 when (format) {
@@ -560,13 +562,29 @@ class AlphaContractDeviceTest {
         }
     }
 
-    /** Delegates to the production renderer and keeps the last offscreen frame for comparison with the file. */
+    /**
+     * Delegates to the production renderer and keeps the last offscreen frame for comparison with the file. [inspect]
+     * runs on the frame before the exporter gets it (the JPEG writers overwrite its alpha); a failure is kept in
+     * [inspectFailure] for the test thread to rethrow.
+     */
     private class CapturingRenderer(
         private val delegate: StoryRenderer,
     ) : StoryRenderer {
         @Volatile var last: HalfFloatImage? = null
 
-        override suspend fun renderOffscreen(scene: RenderScene): HalfFloatImage = delegate.renderOffscreen(scene).also { last = it }
+        @Volatile var inspect: ((HalfFloatImage) -> Unit)? = null
+
+        @Volatile var inspectFailure: Throwable? = null
+
+        override suspend fun renderOffscreen(scene: RenderScene): HalfFloatImage =
+            delegate.renderOffscreen(scene).also { frame ->
+                last = frame
+                try {
+                    inspect?.invoke(frame)
+                } catch (e: AssertionError) {
+                    inspectFailure = e
+                }
+            }
 
         override suspend fun registerImage(
             key: String,

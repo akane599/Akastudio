@@ -191,9 +191,40 @@ class ExportBoundaryAndAlphaTest {
     }
 
     /**
-     * A translucent HDR frame: the encoder receives a base whose colour is the premultiplied (over-black) rendition and
-     * whose alpha still carries the frame's alpha (the platform encoder forces it opaque, see the device test). Gain and
-     * base colour equal those of the same premultiplied colour at alpha 1.
+     * Social JPEG is opaque over black, so a translucent frame must export exactly like its over-black composite (the
+     * same premultiplied colour at alpha 1), edges included: resampling and sharpening must not weight by alpha. Before
+     * the frame was flattened, Lanczos3 divided by the filtered alpha and lit the faint edge of the transparent band.
+     */
+    @Test
+    fun socialJpegOfATranslucentFrameEncodesExactlyLikeItsOverBlackComposite() {
+        val translucent = export(ExportFormat.SOCIAL_STORY_JPEG, translucentBands())
+        val composite = export(ExportFormat.SOCIAL_STORY_JPEG, translucentBands(forceOpaque = true))
+        if (!translucent.bytes.contentEquals(composite.bytes)) {
+            val a = ImageIO.read(ByteArrayInputStream(translucent.bytes))
+            val b = ImageIO.read(ByteArrayInputStream(composite.bytes))
+            var worst = 0
+            var at = ""
+            for (y in 0 until a.height step 4) {
+                for (x in 0 until a.width) {
+                    val pa = a.getRGB(x, y)
+                    val pb = b.getRGB(x, y)
+                    for (shift in intArrayOf(16, 8, 0)) {
+                        val d = abs(((pa ushr shift) and 0xFF) - ((pb ushr shift) and 0xFF))
+                        if (d > worst) {
+                            worst = d
+                            at = "($x,$y) ${hex(pa)} vs ${hex(pb)}"
+                        }
+                    }
+                }
+            }
+            throw AssertionError("translucent export differs from the over-black composite; largest at $at by $worst")
+        }
+    }
+
+    /**
+     * A translucent HDR frame: the encoder receives the opaque over-black rendition, the premultiplied colour at alpha 1
+     * (the frame is flattened before resampling; the platform encoder would force it opaque anyway, see the device
+     * test). Gain and base colour equal those of the same premultiplied colour at alpha 1.
      */
     @Test
     fun ultraHdrOfATranslucentFrameEncodesTheOverBlackRendition() {
@@ -214,8 +245,8 @@ class ExportBoundaryAndAlphaTest {
             if (i % 4 != 3) assertEquals("base colour sample $i", opaqueSdr.rgba[i], sdr.rgba[i])
         }
         val y = 1500 // below the HDR rows, so the frosted band is below the knee and keeps its colour
-        assertEquals("alpha reaches the encoder", 0.5f, sample(sdr, bandCentre(1), y, 3), 0f)
-        assertEquals(0f, sample(sdr, bandCentre(0), y, 3), 0f)
+        assertEquals("the base reaches the encoder opaque", 1f, sample(sdr, bandCentre(1), y, 3), 0f)
+        assertEquals(1f, sample(sdr, bandCentre(0), y, 3), 0f)
         val row = IntArray(1080)
         Dither.toSrgb8Row(sdr, y, row)
         for (x in bandColumns(1)) {

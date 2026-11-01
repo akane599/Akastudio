@@ -11,6 +11,10 @@ import kotlin.math.sin
 /**
  * Separable Lanczos-3 resampler working in linear light on premultiplied alpha.
  *
+ * The input is straight (unpremultiplied) colour: rows are premultiplied before filtering and divided by the filtered
+ * alpha after. A premultiplied render must be flattened first (alpha 1), as the JPEG exporter does, or translucent
+ * edges come out lit.
+ *
  * Pixel centres are aligned (`srcX = (dstX + 0.5) * scale - 0.5`), the kernel is widened by the scale factor when
  * downscaling, edges clamp, and ringing is kept (the quantizer clamps later). The horizontal pass writes a half-float
  * intermediate of `srcHeight x dstWidth` pixels; the vertical pass then accumulates one output row at a time.

@@ -70,6 +70,9 @@ import java.time.ZoneId
  *
  * @param webpLossless the bitmap-backed lossless WebP encoder (Android-only in production).
  * @param clock wall-clock millis used for the file name.
+ *
+ * The exporter owns the frame [StoryRenderer.renderOffscreen] returns and may overwrite it (the JPEG writers flatten
+ * its alpha in place), so a renderer must hand out a fresh image per call.
  */
 class ExportProcessor(
     private val renderer: StoryRenderer,
@@ -157,6 +160,16 @@ class ExportProcessor(
             }
         }
 
+        /**
+         * JPEG outputs are opaque over black, and the premultiplied render already is that composite once its alpha is
+         * 1. Flattening first keeps resampling and sharpening from weighting by alpha: Lanczos3 divides by the filtered
+         * alpha, which turned the faint edge of a translucent area into full colour once composited (a bright fringe).
+         */
+        private fun flattenOverBlack(frame: Frame) {
+            val rgba = frame.image.rgba
+            for (i in 3 until rgba.size step 4) rgba[i] = HALF_ONE
+        }
+
         private fun resampleIfLarger(frame: Frame) {
             if (frame.image.width <= target.width && frame.image.height <= target.height) return
             progress.stage(ExportStage.RESAMPLE, 0f)
@@ -187,6 +200,7 @@ class ExportProcessor(
 
         /** RESAMPLE when larger, SHARPEN the HDR frame, derive the shared SDR base, then the 4:4:4 JPEG. */
         private suspend fun writeSocialJpeg(frame: Frame) {
+            flattenOverBlack(frame)
             resampleIfLarger(frame)
             progress.stage(ExportStage.SHARPEN, 0f)
             frame.image = LumaSharpen.apply(frame.image)
@@ -239,6 +253,7 @@ class ExportProcessor(
          * (and could push its channels past SDR white, where the encoder clips them).
          */
         private suspend fun writeUltraHdr(frame: Frame, encoder: UltraHdrEncoder) {
+            flattenOverBlack(frame)
             if (!hasHeadroom(frame)) {
                 format = ExportFormat.SOCIAL_STORY_JPEG
                 return writeSocialJpeg(frame)
@@ -319,6 +334,9 @@ class ExportProcessor(
 
     internal companion object {
         private const val JPEG_QUALITY = 95
+
+        /** Half-float 1.0. */
+        private const val HALF_ONE: Short = 0x3C00
         private const val WRITE_CHUNK = 64 * 1024
 
         /** Keep export gain at full resolution; preflight and encode must observe the same spatial density. */
