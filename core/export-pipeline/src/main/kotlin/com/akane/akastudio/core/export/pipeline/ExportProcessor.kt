@@ -30,7 +30,6 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import java.io.OutputStream
 import java.time.ZoneId
-import kotlin.math.pow
 
 /**
  * Production [StoryExporter]: render -> process -> encode -> [EncodedSink].
@@ -40,7 +39,8 @@ import kotlin.math.pow
  * - PNG_16 / PNG_8 / SOCIAL_STORY_JPEG / ULTRA_HDR_JPEG stream straight into the sink, so quantization (blue-noise
  *   dither / 16-bit rounding) is fused into the encoder's row pulls and reported as ENCODE; a separate dithered frame
  *   would exceed the memory budget.
- * - SOCIAL_STORY_JPEG adds RESAMPLE (only when the render is larger than the target) and SHARPEN before ENCODE.
+ * - SOCIAL_STORY_JPEG adds RESAMPLE (only when the render is larger than the target), SHARPEN on the HDR frame,
+ *   then the same SDR shoulder as Ultra HDR before ENCODE.
  * - ULTRA_HDR_JPEG reports the optional highlight boost and the headroom decision inside RENDER, then SHARPEN of the
  *   HDR frame (after RESAMPLE if the render is larger), then ENCODE, which derives the gain map and its SDR base
  *   from the sharpened HDR frame before the platform encode, so the encoded base is the one the gain describes.
@@ -49,23 +49,24 @@ import kotlin.math.pow
  * - WRITE reaches 1 once the sink has published the entry.
  *
  * ULTRA_HDR_JPEG without an [ultraHdr] encoder (below API 34) falls back to SOCIAL_STORY_JPEG processing at the
- * target size and reports SOCIAL_STORY_JPEG. So does an ULTRA_HDR_JPEG export without hdrBoost whose render has no
- * perceptible HDR headroom (gain-map ratioMax below [MIN_HDR_RATIO], a third of a stop): an SDR source whose grade only
- * nudges highlights a few percent past SDR white would get a gain map nobody can see, on a 4:2:0 platform base instead
- * of the 4:4:4 Social one, so the headroom-decision RENDER steps are followed by the plain Social Story JPEG stages. With
- * hdrBoost the same happens when the boosted render has no headroom at all ([MIN_BOOSTED_HDR_RATIO]). The fallback
- * encodes the render itself, not the gain map's tone-mapped base, so it matches an explicit Social export of the same
- * render.
+ * target size and reports SOCIAL_STORY_JPEG. With an encoder, an explicit Ultra HDR request keeps any usable
+ * nonunit gain reported by [GainMapMath.ratioMax], including small gains on graded SDR sources. Both boosted and
+ * unboosted requests fall back when the preflight gain is unit (the gain-map math's 0.01-stop floor). The fallback
+ * uses the same SDR rendition as an explicit Social export. Explicit Social requests keep their 4:4:4
+ * encoder; a kept Ultra HDR request uses the platform encoder's 4:2:0 base.
  *
  * Cancellation is checked between stages and on every pulled row; the sink removes the partial entry. Once the sink
  * has published the entry, WRITE 1 and Done are emitted without a cancellation point, so a cancel racing the publish
  * step still reports the visible file. Heavy work runs on [Dispatchers.Default], the sink write on [Dispatchers.IO].
  *
- * Memory: a stage holds its input and output [HalfFloatImage] (8 bytes per pixel) plus row buffers. The peak is
- * RESAMPLE, which also holds Lanczos3's half-float `renderHeight x targetWidth` intermediate (SOCIAL_STORY_JPEG at
+ * Memory: a stage holds its input and output [HalfFloatImage] (8 bytes per pixel) plus row buffers. For Social HD,
+ * RESAMPLE also holds Lanczos3's half-float `renderHeight x targetWidth` intermediate (SOCIAL_STORY_JPEG at
  * HD: 66 MB render + 33 MB intermediate + 17 MB output, about 116 MB). ULTRA_HDR_JPEG's platform encode adds a native
  * ARGB_8888 base bitmap and the buffered file. WEBP_LOSSLESS drops the render once it is dithered, before the container
  * is laid out and streamed.
+ * At UHD, the full-resolution gain grid allocates about 37.08 MiB more compute log/code arrays than a 4x downscaled
+ * grid. Platform encoding adds about 7.42 MiB more ALPHA_8 gain pixels and another 7.42 MiB of heap staging (stride
+ * dependent). These are incremental allocations, not a simultaneous peak: buffer lifetimes and GC can overlap.
  *
  * @param webpLossless the bitmap-backed lossless WebP encoder (Android-only in production).
  * @param clock wall-clock millis used for the file name.
@@ -118,7 +119,7 @@ class ExportProcessor(
 
     /**
      * One export. [format] is the format written; it can still drop from ULTRA_HDR_JPEG to SOCIAL_STORY_JPEG once the
-     * gain map shows no perceptible headroom, so the file name and MIME type are resolved at publish time.
+     * preflight gain map shows no usable headroom, so the file name and MIME type are resolved at publish time.
      */
     private inner class ExportJob(
         private val request: ExportRequest,
@@ -184,12 +185,13 @@ class ExportProcessor(
             }
         }
 
-        /** RESAMPLE (when larger than the target), SHARPEN, then the 4:4:4 JPEG; RENDER is already complete. */
+        /** RESAMPLE when larger, SHARPEN the HDR frame, derive the shared SDR base, then the 4:4:4 JPEG. */
         private suspend fun writeSocialJpeg(frame: Frame) {
             resampleIfLarger(frame)
             progress.stage(ExportStage.SHARPEN, 0f)
             frame.image = LumaSharpen.apply(frame.image)
             progress.stage(ExportStage.SHARPEN, 1f)
+            frame.image = GainMapMath.sdrBase(frame.image)
             val image = frame.image
             val exif = exif(image.width, image.height)
             val rows = RowProgress(image.height, ExportStage.ENCODE, progress)
@@ -246,7 +248,7 @@ class ExportProcessor(
             frame.image = LumaSharpen.apply(frame.image)
             progress.stage(ExportStage.SHARPEN, 1f)
             progress.stage(ExportStage.ENCODE, 0f)
-            val gain = GainMapMath.compute(frame.image)
+            val gain = GainMapMath.compute(frame.image, gainDownscale = GAIN_DOWNSCALE)
             frame.image = gain.sdr
             val sdr = gain.sdr
             val exif = exif(sdr.width, sdr.height)
@@ -259,9 +261,8 @@ class ExportProcessor(
 
         /**
          * Finishes RENDER for Ultra HDR: the optional highlight boost and the headroom decision. Returns `false` when
-         * there is no headroom worth encoding: ratioMax below [MIN_HDR_RATIO] without hdrBoost, or below
-         * [MIN_BOOSTED_HDR_RATIO] (an all-zero gain map, a scene with no highlights to boost) with it. The frame then
-         * still holds the render, so the fallback writes exactly what SOCIAL_STORY_JPEG would. Otherwise the frame
+         * the preflight gain is unit, with or without hdrBoost. The frame then still holds the render, so the
+         * fallback writes exactly what SOCIAL_STORY_JPEG would. Otherwise the frame
          * holds the HDR image to encode (the boosted render with hdrBoost). [GainMapMath.ratioMax] equals the
          * ratioMax [GainMapMath.compute] would report for this (not yet sharpened) frame without allocating the SDR
          * base, so the render, the boosted frame and the base are never all held. The encoded gain is computed later
@@ -271,13 +272,13 @@ class ExportProcessor(
         private fun hasHeadroom(frame: Frame): Boolean {
             progress.stage(ExportStage.RENDER, 0.5f)
             if (!request.hdrBoost) {
-                val ratioMax = GainMapMath.ratioMax(frame.image)
+                val ratioMax = GainMapMath.ratioMax(frame.image, gainDownscale = GAIN_DOWNSCALE)
                 progress.stage(ExportStage.RENDER, 1f)
                 return ratioMax >= MIN_HDR_RATIO
             }
             val boosted = GainMapMath.boostHighlights(frame.image)
             progress.stage(ExportStage.RENDER, 0.75f)
-            val keep = GainMapMath.ratioMax(boosted) >= MIN_BOOSTED_HDR_RATIO
+            val keep = GainMapMath.ratioMax(boosted, gainDownscale = GAIN_DOWNSCALE) >= MIN_BOOSTED_HDR_RATIO
             if (keep) frame.image = boosted
             progress.stage(ExportStage.RENDER, 1f)
             return keep
@@ -320,26 +321,8 @@ class ExportProcessor(
         private const val JPEG_QUALITY = 95
         private const val WRITE_CHUNK = 64 * 1024
 
-        /**
-         * Smallest gain-map ratioMax worth an Ultra HDR file without hdrBoost: 2^(1/3), a third of a stop, the finest
-         * exposure step cameras offer as a visible change (about 26% brighter highlights).
-         *
-         * Measured (SQ-66): the render keeps values above SDR white, so grading an SDR-only source overshoots it a
-         * little. The CPU reference grade of an SDR chart (sRGB steps 0..1, white included) gave log2 ratioMax 0 to
-         * 0.044 for every Master look at default sliders, and at most 0.25 with one slider at its extreme (contrast,
-         * halation, temperature). SQ-52's SDR story exported a 0.072-stop gain map (about 5% brighter) through the old
-         * near-zero cut-off (ratioMax above 1 + 1e-4). hdrBoost adds 2 stops to the highlights, so it uses
-         * [MIN_BOOSTED_HDR_RATIO] instead. Deliberate brightening of an SDR source past a third of a stop (exposure, a
-         * strong harmonization lift) reaches the threshold and keeps the gain map too.
-         *
-         * AUD-03: the base is also bounded per channel, so a saturated colour graded past SDR white counts as headroom
-         * as well (the luminance-only base clipped it and reported none). On a CPU-graded copy of
-         * SdrOnlyUltraHdrDeviceTest's SDR photo (sky to white, saturated patches, grey ramp; no JPEG round trip),
-         * default looks give 0 to 0.20 stop and MEDITERRANEAN_AZURE with contrast 1 gives 0.29 (0.36 on the device,
-         * GPU-graded, after a JPEG round trip: above the threshold, so that device fixture grades with contrast 0.5),
-         * while saturation +1 (0.56, 0.73 with AZURE), temperature -1 (0.56) or halation 1 (0.37) keep the gain map.
-         */
-        val MIN_HDR_RATIO = 2f.pow(1f / 3f)
+        /** Keep export gain at full resolution; preflight and encode must observe the same spatial density. */
+        const val GAIN_DOWNSCALE = 1
 
         /**
          * Smallest gain-map ratioMax kept with hdrBoost: anything above 1. [GainMapMath.compute] reports exactly 1 for
@@ -347,5 +330,8 @@ class ExportProcessor(
          * gives; such a scene falls back to SOCIAL_STORY_JPEG like any other no-headroom request.
          */
         const val MIN_BOOSTED_HDR_RATIO = 1f + 1e-3f
+
+        /** Explicit Ultra HDR requests use the same usable-gain floor with or without highlight boost. */
+        const val MIN_HDR_RATIO = MIN_BOOSTED_HDR_RATIO
     }
 }

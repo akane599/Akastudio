@@ -13,14 +13,19 @@ import com.akane.akastudio.core.color.api.GradeParams
 import com.akane.akastudio.core.color.api.MasterLook
 import com.akane.akastudio.core.color.grade.CpuGradingPipeline
 import com.akane.akastudio.core.color.grade.LinearImage
+import com.akane.akastudio.core.color.math.ColorMath
 import com.akane.akastudio.core.export.api.ExportFormat
 import com.akane.akastudio.core.export.api.ExportResolution
 import com.akane.akastudio.core.export.api.ExportResult
 import com.akane.akastudio.core.export.pipeline.ExportProcessor
 import com.akane.akastudio.core.export.process.GainMapMath
 import com.akane.akastudio.core.export.process.Half
+import com.akane.akastudio.core.export.process.LumaSharpen
 import com.akane.akastudio.core.export.store.PlatformUltraHdrEncoder
 import com.akane.akastudio.core.export.store.PlatformWebpLosslessEncoder
+import kotlin.math.log2
+import kotlin.math.abs
+import kotlin.math.pow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -34,9 +39,8 @@ import java.nio.ByteOrder
 import android.graphics.Paint as AndroidPaint
 
 /**
- * SQ-66: an SDR-only story (a JPEG with no gain map, decoded the way the app decodes, then graded with a look that
- * nudges highlights past SDR white) asked for ULTRA_HDR_JPEG must come out as the plain 4:4:4 Social Story JPEG, not
- * an Ultra HDR file with a near-empty gain map (SQ-52: ratioMax ~1.05).
+ * M1: explicit Ultra HDR requests preserve usable gain, including small gains on graded SDR sources. A unit
+ * preflight gain falls back to Social; explicit Social exports retain their 4:4:4 codec and the same SDR shoulder.
  */
 @RunWith(AndroidJUnit4::class)
 class SdrOnlyUltraHdrDeviceTest {
@@ -47,25 +51,135 @@ class SdrOnlyUltraHdrDeviceTest {
     }
 
     @Test
-    fun sdrOnlyStoryWithUltraHdrRequestExportsSocialJpeg() {
+    fun gradedSdrStoryWithUsableGainHonoursTheUltraHdrRequest() {
         val sdr = decodeLikeTheApp(sdrPhotoJpeg())
         val graded = CpuGradingPipeline.grade(sdr, GradeParams(look = MasterLook.MEDITERRANEAN_AZURE, contrast = 0.5f))
         val renderer = SyntheticRenderer(sample(graded))
-        val ratioMax = GainMapMath.compute(renderer.render(1080, 1920)).ratioMax
+        val ratioMax = GainMapMath.compute(renderer.render(1080, 1920), gainDownscale = ExportProcessor.GAIN_DOWNSCALE).ratioMax
         record("sdrOnly.ratioMax", ratioMax)
         assertTrue(
             "the graded SDR render must overshoot white a little, like SQ-52's (ratioMax $ratioMax)",
-            ratioMax > 1.02f && ratioMax < ExportProcessor.MIN_HDR_RATIO,
+            ratioMax > ExportProcessor.MIN_HDR_RATIO && ratioMax < 2f.pow(1f / 3f),
         )
 
         val (result, jpeg) = exportUltraHdr(renderer)
-        assertEquals("the reported format must name the fallback", ExportFormat.SOCIAL_STORY_JPEG, result.format)
-        assertTrue(result.uri, result.uri.endsWith("_SOCIAL_STORY_JPEG.jpg"))
+        assertEquals("the reported format must preserve the explicit request", ExportFormat.ULTRA_HDR_JPEG, result.format)
+        assertTrue(result.uri, result.uri.endsWith("_ULTRA_HDR_JPEG.jpg"))
         val bitmap = checkNotNull(BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size))
-        assertFalse("an SDR-only story must not carry a gain map", bitmap.hasGainmap())
+        assertTrue("usable gain must be retained", bitmap.hasGainmap())
         assertEquals(1080 to 1920, bitmap.width to bitmap.height)
         bitmap.recycle()
-        assertEquals("the Social fallback keeps full chroma", "4:4:4", firstFrameSampling(jpeg))
+        assertEquals("explicit Ultra HDR accepts platform chroma sampling", "4:2:0", firstFrameSampling(jpeg))
+
+        val (socialResult, socialJpeg) = exportJpeg(renderer, ExportFormat.SOCIAL_STORY_JPEG)
+        val social = checkNotNull(BitmapFactory.decodeByteArray(socialJpeg, 0, socialJpeg.size))
+        try {
+            assertEquals(ExportFormat.SOCIAL_STORY_JPEG, socialResult.format)
+            assertFalse("explicit Social has no gain map", social.hasGainmap())
+            assertEquals("explicit Social keeps full chroma", "4:4:4", firstFrameSampling(socialJpeg))
+        } finally {
+            social.recycle()
+        }
+    }
+
+    /** Actual codec evidence at the numerical floor and on both sides of the former third-stop cutoff. */
+    @Test
+    fun nearUnitAndFormerThirdStopBoundariesKeepTheSdrRenditionContinuous() {
+        var previousFormerCutoffBase: Float? = null
+        for (peak in listOf(1f, 1.00390625f, 1.0078125f, 1.25f, 1.265625f)) {
+            val renderer = SyntheticRenderer(Paint { x, _, w, _, out ->
+                val v = if (x < w / 2) 1f else peak
+                for (c in 0..2) out[c] = v
+            })
+            val input = renderer.render(1080, 1920)
+            val preflight = GainMapMath.ratioMax(input, gainDownscale = ExportProcessor.GAIN_DOWNSCALE)
+            val processed = LumaSharpen.apply(input)
+            val finalGain = GainMapMath.compute(processed, gainDownscale = ExportProcessor.GAIN_DOWNSCALE)
+            val (result, jpeg) = exportUltraHdr(renderer)
+            val bitmap = checkNotNull(BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size))
+            try {
+                val expectedUltra = preflight >= ExportProcessor.MIN_HDR_RATIO
+                assertEquals(if (expectedUltra) ExportFormat.ULTRA_HDR_JPEG else ExportFormat.SOCIAL_STORY_JPEG, result.format)
+                assertEquals(expectedUltra, bitmap.hasGainmap())
+                assertEquals(if (expectedUltra) "4:2:0" else "4:4:4", firstFrameSampling(jpeg))
+                val decodedBase = ColorMath.srgbToLinear((bitmap.getPixel(270, 960) shr 16 and 0xFF) / 255f)
+                val expectedBase = finalGain.sdr.let { Half.toFloat(it.rgba[(960 * it.width + 270) * 4]) }
+                assertTrue("peak $peak decodes the chosen SDR base", abs(decodedBase - expectedBase) <= 0.015f)
+                record("m1.boundary.$peak.preflightRatio", preflight)
+                record("m1.boundary.$peak.finalMathRatio", finalGain.ratioMax)
+                record("m1.boundary.$peak.decodedBase", decodedBase)
+                record("m1.boundary.$peak.format", result.format)
+                if (bitmap.hasGainmap()) record("m1.boundary.$peak.encodedRatioMax", checkNotNull(bitmap.gainmap).ratioMax.toList())
+                if (peak >= 1.25f) {
+                    previousFormerCutoffBase?.let {
+                        assertTrue("crossing the former third-stop cutoff must not jump the SDR base", abs(decodedBase - it) <= 0.02f)
+                    }
+                    previousFormerCutoffBase = decodedBase
+                }
+            } finally {
+                bitmap.recycle()
+            }
+        }
+    }
+
+    /** Eligibility is deliberately measured before sharpening, which can introduce its own small overshoot. */
+    @Test
+    fun unitPreflightStillFallsBackWhenSharpeningCreatesUsableGain() {
+        val renderer = SyntheticRenderer(step(low = 0.1f, high = 1f, edgeX = 540))
+        val input = renderer.render(1080, 1920)
+        val preflight = GainMapMath.ratioMax(input, gainDownscale = ExportProcessor.GAIN_DOWNSCALE)
+        val finalRatio = GainMapMath.ratioMax(LumaSharpen.apply(input), gainDownscale = ExportProcessor.GAIN_DOWNSCALE)
+        assertEquals("the input has no HDR headroom", 1f, preflight, 0f)
+        assertTrue("the edge exercises a post-sharpen numerical change", finalRatio > 1f)
+        val (result, jpeg) = exportUltraHdr(renderer)
+        val bitmap = checkNotNull(BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size))
+        try {
+            assertEquals("the format follows preflight, not later sharpening overshoot", ExportFormat.SOCIAL_STORY_JPEG, result.format)
+            assertFalse(bitmap.hasGainmap())
+            assertEquals("4:4:4", firstFrameSampling(jpeg))
+            record("m1.sharpenBoundary.preflightRatio", preflight)
+            record("m1.sharpenBoundary.finalRatio", finalRatio)
+            record("m1.sharpenBoundary.format", result.format)
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    /** M1: preserve the original decoded fixture and measure both grades against the same headroom rule. */
+    @Test
+    fun azureContrastSettingsUseTheMeasuredHeadroomBoundary() {
+        val sdr = decodeLikeTheApp(sdrPhotoJpeg())
+        for (contrast in listOf(0.5f, 1f)) {
+            val graded = CpuGradingPipeline.grade(sdr, GradeParams(look = MasterLook.MEDITERRANEAN_AZURE, contrast = contrast))
+            val renderer = SyntheticRenderer(sample(graded))
+            val ratio = GainMapMath.ratioMax(renderer.render(1080, 1920), gainDownscale = ExportProcessor.GAIN_DOWNSCALE)
+            val expectedFormat = if (ratio >= ExportProcessor.MIN_HDR_RATIO) {
+                ExportFormat.ULTRA_HDR_JPEG
+            } else {
+                ExportFormat.SOCIAL_STORY_JPEG
+            }
+            val (result, jpeg) = exportUltraHdr(renderer)
+            val base = checkNotNull(BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size))
+            try {
+                record("m1.azure.contrast$contrast.ratioMax", ratio)
+                record("m1.azure.contrast$contrast.stops", log2(ratio))
+                record("m1.azure.contrast$contrast.format", result.format)
+                record("m1.azure.contrast$contrast.baseSampling", firstFrameSampling(jpeg))
+                record("m1.azure.contrast$contrast.baseCentreArgb", base.getPixel(540, 960).toUInt().toString(16))
+                record("m1.azure.contrast$contrast.hasGainmap", base.hasGainmap())
+                if (base.hasGainmap()) {
+                    val gain = checkNotNull(base.gainmap)
+                    record("m1.azure.contrast$contrast.encodedRatioMax", gain.ratioMax.toList())
+                    record("m1.azure.contrast$contrast.gainDimensions", "${gain.gainmapContents.width}x${gain.gainmapContents.height}")
+                }
+                assertEquals("contrast $contrast follows the measured pre-sharpen headroom", expectedFormat, result.format)
+                assertEquals("contrast $contrast gain-map presence agrees with the format", expectedFormat == ExportFormat.ULTRA_HDR_JPEG, base.hasGainmap())
+                assertEquals(if (expectedFormat == ExportFormat.ULTRA_HDR_JPEG) "4:2:0" else "4:4:4", firstFrameSampling(jpeg))
+                assertEquals(1080 to 1920, base.width to base.height)
+            } finally {
+                base.recycle()
+            }
+        }
     }
 
     /**
@@ -82,10 +196,23 @@ class SdrOnlyUltraHdrDeviceTest {
     }
 
     private fun exportUltraHdr(renderer: SyntheticRenderer): Pair<ExportResult, ByteArray> {
+        return exportJpeg(renderer, ExportFormat.ULTRA_HDR_JPEG)
+    }
+
+    private fun exportJpeg(renderer: SyntheticRenderer, format: ExportFormat): Pair<ExportResult, ByteArray> {
         val sink = MemorySink()
         val exporter = ExportProcessor(renderer, sink, PlatformUltraHdrEncoder(), PlatformWebpLosslessEncoder())
-        val result = exporter.exportBlocking(exportRequest(ExportFormat.ULTRA_HDR_JPEG, ExportResolution.HD_1080))
+        val result = exporter.exportBlocking(exportRequest(format, ExportResolution.HD_1080))
         return result to sink.files.single().bytes
+    }
+
+    /** Reuses the exact Canvas/JPEG/F16 fixture for the opt-in paired artifact capture. */
+    internal fun comparisonInputJpeg(): ByteArray = sdrPhotoJpeg()
+
+    internal fun comparisonRenderer(contrast: Float, jpeg: ByteArray): SyntheticRenderer {
+        val sdr = decodeLikeTheApp(jpeg)
+        val graded = CpuGradingPipeline.grade(sdr, GradeParams(look = MasterLook.MEDITERRANEAN_AZURE, contrast = contrast))
+        return SyntheticRenderer(sample(graded))
     }
 
     /** A plain 8-bit JPEG photo: a sky fading to white, saturated patches and a grey ramp up to white. */

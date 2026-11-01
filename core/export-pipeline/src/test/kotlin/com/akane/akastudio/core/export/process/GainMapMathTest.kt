@@ -25,8 +25,100 @@ class GainMapMathTest {
         assertEquals(9, result.gainWidth)
         assertEquals(6, result.gainHeight)
         assertArrayEquals(ByteArray(9 * 6), result.gain)
-        // Lw = 1 makes the tone curve the identity.
+        // A frame whose channels all fit SDR keeps the identity base.
         assertArrayEquals(src.rgba, result.sdr.rgba)
+    }
+
+    @Test
+    fun hdrPeakPreservesChannelsAtAndBelowTheShoulderKnee() {
+        val src = halfImage(8, 4) { x, _ ->
+            if (x < 4) floatArrayOf(0.6f, 0.3f, 0.15f, 0.4f) else floatArrayOf(4f, 4f, 4f, 0.7f)
+        }
+        val base = GainMapMath.compute(src).sdr
+        for (y in 0 until src.height) for (x in 0 until src.width) {
+            assertEquals("alpha passes through", src.at(x, y, 3), base.at(x, y, 3), 0f)
+            if (x < 4) for (c in 0..2) {
+                assertEquals("the HDR peak must not darken channel $c below the knee", src.at(x, y, c), base.at(x, y, c), 0f)
+            }
+        }
+    }
+
+    /** The knee is the maximum linear RGB channel, so a saturated peak also compresses high SDR colours. */
+    @Test
+    fun saturatedRedPeakCompressesHighSdrColoursButKeepsBlackAndLowChannels() {
+        val src = halfImage(17, 5) { x, _ ->
+            when {
+                x < 4 -> gray(0f)
+                x < 8 -> gray(0.001f)
+                x < 12 -> floatArrayOf(4f, 0f, 0f, 1f)
+                x < 16 -> floatArrayOf(0.8f, 0.4f, 0.2f, 1f)
+                else -> gray(0.5f)
+            }
+        }
+        for (downscale in listOf(1, 4, 7)) {
+            val gain = GainMapMath.compute(src, gainDownscale = downscale)
+            assertEquals(gain.ratioMax, GainMapMath.ratioMax(src, gainDownscale = downscale), 0f)
+            val base = gain.sdr
+            for (x in listOf(0, 4, 16)) for (c in 0..2) {
+                assertEquals("black, near-black and the partial-edge cell retain identity", src.at(x, 0, c), base.at(x, 0, c), 0f)
+            }
+            assertTrue("high SDR colour enters the linear max-channel shoulder", base.at(12, 0, 0) in 0.735f..0.742f)
+            assertEquals("red peak fits white", 1f, base.at(8, 0, 0), 0f)
+        }
+    }
+
+    @Test
+    fun shoulderIsSmoothAtTheKneeMonotoneBoundedAndPreservesColourRatios() {
+        val src = halfImage(1025, 1) { x, _ ->
+            val m = x / 256f
+            floatArrayOf(m, m / 2f, m / 4f, 1f)
+        }
+        val gain = GainMapMath.compute(src, gainDownscale = 1)
+        val base = gain.sdr
+        for (x in 1 until src.width) {
+            val red = base.at(x, 0, 0)
+            assertTrue("shoulder must stay monotone at $x", red >= base.at(x - 1, 0, 0))
+            assertTrue("shoulder fits SDR without brightening at $x", red in 0f..minOf(1f, src.at(x, 0, 0)))
+            assertEquals("green/red ratio at $x", 0.5f, base.at(x, 0, 1) / red, 0.001f)
+            assertEquals("blue/red ratio at $x", 0.25f, base.at(x, 0, 2) / red, 0.001f)
+        }
+        val step = 1f / 256f
+        val beforeKnee = (base.at(153, 0, 0) - base.at(152, 0, 0)) / step
+        val afterKnee = (base.at(155, 0, 0) - base.at(154, 0, 0)) / step
+        assertEquals("identity slope below knee", 1f, beforeKnee, 0.001f)
+        assertEquals("continuous slope above knee, within half storage precision", beforeKnee, afterKnee, 0.04f)
+        assertEquals("global peak maps to SDR white", 1f, base.at(1024, 0, 0), 0f)
+        assertEquals(gain.ratioMax, GainMapMath.ratioMax(src, gainDownscale = 1), 0f)
+    }
+
+    @Test
+    fun nearUnitPeakApproachesTheIdentityWithoutAVisibleBaseJump() {
+        for (peak in listOf(1f, 1.0009765625f, 1.00390625f, 1.0078125f, 1.03125f)) {
+            val src = halfImage(8, 4) { x, _ -> gray(if (x < 4) 0.8f else peak) }
+            val gain = GainMapMath.compute(src)
+            assertEquals(gain.ratioMax, GainMapMath.ratioMax(src), 0f)
+            val loss = src.at(0, 0, 0) - gain.sdr.at(0, 0, 0)
+            assertTrue("peak $peak approaches identity (base loss $loss)", loss >= 0f && loss <= peak - 1f + 0.001f)
+            if (peak <= 1.00390625f) {
+                assertEquals("sub-floor gain stays unit", 1f, gain.ratioMax, 0f)
+                assertArrayEquals(ByteArray(gain.gain.size), gain.gain)
+            } else if (peak >= 1.03125f) {
+                assertTrue("usable gain exceeds the unchanged 0.01-stop floor", gain.ratioMax > 1f)
+            }
+        }
+    }
+
+    @Test
+    fun sdrBaseMatchesGainMapBaseForSdrHdrSignedAndNonfinitePixels() {
+        val images = listOf(
+            halfImage(9, 5) { x, y -> floatArrayOf(x / 10f, y / 6f, 0.2f, 0.3f) },
+            redBesideWhite(),
+            halfImage(7, 5) { x, _ -> floatArrayOf(if (x < 3) 2f else 0.4f, -0.1f, 0.2f, 0.7f) },
+            halfImage(5, 3) { x, _ -> floatArrayOf(Float.NaN, Float.NEGATIVE_INFINITY, if (x == 4) 3f else 0.2f, 0.5f) },
+        )
+        for ((index, image) in images.withIndex()) for (downscale in listOf(1, 4, 7)) {
+            assertArrayEquals("fixture $index, cell $downscale", GainMapMath.compute(image, downscale).sdr.rgba, GainMapMath.sdrBase(image).rgba)
+        }
     }
 
     @Test
@@ -166,8 +258,8 @@ class GainMapMathTest {
 
     /**
      * AUD-03 (b): SDR cyan (0, 1, 1) beside white after HDR Story Boost (cyan reaches 3.22, white 4). Tolerance 1%:
-     * the same luminance-epsilon bias is 0.29% for cyan (Y = 0.787 c) and the base codes are exact again. Before the
-     * fix the boosted cyan base was clipped from 1.056 to 1 and came back as 3.047 (5.45% low).
+     * it covers the luminance-epsilon bias for cyan (Y = 0.787 c) plus quantization of the shoulder base. Before the
+     * channel-bound fix the boosted cyan base was clipped from 1.056 to 1 and came back as 3.047 (5.45% low).
      */
     @Test
     fun boostedSdrColourReconstructsFromTheEncodedBase() {
@@ -180,6 +272,56 @@ class GainMapMathTest {
         println("AUD-03 boosted cyan/white: worst cyan error ${"%.5f".format(cyan)}, worst white error ${"%.5f".format(white)}")
         assertTrue("cyan reconstructs within 1% (worst ${"%.5f".format(cyan)})", cyan <= 0.01f)
         assertTrue("white reconstructs within 0.5% (worst ${"%.5f".format(white)})", white <= 0.005f)
+    }
+
+    /** L6: negative working RGB cannot be encoded; the reconstruction target is the nonnegative HDR colour. */
+    @Test
+    fun negativeWorkingChannelsReconstructTheRepresentableHdrLuminance() {
+        val hdr = halfImage(8, 8) { _, _ -> floatArrayOf(0.2f, -0.05f, 2f, 1f) }
+        val gain = GainMapMath.compute(hdr)
+        val reconstructed = reconstructFromEncodedBase(gain, cell = 4)
+        assertCellLuminanceMatchesNonnegativeHdr(hdr, reconstructed, tolerance = 0.005f)
+        assertBaseIsNonnegative(gain.sdr)
+        assertEquals(gain.ratioMax, GainMapMath.ratioMax(hdr), 0f)
+    }
+
+    /** The production sharpener creates negative green/blue beside a saturated red/white edge. */
+    @Test
+    fun sharpenedSaturatedEdgeHasAnEncodableBaseAndMatchingHeadroom() {
+        val hdr = LumaSharpen.apply(redBesideWhite())
+        assertTrue("the fixture must exercise sharpening's signed RGB", hdr.rgba.indices.any {
+            it % 4 < 3 && Half.toFloat(hdr.rgba[it]) < -0.001f
+        })
+        val gain = GainMapMath.compute(hdr)
+        assertBaseIsNonnegative(gain.sdr)
+        assertEquals(gain.ratioMax, GainMapMath.ratioMax(hdr), 0f)
+        assertCellLuminanceMatchesNonnegativeHdr(hdr, reconstructFromEncodedBase(gain, cell = 4), tolerance = 0.015f)
+    }
+
+    private fun assertBaseIsNonnegative(base: HalfFloatImage) {
+        for (y in 0 until base.height) for (x in 0 until base.width) for (c in 0 until 3) {
+            val v = base.at(x, y, c)
+            assertTrue("base ($x, $y) channel $c = $v must fit the encoder's [0, 1] range", v in 0f..1f)
+        }
+    }
+
+    private fun assertCellLuminanceMatchesNonnegativeHdr(hdr: HalfFloatImage, reconstructed: HalfFloatImage, tolerance: Float) {
+        for (cy in 0 until (hdr.height + 3) / 4) for (cx in 0 until (hdr.width + 3) / 4) {
+            var expected = 0f
+            var actual = 0f
+            for (y in cy * 4 until minOf(hdr.height, (cy + 1) * 4)) {
+                for (x in cx * 4 until minOf(hdr.width, (cx + 1) * 4)) {
+                    expected += ColorMath.relativeLuminance(
+                        max(0f, hdr.at(x, y, 0)), max(0f, hdr.at(x, y, 1)), max(0f, hdr.at(x, y, 2)),
+                    )
+                    actual += ColorMath.relativeLuminance(
+                        reconstructed.at(x, y, 0), reconstructed.at(x, y, 1), reconstructed.at(x, y, 2),
+                    )
+                }
+            }
+            val relativeError = abs(actual - expected) / max(expected, 1e-4f)
+            assertTrue("cell ($cx, $cy) reconstructs nonnegative HDR luminance (error $relativeError)", relativeError <= tolerance)
+        }
     }
 
     /** Left half (8 of 16 columns, two gain cells at downscale 4) linear red at 4, right half white at 4. */
