@@ -29,6 +29,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.coerceAtLeast
 import androidx.compose.ui.unit.dp
+import androidx.core.content.edit
 import com.akane.akastudio.feature.studio.R
 import com.akane.akastudio.feature.studio.ui.theme.DarkroomTheme
 
@@ -46,7 +47,7 @@ internal interface CompareHintStore {
 
 private class SharedPrefsCompareHintStore(private val prefs: SharedPreferences) : CompareHintStore {
     override fun isSeen(): Boolean = prefs.getBoolean(CompareHintPrefs.KEY_SEEN, false)
-    override fun markSeen() = prefs.edit().putBoolean(CompareHintPrefs.KEY_SEEN, true).apply()
+    override fun markSeen() = prefs.edit { putBoolean(CompareHintPrefs.KEY_SEEN, true) }
 }
 
 /** A store held in memory only: previews and screenshots, which have no app storage to persist into. */

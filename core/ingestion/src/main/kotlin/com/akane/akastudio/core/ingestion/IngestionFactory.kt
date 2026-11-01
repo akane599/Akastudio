@@ -1,5 +1,6 @@
 package com.akane.akastudio.core.ingestion
 
+import android.annotation.SuppressLint
 import android.content.ContentResolver
 import android.content.Context
 import android.os.Process
@@ -76,8 +77,9 @@ private fun legacyIngestRoot(app: Context): File = File(app.cacheDir, INGEST_DIR
  * `StorageManager.getAllocatableBytes` would also count other apps' cache, which only `allocateBytes` frees, and the
  * extractor never calls that, so the figure could promise space a write cannot get. The extractor checks the real
  * free space and reports a shortfall up front; the user can free space and retry. [ZipLimits.freeSpaceReserveBytes]
- * is still subtracted from this figure.
+ * is still subtracted from this figure. Lint's UsableSpace suggestion is the allocatable figure ruled out above.
  */
+@SuppressLint("UsableSpace")
 private fun usableBytes(dir: File): Long = dir.usableSpace
 
 fun createAnalysisDecoder(context: Context): AnalysisDecoder {

@@ -58,6 +58,8 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // AGP rejects ndk.abiFilters alongside splits.abi, so the split include list takes over when splits are on.
         if (!abiSplitApks) {
+            // supportedAbis includes x86_64; lint only reads literal ABI strings, so it can't see that through the val.
+            //noinspection ChromeOsAbiSupport
             ndk { abiFilters += supportedAbis }
         }
     }
@@ -66,6 +68,7 @@ android {
         abi {
             isEnable = abiSplitApks
             reset()
+            //noinspection ChromeOsAbiSupport (supportedAbis includes x86_64, see defaultConfig)
             include(*supportedAbis.toTypedArray())
             isUniversalApk = false
         }
