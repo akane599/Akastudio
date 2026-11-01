@@ -107,8 +107,11 @@ class StudioImmediateMainTest {
         return Harness(vm, deps, main)
     }
 
-    /** From a state collector on main, sends [intent] synchronously the first time the state matches [trigger]. */
-    private fun TestScope.reenterOnce(h: Harness, intent: StudioIntent, trigger: (StudioState) -> Boolean) {
+    /**
+     * From a state collector on main, sends [intent] synchronously the first time the state matches [trigger].
+     * Returns whether it has fired.
+     */
+    private fun TestScope.reenterOnce(h: Harness, intent: StudioIntent, trigger: (StudioState) -> Boolean): () -> Boolean {
         var fired = false
         backgroundScope.launch(h.main) {
             h.vm.state.collect {
@@ -119,6 +122,7 @@ class StudioImmediateMainTest {
             }
         }
         runCurrent()
+        return { fired }
     }
 
     private fun TestScope.ready(h: Harness) {
@@ -181,9 +185,14 @@ class StudioImmediateMainTest {
     @Test
     fun curate_now_sent_while_the_first_import_is_published_waits_for_that_import() = runTest {
         val h = harness()
-        reenterOnce(h, StudioIntent.StartCuration) { it.phase == StudioPhase.Ingesting }
+        val fired = reenterOnce(h, StudioIntent.StartCuration) { it.phase == StudioPhase.Ingesting }
 
         h.send(StudioIntent.ImportPhotos(listOf("u1")))
+        assertTrue(fired())
+        runCurrent()
+        // Curation follows the import at once, not after the auto-curation debounce: the request was kept.
+        assertEquals(StudioPhase.Curating, h.state.phase)
+        assertEquals(listOf(listOf(a, b, c)), h.deps.curation.curated)
         advanceUntilIdle()
 
         assertNull("the import's photos are curated, not reported missing", h.state.error)
