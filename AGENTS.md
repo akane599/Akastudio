@@ -6,7 +6,7 @@ Read [the project map](.claude/.codebase-info/INDEX.md) for architecture and ent
 
 ## Working agreements
 
-- Sidequest is OFF for Codex. The main session may implement directly. Use GPT-6.1 Sol/high for the main session, implementers and reviewers; report the actual route and unavailable capabilities. Use xhigh only for a critical unresolved question, stating the question and concrete evidence before escalation. Instructions express policy; they do not change runtime model settings.
+- Sidequest and Model Gateway are not installed for this project. The main session may implement directly. Use GPT-6.1 Sol/high for the main session, implementers and reviewers; report the actual route and unavailable capabilities. Use xhigh only for a critical unresolved question, stating the question and concrete evidence before escalation. Instructions express policy; they do not change runtime model settings.
 - Preserve existing user edits and untracked files. Do not automatically pull, reset, clean, stash, or create/switch branches. Do not stop processes or interfere with another session's applications.
 - Keep changes scoped. Do not install tools, add dependencies, change toolchain/SDK/JDK versions, or alter machine settings unless the task explicitly includes it. `ANDROID_HOME` supplies the SDK; do not create/edit `local.properties`.
 - Keep `.claude/`, `CLAUDE.md`, shared kit/installer and global configuration intact unless the task explicitly targets them. They contain preserved source material; their routing, hooks and command conventions are not Codex instructions.
@@ -19,7 +19,7 @@ Read [the project map](.claude/.codebase-info/INDEX.md) for architecture and ent
 - Composables take state and callbacks; hoist state to the ViewModel, expose `StateFlow`, collect with lifecycle awareness. `modifier: Modifier = Modifier` is the first optional parameter.
 - Use existing theme tokens, spacing and `strings.xml`; keep screen files free of literal colors and raw layout/type values. Preserve the existing Compose preview screenshot framework; do not install a replacement.
 - Add relevant behavior tests for new logic and regression tests for fixes where feasible, using existing fakes and platform seams. Thread-name assertions compare prefixes because coroutine debug adds suffixes. Never delete, disable or `@Ignore` a failing test to make checks pass.
-- For meaningful behavior changes, obtain an independent review before integration and resolve correctness findings with evidence. Reuse current valid evidence; report pending or unavailable verification honestly. Consult `.claude/kit/android-bug-checklist.md` for Android reviews.
+- For meaningful behavior changes, obtain an independent review before integration and resolve correctness findings with evidence. Reuse current valid evidence; report pending or unavailable verification honestly. Consult `.claude/kit/android-bug-checklist.md` for Android reviews. Claude-side conventions live in `.claude/rules/`; keep both in step.
 
 ## Verification
 
