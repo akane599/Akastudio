@@ -619,6 +619,35 @@ class StudioViewModelTest {
     }
 
     @Test
+    fun a_second_cancel_while_the_restore_waits_for_the_cancelled_work_keeps_the_previous_story() = runTest {
+        val h = harness()
+        ready(h)
+        val before = h.state
+        h.deps.preparer.delayMs = 10_000
+        // The cancelled batch's release of c stays in flight, so the restore waits for it.
+        h.deps.preparer.releaseDelayMs = 1_000
+
+        h.vm.onIntent(StudioIntent.ForceMode(StoryMode.COLLAGE_3))
+        runCurrent()
+        h.vm.onIntent(StudioIntent.CancelWork)
+        runCurrent()
+        assertEquals("the restore is still waiting for the cancelled batch", StudioPhase.Preparing, h.state.phase)
+        assertEquals(listOf("c"), h.deps.preparer.released)
+
+        // A repeated cancel (a double tap, or a programmatic caller) finds nothing of its own to cancel.
+        h.vm.onIntent(StudioIntent.CancelWork)
+        advanceUntilIdle()
+
+        assertEquals(StudioPhase.Ready, h.state.phase)
+        assertEquals(before.selection, h.state.selection)
+        assertEquals(before.template, h.state.template)
+        assertEquals(listOf("key-a", "key-b"), h.state.scene!!.layers.map { it.imageKey })
+        assertNull(h.state.error)
+        assertEquals("the story's photos were not released", listOf("c"), h.deps.preparer.released)
+        assertEquals("the story's session is still open", 0, h.deps.sessions.single().closeCount)
+    }
+
+    @Test
     fun export_right_after_a_reprepare_shows_no_cancellation_error() = runTest {
         val h = harness()
         ready(h)
@@ -936,6 +965,65 @@ class StudioViewModelTest {
         assertEquals("the first failure is the one shown", StudioError.Unknown("EGL lost"), h.state.error)
         assertEquals("the session close was still attempted", 1, h.deps.sessions.single().closeCount)
         assertEquals(setOf("a", "b"), h.deps.preparer.released.toSet())
+    }
+
+    /** Maps like the default mapper and records every throwable it was asked to map. */
+    private class RecordingMapper : DefaultStudioErrorMapper() {
+        val mapped = mutableListOf<Throwable>()
+        override fun map(t: Throwable): StudioError {
+            mapped += t
+            return super.map(t)
+        }
+    }
+
+    @Test
+    fun a_failed_first_preparation_whose_cleanup_and_session_close_fail_shows_the_preparation_error() = runTest {
+        val mapper = RecordingMapper()
+        val h = harness(mapper)
+        h.deps.preparer.failWith = IllegalStateException("decoder died")
+        h.deps.preparer.releaseFailWith = IllegalStateException("EGL lost")
+        h.vm.onIntent(StudioIntent.ImportPhotos(listOf("u1")))
+        runCurrent()
+        h.deps.sessions.single().closeFailWith = IllegalStateException("work dir busy")
+        advanceUntilIdle()
+
+        assertEquals(StudioPhase.Empty, h.state.phase)
+        assertEquals("the preparation's own failure is shown", StudioError.Unknown("decoder died"), h.state.error)
+        assertEquals("the failed batch was released", listOf("a", "b"), h.deps.preparer.released)
+        assertEquals("the session close was attempted", 1, h.deps.sessions.single().closeCount)
+        // The batch's failed release rides on the preparation failure as suppressed, never replacing it.
+        // (Compared by message: debug-mode stack trace recovery may hand over a copy of the thrown instance.)
+        val first = mapper.mapped.first()
+        assertEquals("the first mapped failure is the preparation's own", "decoder died", first.message)
+        assertEquals(listOf("EGL lost"), first.suppressed.map { it.message })
+    }
+
+    @Test
+    fun a_failed_restore_whose_retirement_release_and_session_close_fail_shows_the_restore_error() = runTest {
+        class DecodeFailure(val name: String) : RuntimeException()
+        val mapper = object : DefaultStudioErrorMapper() {
+            override fun map(t: Throwable): StudioError =
+                if (t is DecodeFailure) StudioError.Decode(t.name) else super.map(t)
+        }
+        val h = harness(mapper)
+        ready(h)
+        // The hero re-preparation of a fails, and so does the restore's re-preparation of a at the collage budget:
+        // the generation retires showing that error, then its cleanup (releasing b, closing the session) fails too.
+        h.deps.preparer.failWith = DecodeFailure("a.jpg")
+        h.deps.preparer.releaseFailWith = IllegalStateException("EGL lost")
+        h.deps.sessions.single().closeFailWith = IllegalStateException("work dir busy")
+
+        h.vm.onIntent(StudioIntent.ForceMode(StoryMode.HERO))
+        advanceUntilIdle()
+
+        assertEquals(StudioPhase.Empty, h.state.phase)
+        assertEquals("the retiring error stays on screen", StudioError.Decode("a.jpg"), h.state.error)
+        assertEquals(
+            listOf(listOf("a", "b") to false, listOf("a") to true, listOf("a") to false),
+            h.deps.preparer.prepareCalls,
+        )
+        assertEquals("the retirement still released b", "b", h.deps.preparer.released.last())
+        assertEquals("the session close was attempted", 1, h.deps.sessions.single().closeCount)
     }
 
     @Test

@@ -19,6 +19,7 @@ import com.akane.akastudio.feature.studio.domain.StudioDependencies
 import com.akane.akastudio.feature.studio.domain.StudioError
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
@@ -71,6 +72,10 @@ internal interface StoryHost {
  * work (curation and preparation, a re-preparation, a restore, an export) running at a time: a new one starts
  * after the previous one ended. Only [cancelWork] and [retire] cancel.
  *
+ * Re-entrancy: on `Dispatchers.Main.immediate` a state collector on main runs inside the state write that woke it,
+ * and may send an intent from there. So a job is registered (as [ingestJob] or [work]) before the state announcing
+ * it is published, and only started afterwards: an intent re-entering on that state finds the job it refers to.
+ *
  * Errors: every work failure reaches [onWorkFailed] once, which maps it and decides by the work's kind: the first
  * pipeline and a restore retire the generation showing the error, a re-preparation restores the previous story
  * showing it, an export returns to Ready showing it. A failure after the generation was retired or its work was
@@ -82,7 +87,12 @@ internal class StoryGeneration(private val host: StoryHost, parent: CoroutineSco
 
     private enum class WorkKind { INITIAL, REPREPARE, RESTORE, EXPORT }
 
-    private class Work(val kind: WorkKind, val job: Job)
+    private class Work(val kind: WorkKind) {
+        lateinit var job: Job
+
+        /** True until the previous work has ended and this one begins: nothing of its own has run yet. */
+        var waiting = true
+    }
 
     private val deps: StudioDependencies get() = host.deps
     private val state: MutableStateFlow<StudioState> get() = host.state
@@ -101,6 +111,9 @@ internal class StoryGeneration(private val host: StoryHost, parent: CoroutineSco
     /** The latest unit of work; see [launchWork]. */
     private var work: Work? = null
 
+    /** True while [ingestJob] has not finished, including just before it starts (see Re-entrancy above). */
+    private val reading: Boolean get() = ingestJob?.isCompleted == false
+
     /** The last Ready state; a cancelled or failed re-preparation returns to it. */
     private var stable: StudioState? = null
 
@@ -115,8 +128,10 @@ internal class StoryGeneration(private val host: StoryHost, parent: CoroutineSco
         check(!retired) { "A retired generation cannot import" }
         pendingImports.addLast(request)
         cancelDebounce()
+        val started = if (reading) null else scope.launch(start = CoroutineStart.LAZY) { runIngestion() }
+        started?.let { ingestJob = it }
         state.update { StudioReducer.ingesting(it) }
-        if (ingestJob?.isActive != true) ingestJob = scope.launch { runIngestion() }
+        started?.start()
     }
 
     private suspend fun runIngestion() {
@@ -202,13 +217,13 @@ internal class StoryGeneration(private val host: StoryHost, parent: CoroutineSco
     /** The last open picker closed: when ingestion is idle, curation follows as after any import. */
     fun onPickersClosed() {
         if (state.value.phase != StudioPhase.Ingesting) return
-        if (ingestJob?.isActive != true && debounceJob == null) onIngestionIdle()
+        if (!reading && debounceJob == null) onIngestionIdle()
     }
 
     /** Curate now: at once when ingestion is idle, else as soon as the imports being read are in. */
     fun requestCuration() {
         if (state.value.phase != StudioPhase.Ingesting) return
-        if (ingestJob?.isActive == true) {
+        if (reading) {
             curationRequested = true
         } else {
             cancelDebounce()
@@ -231,8 +246,7 @@ internal class StoryGeneration(private val host: StoryHost, parent: CoroutineSco
             host.retire(this, StudioError.NoUsablePhotos(rejectedCount = ingested.skipped))
             return
         }
-        state.update { StudioReducer.curating(it, list.size) }
-        launchWork(WorkKind.INITIAL) {
+        launchWork(WorkKind.INITIAL, enter = { StudioReducer.curating(it, list.size) }) {
             val result = curate(list)
             state.update { StudioReducer.decided(it, result, candidates) }
             prepareAndShow()
@@ -311,8 +325,7 @@ internal class StoryGeneration(private val host: StoryHost, parent: CoroutineSco
      * when it resumes, so edits made meanwhile are kept.
      */
     private fun reprepare(select: suspend () -> (StudioState) -> StudioState) {
-        state.update { StudioReducer.preparing(it) }
-        launchWork(WorkKind.REPREPARE) {
+        launchWork(WorkKind.REPREPARE, enter = StudioReducer::preparing) {
             val transition = select()
             state.update { transition(it).copy(phase = StudioPhase.Preparing) }
             prepareAndShow()
@@ -364,8 +377,7 @@ internal class StoryGeneration(private val host: StoryHost, parent: CoroutineSco
 
     /** Exports the story on screen; [share] opens the share sheet when it is done. */
     fun export(share: Boolean) {
-        state.update { StudioReducer.exporting(it, share) }
-        launchWork(WorkKind.EXPORT) {
+        launchWork(WorkKind.EXPORT, enter = { StudioReducer.exporting(it, share) }) {
             val result = runExport()
             state.update { StudioReducer.exportFinished(it, result) }
             stable = state.value
@@ -409,16 +421,19 @@ internal class StoryGeneration(private val host: StoryHost, parent: CoroutineSco
 
     /**
      * Cancels what runs now, by what it is: reading or the first pipeline (nothing to go back to) and a restore
-     * retire the generation; a re-preparation returns to the previous story; an export returns to Ready.
+     * that re-prepares retire the generation; a re-preparation returns to the previous story; an export returns to
+     * Ready. A restore still waiting for the cancelled or failed work before it is already that return, so a cancel
+     * meanwhile (a repeated tap) leaves it to finish.
      */
     fun cancelWork() {
-        val running = work?.takeIf { it.job.isActive }
+        val running = work?.takeIf { !it.job.isCompleted && !it.job.isCancelled }
         if (running == null) {
             host.retire(this, error = null)
             return
         }
         when (running.kind) {
-            WorkKind.INITIAL, WorkKind.RESTORE -> host.retire(this, error = null)
+            WorkKind.INITIAL -> host.retire(this, error = null)
+            WorkKind.RESTORE -> if (!running.waiting) host.retire(this, error = null)
             WorkKind.REPREPARE -> {
                 running.job.cancel()
                 restore(error = null)
@@ -434,15 +449,18 @@ internal class StoryGeneration(private val host: StoryHost, parent: CoroutineSco
     /**
      * Runs [block] as the next unit of work, after the previous one has ended (it is never cancelled here: a
      * finished one may still be releasing photos, and [cancelWork] decides about a running one). Its failure goes
-     * to [onWorkFailed], unless the work was cancelled or the generation retired meanwhile.
+     * to [onWorkFailed], unless the work was cancelled or the generation retired meanwhile. [enter] is the phase
+     * transition announcing the work; it is published once the work is registered, before the work starts.
      */
-    private fun launchWork(kind: WorkKind, block: suspend () -> Unit) {
+    private fun launchWork(kind: WorkKind, enter: ((StudioState) -> StudioState)? = null, block: suspend () -> Unit) {
         val previous = work?.job
-        val launched = scope.launch {
+        val next = Work(kind)
+        next.job = scope.launch(start = CoroutineStart.LAZY) {
             // Waited out even when cancelled meanwhile: a cancelled waiter that ran on would overlap the previous
             // work's tail (a release, a render) instead of following it, and so would whatever is launched after it.
             if (previous != null && previous !== coroutineContext.job) withContext(NonCancellable) { previous.join() }
             ensureActive()
+            next.waiting = false
             try {
                 block()
             } catch (e: CancellationException) {
@@ -455,7 +473,9 @@ internal class StoryGeneration(private val host: StoryHost, parent: CoroutineSco
                 }
             }
         }
-        work = Work(kind, launched)
+        work = next
+        if (enter != null) state.update(enter)
+        next.job.start()
     }
 
     /** The one place a work failure is mapped and turned into a transition. */
