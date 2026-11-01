@@ -184,14 +184,20 @@ class StudioViewModel(
     }
 
     private suspend fun renderScope(revision: Long) {
+        val generation = current ?: return
         val scene = _state.value.takeIf { it.sceneRevision == revision }?.scene ?: return
         try {
             val pixels: ImagePixels = deps.renderer.renderPreviewPixels(scene, SCOPE_WIDTH, SCOPE_HEIGHT)
-            _state.update { StudioReducer.scopeRendered(it, revision, pixels) }
+            if (current === generation) _state.update { StudioReducer.scopeRendered(it, revision, pixels) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            _state.update { it.copy(error = deps.errors.map(e)) }
+            val latest = _state.value
+            if (current === generation && latest.sceneRevision == revision && latest.scope != ScopeMode.OFF) {
+                _state.update { it.copy(error = deps.errors.map(e)) }
+            } else {
+                Log.w(TAG, "Ignoring a scope failure for an abandoned scene", e)
+            }
         }
     }
 
