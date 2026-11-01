@@ -9,7 +9,7 @@ Android, developed on Ubuntu from the CLI.
 - JDK target 17 · Gradle 9.8.2 · AGP 9.4.1 · Kotlin 2.4.21 (built-in) · compileSdk 37 · minSdk 31
 - Modules: :app, :core:ingestion, :core:vision-curator, :core:color-engine, :core:collage-composer, :core:export-pipeline, :feature:studio · Architecture: Clean Architecture + MVI · DI/DB/Net: none (StudioContainer, constructor injection) / none / none
 - App id: com.akane.akastudio · Launcher: .MainActivity
-- Baseline: full JVM gate (960 tests, screenshots) + lintDebug 0 errors + debug/release APK/AAB green, and device suites 118/118 on emulator-5554 (API 35), for the 2026-10-26 stabilization source committed at f927c0f; details in `docs/stabilization/HANDOVER.md` and `M1_COMPLETION.md`
+- Baseline: full JVM gate (960 tests, screenshots) + lintDebug 0 errors + debug/release APK/AAB green, and device suites 118/118 on emulator-5554 (API 35), for the 2026-10-26 stabilization source and tests committed through f9f4e13; details in `docs/stabilization/HANDOVER.md` and `M1_COMPLETION.md`
 <!-- STACK:END -->
 
 ## How work flows here
