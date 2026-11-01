@@ -97,6 +97,33 @@ class OffscreenReadbackDeviceTest {
     }
 
     @Test
+    fun neutralImageSamplingIsIndependentOfTheTileGrid() {
+        assumeTrue("needs colour-renderable RGBA16F", OffscreenGl.open().use { it.capabilities.floatColorBuffer })
+        val renderer = createStoryRenderer(InstrumentationRegistry.getInstrumentation().targetContext) as GlStoryRenderer
+        val photo = srgbBitmap(PHOTO_W, PHOTO_H, IntArray(PHOTO_W * PHOTO_H) {
+            argb((it % PHOTO_W) * 255 / PHOTO_W, (it / PHOTO_W) * 255 / PHOTO_H, (it * 7) and 0xFF)
+        })
+        try {
+            runBlocking { renderer.registerImage("photo", photo) }
+            val plain = RenderScene(
+                SCENE_W,
+                SCENE_H,
+                SceneBackground.Solid(0xFF000000.toInt()),
+                listOf(SceneLayer("photo", Rect4f(12f, 16f, 204f, 190f), NormRect.FULL)),
+            )
+            val single = runBlocking { renderer.renderOffscreen(plain) }
+            renderer.offscreenReadbackOverrides = OffscreenReadbackOverrides(maxTileSize = TILE)
+            val tiled = runBlocking { renderer.renderOffscreen(plain) }
+            val difference = maxDiff(single, tiled)
+            report("tile regression neutral single-layer max=$difference")
+            assertTrue("neutral image sampling must match across tiles, max |Δ| $difference", difference <= TILE_TOLERANCE)
+        } finally {
+            renderer.close()
+            photo.recycle()
+        }
+    }
+
+    @Test
     fun rendererOutputIsUnchangedByStripsTilesAndTheFloatFallback() {
         assumeTrue("needs colour-renderable RGBA16F", OffscreenGl.open().use { it.capabilities.floatColorBuffer })
         val renderer = createStoryRenderer(InstrumentationRegistry.getInstrumentation().targetContext) as GlStoryRenderer
@@ -207,7 +234,24 @@ class OffscreenReadbackDeviceTest {
     private fun maxDiff(a: HalfFloatImage, b: HalfFloatImage): Float {
         require(a.width == b.width && a.height == b.height)
         var worst = 0f
+        var worstIndex = 0
+        var changed = 0
         for (i in a.rgba.indices) worst = maxOf(worst, abs(RenderMath.halfToFloat(a.rgba[i]) - RenderMath.halfToFloat(b.rgba[i])))
+        for (i in a.rgba.indices) {
+            val difference = abs(RenderMath.halfToFloat(a.rgba[i]) - RenderMath.halfToFloat(b.rgba[i]))
+            if (difference != 0f) changed++
+            if (difference == worst) worstIndex = i
+        }
+        val x = worstIndex / 4 % a.width
+        val y = worstIndex / 4 / a.width
+        val plan = RenderMath.planTiles(a.width, a.height, TILE, TILE)
+        val tileWidth = plan.maxOf { it.width }
+        val tileHeight = plan.maxOf { it.height }
+        report(
+            "tile diagnostic: changedChannels=$changed/${a.rgba.size} worst=($x,$y,c${worstIndex % 4}) " +
+                "single=${RenderMath.halfToFloat(a.rgba[worstIndex])} multi=${RenderMath.halfToFloat(b.rgba[worstIndex])} " +
+                "tileSize=${tileWidth}x$tileHeight tileOffset=(${x % tileWidth},${y % tileHeight})",
+        )
         return worst
     }
 

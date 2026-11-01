@@ -45,8 +45,9 @@ class GlTextureStaleErrorDeviceTest {
     @Test
     fun allocateStillReportsAnErrorRaisedByItsOwnStorageCall() {
         OffscreenGl.open().use {
-            val maxSize = IntArray(1).also { GLES20.glGetIntegerv(GLES20.GL_MAX_TEXTURE_SIZE, it, 0) }[0]
-            val error = assertThrows(GlException::class.java) { GlTexture.allocate(maxSize + 1, 1, GlFormat.RGBA8) }
+            // ES 3.0 §3.8.4 rejects two mip levels for 1x1; MAX_TEXTURE_SIZE + 1 need not exceed actual support.
+            // https://registry.khronos.org/OpenGL/specs/es/3.0/es_spec_3.0.pdf
+            val error = assertThrows(GlException::class.java) { GlTexture.allocate(1, 1, GlFormat.RGBA8, levels = 2) }
             assertTrue("the failure must name glTexStorage2D: ${error.message}", error.message.orEmpty().startsWith("glTexStorage2D"))
             assertEquals(GLES20.GL_NO_ERROR, GLES20.glGetError())
         }
