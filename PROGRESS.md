@@ -10,7 +10,10 @@ Needs an emulator (emulator-5554 not attached on 2026-11-01):
 - API 37: 5 original Compose BACK/configuration tests fail in Espresso's hidden `InputManager.getInstance` lookup (recorded failures; native replacements 4/4 pass but don't cover large-font geometry or preview RGB) (`API37_TEST_INFRA.md`).
 - Direct SwiftShader (API 36) GL failures are an environment limitation; use `-gpu swangle` for emulator GL QA (`GL_DIAGNOSIS.md`).
 - L1: a replacement prepare can briefly overlap retired photo allocations (needs a memory measurement).
+- `connectedDebugAndroidTest` on the phone (SM-S938B, API 37) fails the Gradle task with "There were failing tests" although the XML, the HTML report and raw `am instrument` all show every test passing (seen 2026-11-01 with `AlphaContractDeviceTest`, 4/4 OK; `test-result-exit-code.txt` is 1). Read results from the XML or `am instrument` there until the UTP exit code is understood.
 Needs a decision or a scoped change:
+- D6: when a re-preparation at the other hero budget fails, the store has already forgotten the old-budget entries and the cleanup unregisters photos whose old pixels were still valid. Fix needs a `PhotoPreparer` contract change (report which ids were re-registered, restore the rest); analysis only (2026-11-01).
+- Social JPEG runs `Lanczos3` and `LumaSharpen` on translucent premultiplied frames, but both assume straight alpha; only band edges are affected, not uniform areas (export-coverage worker, 2026-11-01).
 - Lint reports 5 version-availability warnings (AGP 9.4.1→9.5.0 ×2, screenshot alpha16→17, MediaPipe 1.1.1→1.2.0, LiteRT 2.3.0→2.3.2); bumping is a toolchain decision.
 
 ## Baseline
@@ -56,6 +59,7 @@ Needs a decision or a scoped change:
 | Area | Last run | Result | How |
 |---|---|---|---|
 | Bug hunt | — | — | `/bug-hunt` |
+| Open-issue sweep | 2026-11-01 @ main | Studio lifecycle: Main.immediate (3 defects) and L8 fixed (e780c4b); RTL signed readout fixed (08238c7); DC-09 removed; lint warnings cleared except 5 version warnings; M1 boundary and AUD-08 alpha tests added (b45d229), alpha device tests 4/4 on the phone; full JVM gate + lintDebug green | native workers in worktrees, Opus/xhigh review |
 | Repository audit | 2026-10-21 @ 0e283ce | 32 findings (F-01..F-32), T-01..T-06, 13 dead-code items; report kept local (untracked AUDIT_REPORT.md) | `/full-repo-audit` |
 | Audit fixes | 2026-10-21 @ f1056c4 | All F and T-01..T-05 fixed; T-06 partial (no `:app` JVM tests, SceneCompositor device-only); DC-09 skipped; 7 follow-ups N-01..N-07 fixed | `/audit-remediate` |
 | Repository audit (2nd) | 2026-10-21 @ 11acd05 | 8 findings AUD-01..AUD-08 (all pre-existing at 0e283ce); earlier F/T/N reconciled in the report | `/full-repo-audit` |

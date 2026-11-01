@@ -20,4 +20,16 @@ Scope: gaps explicitly retained in the 2026-10-21 AUD-01–AUD-08 report and its
 | Process death / severe memory stress | OS kills process, evicts memory, or device reaches ENOSPC under import/export. Could lose state or fail recovery. | Native API37 lifecycle/config/BACK4/4 and API35 journey tests are narrower; dedicated kill/pressure scenarios not run on personal phone/shared services. Source intentionally does not persist live story sessions across process death. | Declared persistence boundary and stress evidence gap; no process-death-survival promise. |
 | Broad fuzz/power/native binary/SBOM/ML quality audit | Malformed data corpus, power/thermal limits or transitive/native advisory creates separate risk. | Prior report explicitly lists these as unperformed; no scanner installed or broad audit opened in this stabilization pass. | Outside selected stabilization scope. Missing audits are not converted into product findings or unbounded follow-up work. |
 
-N-04 (Frosted lightness classification) and N-05 (test-only RenderMath helpers) remain historical unassessed items, not newly confirmed bugs. Their triggers/impact are not established by the retained report. No unsupported claim that every earlier F/T/N finding was individually remeasured is made.
+N-04 and N-05 were already fixed before this matrix was written: N-04 in 394d4ad (matte lightness is derived from the solid colour) and N-05 in d86f1d9 (the pre-F-20 readback helpers moved into the tests). No unsupported claim that every earlier F/T/N finding was individually remeasured is made.
+
+## 2026-11-01 update
+
+This supersedes the release-decision cells above for these rows; the other rows are unchanged.
+
+| Gap | New evidence | Status |
+| --- | --- | --- |
+| Main.immediate scheduling | `StudioImmediateMainTest` runs the studio on a production-shaped immediate main dispatcher. It reproduced three defects (red before the fix): a phase was published before its job existed, so a collector's cancel retired the whole story, and "curate now" on the first import reported NoUsablePhotos. Fixed in e780c4b: jobs are created lazily, registered, then the phase is published. Review of that fix found that a work cancelled before it started dropped out of the join chain; fixed with a red-first test in the commit after it. | Defect found and fixed |
+| L8 repeated cancel | A second CancelWork while a restore waited for the cancelled re-preparation's tail retired a Ready story. Red test in `StudioViewModelTest`; fixed in e780c4b. | Defect found and fixed |
+| Primary retirement failure + cleanup failure | The composed schedule now has `StudioViewModelTest` cases: the first error stays shown and the batch release failure rides as suppressed. Green before and after. | Covered, no defect |
+| M1 numerical boundary | `GainMapBoundaryTest` and `ExportBoundaryAndAlphaTest` (b45d229) pin the shoulder curve at fixed values, the 0.01-stop floor between adjacent half-floats, `GAIN_DOWNSCALE == 1`, and the pre-sharpening format decision. Knee, dither and floor mutations each fail five tests. | Covered, no defect |
+| WebP alpha0, setPremultiplied sensitivity, translucent Ultra HDR base, Frosted transparent end to end | `AlphaContractDeviceTest` (b45d229), 4/4 passed on the phone (SM-S938B, API 37, Adreno 830). The setPremultiplied test has a control that must drift at least 8 codes through a premultiplied bitmap. JVM rows in `ExportBoundaryAndAlphaTest` cover PNG16, PNG8 and JPEG. Not yet run on emulator-5554 or API 31–34. | Covered on one physical device |
