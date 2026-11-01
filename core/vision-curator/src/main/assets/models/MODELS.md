@@ -19,8 +19,8 @@ values live in `ModelManifest.kt`; `ModelAssetsTest` re-hashes these committed f
   `[1,1024]`. MobileNetV4 (1280-d) is not published as a MediaPipe Tasks embedder, so this 1024-d model
   is used instead.
 - **efficientnet_lite0.tflite**: MediaPipe Image Classifier, ImageNet-1k (1000 labels in the embedded
-  metadata, `labels_without_background.txt`). Of the scene keyword table, every label except
-  `croissant` exists in this label set; `croissant` stays in the table as a harmless non-match.
+  metadata, `labels_without_background.txt`). Every label in the scene keyword table exists in this label set
+  (`croissant`, which does not, was removed as a dead non-match).
 - **nima_aesthetic_fp16.tflite**: NIMA MobileNet aesthetic head (AVA), re-authored for LiteRT from
   idealo/image-quality-assessment (Apache-2.0). Hugging Face repo `litert-community/NIMA-LiteRT`,
   revision `5e27e756cf38d2e738ee0c7c5d6f1c43f2073038`. Signature `serving_default`: input

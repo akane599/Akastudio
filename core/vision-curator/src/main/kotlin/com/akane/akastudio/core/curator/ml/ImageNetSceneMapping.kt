@@ -33,7 +33,7 @@ object ImageNetSceneMapping {
         put(
             SceneType.CAFE_INTERIOR,
             "espresso", "cup", "coffee mug", "coffeepot", "restaurant", "plate", "dining table",
-            "menu", "wine bottle", "bakery", "trifle", "pizza", "croissant",
+            "menu", "wine bottle", "bakery", "trifle", "pizza",
         )
         put(
             SceneType.NATURE_FOREST,
