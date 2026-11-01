@@ -1,5 +1,7 @@
 # Resume the remaining physical comparison delivery
 
+> **Completed 2026-11-01** — see the "RGB4 delivery completed" paragraph in [M1_COMPLETION.md](M1_COMPLETION.md). Nothing below remains to be done; it is kept as the record of how the run was specified.
+
 The selected M1 C1 decision, both red tests, all10 natural C1 cases, integration and final installed workflow are accepted. See [M1_COMPLETION.md](M1_COMPLETION.md). This remainder is only the actual RGB4 prototype files for **coffee, rocket and clouds**. Portrait/night RGB4 files already exist and night falsifies RGB4 under the unchanged guard. Do not repeat the completed cases or reopen the product decision without new evidence.
 
 The user ended the phone-access window after announcing14minutes. Root finished device work, stopped its owned mobile daemon and released the owner-host lock; private session QA runs were archived and removed. Public selected C1 files remain at `/sdcard/Pictures/AkaStudioQA/M1_C1_20261026_0314/`. No app uninstall/data clear or shared ADB/Gradle stop occurred. Only phone access is lost; host work may continue.

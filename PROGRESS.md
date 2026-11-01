@@ -3,8 +3,16 @@
 _This file keeps decisions, audit status and open issues that outlive a single change._
 
 ## Open issues
-- On the next phone connection: clean up the three rejected RGB-prototype exports (coffee/rocket/clouds); see `docs/stabilization/M1_RESUME.md`.
-- Physical HDR-display night-scene evidence is still missing (last phone headroom 2.28 was below the 2.54 the night C1 case needs).
+Needs the phone (per-session authorization):
+- Physical evidence still missing: gallery/share-app display policy, signed release runtime, RSS/thermal measurements, and emitted (calibrated) luminance. Night C1 headroom was confirmed on 2026-11-01 (current ratio 5.0 ≥ 2.54 required; `M1_COMPLETION.md`).
+Needs an emulator (emulator-5554 not attached on 2026-11-01):
+- Release APK never installed/run; process death and memory stress not run; no API 31–34 device run (`COVERAGE.md`).
+- API 37: 5 original Compose BACK/configuration tests fail in Espresso's hidden `InputManager.getInstance` lookup (recorded failures; native replacements 4/4 pass but don't cover large-font geometry or preview RGB) (`API37_TEST_INFRA.md`).
+- Direct SwiftShader (API 36) GL failures are an environment limitation; use `-gpu swangle` for emulator GL QA (`GL_DIAGNOSIS.md`).
+- L1: a replacement prepare can briefly overlap retired photo allocations (needs a memory measurement).
+Needs a decision or a scoped change:
+- RTL slider track: `SliderTrack` (ControlSlider.kt) fills left-to-right while the Material thumb mirrors, so under RTL the fill and thumb disagree; the `tab-color-rtl` screenshot reference records the current behaviour (found 2026-11-01).
+- Lint reports 5 version-availability warnings (AGP 9.4.1→9.5.0 ×2, screenshot alpha16→17, MediaPipe 1.1.1→1.2.0, LiteRT 2.3.0→2.3.2); bumping is a toolchain decision.
 
 ## Baseline
 - 2026-10-21 @ scaffold commit: build ok, 1 unit test, 0 failing.
