@@ -1,11 +1,14 @@
 {
   "mcpServers": {
-    "mobile-mcp": {
+    "perfetto-mcp": {
+      "type": "stdio",
+      "command": "uvx",
       "args": [
-        "-y",
-        "@mobilenext/mobile-mcp@1.0.12"
+        "--with",
+        "mcp[cli]<2",
+        "perfetto-mcp@0.1.4"
       ],
-      "command": "npx"
+      "env": {}
     }
   }
 }

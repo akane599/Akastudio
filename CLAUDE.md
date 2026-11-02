@@ -27,8 +27,11 @@ Android, developed on Ubuntu from the CLI.
 - Build: `./gradlew :app:assembleDebug --console=plain -q` · Unit: `:app:testDebugUnitTest` · Lint: `:app:lintDebug`
 - Screenshots: `:app:updateDebugScreenshotTest` (write refs) · `:app:validateDebugScreenshotTest` (diff)
 - Full gate: `bash .claude/kit/gradle-check.sh :app:assembleDebug :app:testDebugUnitTest :app:validateDebugScreenshotTest :feature:studio:testDebugUnitTest :feature:studio:validateDebugScreenshotTest :core:ingestion:testDebugUnitTest :core:color-engine:testDebugUnitTest :core:vision-curator:testDebugUnitTest :core:collage-composer:testDebugUnitTest :core:export-pipeline:testDebugUnitTest lintDebug --max-workers=2`
-- Device: `./gradlew :app:installDebug -q && adb shell am start -n com.akane.akastudio/.MainActivity` · logs: `adb logcat -d --pid=$(adb shell pidof -s com.akane.akastudio) | tail -80`
+- Device (always under the lock; see the `device-qa` skill): `ANDROID_SERIAL=emulator-5554 flock $HOME/.cache/akastudio-emulator-5554.lock sh -c './gradlew :app:installDebug -q && adb shell am start -n com.akane.akastudio/.MainActivity'` · logs: same prefix with `sh -c 'adb logcat -d --pid=$(adb shell pidof -s com.akane.akastudio) | tail -80'` · instrumented suites: `bash .claude/skills/device-qa/scripts/run-suite.sh <serial> <module>`
+- Screenshot reference updates: `/update-screenshots <module> <keep-pattern>` (restores out-of-scope references)
+- Color/export changes: review with the `color-pipeline-reviewer` agent before committing
 - Emulator: run `adb devices` before deciding device QA is impossible. No /dev/kvm here means no local AVD, but a shared redroid Android 15 emulator (`emulator-5554`, x86_64, SwiftShader GL) is usually attached. It also hosts another session's app (com.akane.inspiration): install/uninstall only com.akane.akastudio, one owner on the device at a time (flock lock, see `.claude/rules/device-testing.md`).
+- Phone: SM-S938B, API 37, ADB `100.70.96.59:5555` over Tailscale, owner host build-server, lock `~/.cache/akastudio-akadroid.lock`; authorized per session; Gradle connected verdicts there come from the XML (see device-testing rule).
 
 ## Parallel execution
 

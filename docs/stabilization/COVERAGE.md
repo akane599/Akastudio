@@ -40,3 +40,13 @@ This supersedes the release-decision cells above for these rows; the other rows 
 | JPEG resampling of translucent frames | Lanczos3 lit the faint edge of transparent areas in the Social JPEG (171 instead of 7). Fixed in 1d9965d by flattening JPEG frames over black first; the JVM test now requires byte-identical output to the over-black composite. | Defect found and fixed |
 
 API 31–35 rows above are out of scope from 2026-11-02 (personal use, API 36–37 only; PROGRESS decision log).
+
+## 2026-11-02 phone update
+
+Details and raw evidence: [PHONE_QA_20261102.md](PHONE_QA_20261102.md).
+
+| Gap | New evidence | Status |
+| --- | --- | --- |
+| L1 peak allocations | Manual `PhysicalMemoryProbeDeviceTest` on SM-S938B/API 37, six 11–17 MP natural photos, identical inputs/settings: Ready-story swap peak RSS (VmHWM) 704.8–707.4 MiB vs discard-then-import control 706.2–707.9 MiB over six swaps in two processes; old photos released within the first 50 ms sample; no growth across swaps. Delayed-cleanup schedule not exercised. | Bounded design property; no defect |
+| Physical ARM GPU/NPU/OEM/HDR (memory, thermal, gallery) | Social vs Ultra HDR UHD export peaks 715 vs 820–898 MiB RSS (Java 236 vs 338–371 MiB of a 512 MiB limit); RSS settles within ~6 MiB of pre-export; thermal status 0 throughout. GPU memory ends ~260–280 MiB higher after exports (bounded, cause not isolated). Samsung Gallery and Google Photos show Ultra at headroom 4.19 ("Ultra HDR" label in Photos), Social at 1.0; Instagram Story preview caps at 1.7. | Measured on one phone; GPU retention open |
+| Physical device test verdict | AGP 9.4.1 reports every `host:port`-serial run as failed (URL-encoded serial key mismatch); XML/raw instrumentation are the oracle. Old red tile and drawer tests rerun at `68bc860` on the phone: OK 4/4 + 1/1 (max \|Δ\| 0.001953125) and OK 1/1. | Tooling defect documented; red tests closed at a commit |
