@@ -4,6 +4,7 @@ import com.akane.akastudio.core.color.api.ImagePixels
 import com.akane.akastudio.core.composer.api.CellOverride
 import com.akane.akastudio.core.composer.api.StoryTemplate
 import com.akane.akastudio.core.curator.api.CurationProgress
+import com.akane.akastudio.core.curator.api.CurationResult
 import com.akane.akastudio.core.curator.api.RejectReason
 import com.akane.akastudio.core.curator.api.SceneCluster
 import com.akane.akastudio.core.curator.api.StoryMode
@@ -150,4 +151,84 @@ class StudioReducerTest {
         assertEquals(StoryMode.COLLAGE_2, legacy.aiMode)
         assertTrue(legacy.isAiPick)
     }
+
+    // region curator layout adoption
+
+    /** [this] with the curator's layout ids per offered mode; the chosen option follows its mode's entry. */
+    private fun CurationResult.withLayouts(vararg ids: Pair<StoryMode, String?>): CurationResult {
+        val byMode = ids.toMap()
+        val alternatives = alternatives.mapValues { (mode, option) ->
+            if (mode in byMode) option.copy(layoutId = byMode[mode]) else option
+        }
+        return copy(chosen = alternatives.getValue(chosen.mode), alternatives = alternatives)
+    }
+
+    @Test
+    fun decided_adopts_the_curators_layout() {
+        val laid = result.withLayouts(StoryMode.COLLAGE_2 to StoryTemplate.DUO_FLOATING_GALLERY.name)
+        val s = StudioReducer.decided(StudioState(), laid, candidates)
+        assertEquals(StoryTemplate.DUO_FLOATING_GALLERY, s.template)
+        assertEquals(StudioPhase.Preparing, s.phase)
+    }
+
+    @Test
+    fun decided_without_a_layout_id_uses_the_first_template_for_the_count() {
+        val s = StudioReducer.decided(StudioState(), result, candidates)
+        assertEquals(StoryTemplate.DUO_CINEMATIC_SPLIT, s.template)
+    }
+
+    @Test
+    fun decided_with_an_unknown_layout_id_falls_back_without_throwing() {
+        val laid = result.withLayouts(StoryMode.COLLAGE_2 to "NOT_A_TEMPLATE")
+        assertEquals(StoryTemplate.DUO_CINEMATIC_SPLIT, StudioReducer.decided(StudioState(), laid, candidates).template)
+        // Names are matched exactly: a differently cased id is unknown too.
+        val lower = result.withLayouts(StoryMode.COLLAGE_2 to "duo_floating_gallery")
+        assertEquals(StoryTemplate.DUO_CINEMATIC_SPLIT, StudioReducer.decided(StudioState(), lower, candidates).template)
+    }
+
+    @Test
+    fun a_layout_id_for_another_photo_count_is_ignored() {
+        val laid = result.withLayouts(StoryMode.COLLAGE_2 to StoryTemplate.QUAD_GRID.name)
+        assertEquals(StoryTemplate.DUO_CINEMATIC_SPLIT, StudioReducer.decided(StudioState(), laid, candidates).template)
+        val option = laid.chosen
+        assertEquals(StoryTemplate.DUO_ASYMMETRIC_EDITORIAL, StudioReducer.templateFor(option, StoryTemplate.DUO_ASYMMETRIC_EDITORIAL))
+    }
+
+    @Test
+    fun a_previous_storys_template_does_not_leak_into_a_new_story() {
+        val stale = StudioState(template = StoryTemplate.DUO_ASYMMETRIC_EDITORIAL)
+        assertEquals(StoryTemplate.DUO_CINEMATIC_SPLIT, StudioReducer.decided(stale, result, candidates).template)
+        val laid = result.withLayouts(StoryMode.COLLAGE_2 to StoryTemplate.DUO_FLOATING_GALLERY.name)
+        assertEquals(StoryTemplate.DUO_FLOATING_GALLERY, StudioReducer.decided(stale, laid, candidates).template)
+    }
+
+    @Test
+    fun a_forced_mode_adopts_the_offered_options_layout() {
+        val laid = result.withLayouts(
+            StoryMode.COLLAGE_2 to StoryTemplate.DUO_ASYMMETRIC_EDITORIAL.name,
+            StoryMode.HERO to StoryTemplate.HERO_GALLERY_MATTE.name,
+        )
+        val ready = StudioReducer.decided(StudioState(), laid, candidates)
+        val forced = laid.copy(chosen = laid.alternatives.getValue(StoryMode.HERO))
+        val s = StudioReducer.withForcedMode(ready, forced, candidates)
+        assertEquals(StoryMode.HERO, s.selection.mode)
+        assertEquals(listOf("a"), s.selection.photoIds)
+        assertEquals(StoryTemplate.HERO_GALLERY_MATTE, s.template)
+
+        // Without a layout for the forced mode, the legacy choice applies.
+        val unlaid = result.copy(chosen = result.alternatives.getValue(StoryMode.HERO))
+        assertEquals(StoryTemplate.HERO_FULL_BLEED, StudioReducer.withForcedMode(ready, unlaid, candidates).template)
+    }
+
+    @Test
+    fun a_photo_swap_keeps_the_template_even_when_the_curator_named_another() {
+        val laid = result.withLayouts(StoryMode.COLLAGE_2 to StoryTemplate.DUO_ASYMMETRIC_EDITORIAL.name)
+        val ready = StudioReducer.decided(StudioState(), laid, candidates)
+        val userPicked = StudioReducer.reduce(ready, StudioIntent.SelectTemplate(StoryTemplate.DUO_FLOATING_GALLERY))
+        val swapped = StudioReducer.withSelection(userPicked, laid, listOf("d", "b"), candidates)
+        assertEquals(listOf("d", "b"), swapped.selection.photoIds)
+        assertEquals(StoryTemplate.DUO_FLOATING_GALLERY, swapped.template)
+    }
+
+    // endregion
 }

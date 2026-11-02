@@ -1,11 +1,16 @@
 package com.akane.akastudio.core.export.pipeline
 
+import com.akane.akastudio.core.color.api.GradeParams
 import com.akane.akastudio.core.color.api.HalfFloatImage
 import com.akane.akastudio.core.color.api.ImagePixels
+import com.akane.akastudio.core.color.api.MasterLook
 import com.akane.akastudio.core.color.api.PreviewOptions
 import com.akane.akastudio.core.color.api.RenderScene
 import com.akane.akastudio.core.color.api.SceneBackground
 import com.akane.akastudio.core.color.api.StoryRenderer
+import com.akane.akastudio.core.color.grade.CpuGradingPipeline
+import com.akane.akastudio.core.color.grade.LinearImage
+import com.akane.akastudio.core.color.math.ColorMath
 import com.akane.akastudio.core.export.api.ExportFormat
 import com.akane.akastudio.core.export.api.ExportMetadata
 import com.akane.akastudio.core.export.api.ExportPlan
@@ -24,6 +29,7 @@ import com.akane.akastudio.core.export.process.Dither
 import com.akane.akastudio.core.export.process.GainMapMath
 import com.akane.akastudio.core.export.process.GainMapResult
 import com.akane.akastudio.core.export.process.Half
+import com.akane.akastudio.core.export.process.LumaSharpen
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.toList
@@ -46,6 +52,9 @@ import java.time.ZoneOffset
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import javax.imageio.ImageIO
+import kotlin.math.abs
+import kotlin.math.log2
+import kotlin.math.pow
 
 class ExportProcessorTest {
 
@@ -127,12 +136,54 @@ class ExportProcessorTest {
         assertEquals(95, encoder.quality)
         assertEquals(1080 to 1920, encoder.sdrSize)
         val gain = checkNotNull(encoder.gain)
-        assertEquals(270 to 480, gain.gainWidth to gain.gainHeight)
+        assertEquals(1080 to 1920, gain.gainWidth to gain.gainHeight)
         assertTrue("the boosted highlights give headroom", gain.ratioMax > 1f)
         val expectedExif = ExifWriter.tiff(ExifFields(captureMillis, "Lisbon", "AkaStudio", 1080, 1920))
         assertArrayEquals("the encoder receives the same EXIF block as the other encoders", expectedExif, encoder.exif)
         val decoded = ImageIO.read(ByteArrayInputStream(run.bytes))
         assertEquals(1080, decoded.width)
+    }
+
+    /**
+     * AUD-03: the base handed to the Ultra HDR encoder is exactly the one its gain map was computed from. The HDR frame
+     * (boosted render) is sharpened first and the gain map derived from it, instead of sharpening the tone-mapped base
+     * after the gain was measured against the unsharpened one.
+     *
+     * The actual encoder inputs must match the selected export density. Separately, the historical 4x4 numerical
+     * control reconstructs `(base + e) * 2^g - e` from the 8-bit base and compares each cell's mean HDR luminance.
+     * The old order (gain from the unsharpened base, then sharpening that base) is measured on the same render;
+     * this fixed 4x4 control retains its 1.5% limit in every cell (gain-code rounding ~0.3%, blue-noise 8-bit dither
+     * averaged over a 4x4 cell). It is not the accuracy assertion for the full-resolution platform-encoded gain.
+     */
+    @Test
+    fun ultraHdrEncodesTheBaseItsGainMapWasComputedFrom() {
+        val encoder = FakeUltraHdrEncoder()
+        val renderer = FakeRenderer(peak = 4f)
+        val run = export(ExportFormat.ULTRA_HDR_JPEG, renderer = renderer, ultraHdr = encoder, hdrBoost = true)
+        assertEquals(ExportFormat.ULTRA_HDR_JPEG, run.result.format)
+        val render = runBlocking { renderer.renderOffscreen(request(ExportFormat.ULTRA_HDR_JPEG).scene) }
+        val hdr = LumaSharpen.apply(GainMapMath.boostHighlights(render))
+        val expected = GainMapMath.compute(hdr, gainDownscale = ExportProcessor.GAIN_DOWNSCALE)
+        val sdr = checkNotNull(encoder.sdr)
+        val gain = checkNotNull(encoder.gain)
+        assertArrayEquals("the encoded base is the gain map's own base", expected.sdr.rgba, sdr.rgba)
+        assertArrayEquals("the gain codes are derived from that base", expected.gain, gain.gain)
+        assertEquals(expected.ratioMin, gain.ratioMin, 0f)
+        assertEquals(expected.ratioMax, gain.ratioMax, 0f)
+
+        // Retain the historical 4x4 numerical control; D1 encoded accuracy has separate device evidence.
+        val control = GainMapMath.compute(hdr, gainDownscale = 4)
+        assertArrayEquals("the base is independent of gain density", control.sdr.rgba, sdr.rgba)
+        val fixed = worstCellLuminanceError(hdr, sdr, control)
+        val unsharpened = GainMapMath.compute(GainMapMath.boostHighlights(render))
+        val sharpenedAfter = LumaSharpen.apply(unsharpened.sdr)
+        val old = worstCellLuminanceError(hdr, sharpenedAfter, unsharpened)
+        println(
+            "AUD-03 historical 4x4 sharpen order: worst cell luminance error fixed=${"%.4f".format(fixed)} " +
+                "old=${"%.4f".format(old)}; max base channel fixed=${maxChannel(sdr)} old=${maxChannel(sharpenedAfter)}",
+        )
+        assertTrue("fixed order reconstructs every cell within 1.5% (worst $fixed)", fixed <= 0.015f)
+        assertTrue("no base channel above SDR white", maxChannel(sdr) <= 1f)
     }
 
     @Test
@@ -149,17 +200,77 @@ class ExportProcessorTest {
         assertEquals(1920, decoded.height)
     }
 
-    /** SQ-66: an SDR grade that nudges highlights ~5% past white (SQ-52's 0.072-stop gain map) is not HDR. */
+    /** An explicit Ultra HDR request preserves usable gain even below the historical third-stop policy. */
     @Test
-    fun ultraHdrWithImperceptibleHeadroom_writesPlainSocialJpeg() {
+    fun explicitlyRequestedUltraHdrWithSmallUsableGainKeepsTheGainMap() {
         val renderer = FakeRenderer(peak = 1.08f)
-        val ratioMax = GainMapMath.compute(runBlocking { renderer.renderOffscreen(request(ExportFormat.ULTRA_HDR_JPEG).scene) }).ratioMax
-        assertTrue("fixture has a near-zero gain map like SQ-52's: ratioMax $ratioMax", ratioMax > 1.03f && ratioMax < ExportProcessor.MIN_HDR_RATIO)
+        val input = runBlocking { renderer.renderOffscreen(request(ExportFormat.ULTRA_HDR_JPEG).scene) }
+        val preflightRatio = GainMapMath.ratioMax(input, gainDownscale = ExportProcessor.GAIN_DOWNSCALE)
+        assertTrue("fixture has usable gain below the old cutoff", preflightRatio > 1f && preflightRatio < 2f.pow(1f / 3f))
         val encoder = FakeUltraHdrEncoder()
         val run = export(ExportFormat.ULTRA_HDR_JPEG, renderer = renderer, ultraHdr = encoder, hdrBoost = false)
-        assertEquals("the reported format names the fallback", ExportFormat.SOCIAL_STORY_JPEG, run.result.format)
-        assertEquals("the gain-map encoder is never called", -1, encoder.quality)
-        assertFile(run, "image/jpeg", "SOCIAL_STORY_JPEG", "jpg", 1080, 1920)
+        assertEquals(ExportFormat.ULTRA_HDR_JPEG, run.result.format)
+        val gain = checkNotNull(encoder.gain) { "explicit request must call the gain-map encoder" }
+        assertTrue("the actual sharpened frame still carries usable gain", gain.ratioMax > 1f)
+        assertFile(run, "image/jpeg", "ULTRA_HDR_JPEG", "jpg", 1080, 1920)
+    }
+
+    @Test
+    fun unboostedSparseHighlightUsesFullResolutionGain() {
+        assertSparseHighlightUsesFullResolutionGain(hdrBoost = false)
+    }
+
+    @Test
+    fun boostedSparseHighlightUsesFullResolutionGain() {
+        assertSparseHighlightUsesFullResolutionGain(hdrBoost = true)
+    }
+
+    private fun assertSparseHighlightUsesFullResolutionGain(hdrBoost: Boolean) {
+        val renderer = FakeRenderer(sparseHighlight = true)
+        val input = runBlocking { renderer.renderOffscreen(request(ExportFormat.ULTRA_HDR_JPEG).scene) }
+        val eligible = if (hdrBoost) GainMapMath.boostHighlights(input) else input
+        if (hdrBoost) {
+            assertTrue("the neutral patch exercises the actual highlight boost", Half.toFloat(eligible.rgba[0]) > Half.toFloat(input.rgba[0]))
+        }
+        assertEquals("4x4 averaging hides the sparse highlight below the numerical floor", 1f, GainMapMath.ratioMax(eligible, gainDownscale = 4), 0f)
+        assertTrue("a full-resolution gain grid detects the same highlight", GainMapMath.ratioMax(eligible, gainDownscale = 1) > ExportProcessor.MIN_HDR_RATIO)
+        val encoder = FakeUltraHdrEncoder()
+        val run = export(ExportFormat.ULTRA_HDR_JPEG, renderer = renderer, ultraHdr = encoder, hdrBoost = hdrBoost)
+        assertEquals("preflight must use the encoder's selected density", ExportFormat.ULTRA_HDR_JPEG, run.result.format)
+        val gain = checkNotNull(encoder.gain)
+        assertEquals("full-resolution gain width", input.width, gain.gainWidth)
+        assertEquals("full-resolution gain height", input.height, gain.gainHeight)
+        assertTrue("the sharpened encoded fixture retains usable gain", gain.ratioMax > 1f)
+    }
+
+    /** At the same render size, both JPEG modes start from the same shoulder before their different codecs. */
+    @Test
+    fun socialAndUltraHdrUseTheSameSdrBaseForTheSameHdrFrame() {
+        val ultra = export(
+            ExportFormat.ULTRA_HDR_JPEG, renderer = FakeRenderer(peak = 4f), ultraHdr = FakeUltraHdrEncoder(),
+            resolution = ExportResolution.UHD_4K,
+        )
+        val social = export(
+            ExportFormat.SOCIAL_STORY_JPEG, renderer = FakeRenderer(peak = 4f), resolution = ExportResolution.UHD_4K,
+        )
+        assertEquals(ExportFormat.ULTRA_HDR_JPEG, ultra.result.format)
+        assertEquals(ExportFormat.SOCIAL_STORY_JPEG, social.result.format)
+        // The fake Ultra encoder uses the same real 4:4:4 encoder, dither, ICC and EXIF as Social. Equality here
+        // checks their base inputs before the actual platform Ultra encoder's separate 4:2:0 codec losses.
+        assertArrayEquals("matched HDR frames use the same SDR rendition", ultra.bytes, social.bytes)
+    }
+
+    /** M1: preserve an explicitly requested small usable gain instead of imposing the former third-stop cutoff. */
+    @Test
+    fun ultraHdrWithSmallUsableHeadroom_reportsTheRequestedFormat() {
+        val renderer = FakeRenderer(peak = 1.08f)
+        val ratioMax = GainMapMath.compute(runBlocking { renderer.renderOffscreen(request(ExportFormat.ULTRA_HDR_JPEG).scene) }, gainDownscale = ExportProcessor.GAIN_DOWNSCALE).ratioMax
+        assertTrue("fixture has a near-zero gain map like SQ-52's: ratioMax $ratioMax", ratioMax > ExportProcessor.MIN_HDR_RATIO && ratioMax < 2f.pow(1f / 3f))
+        val encoder = FakeUltraHdrEncoder()
+        val run = export(ExportFormat.ULTRA_HDR_JPEG, renderer = renderer, ultraHdr = encoder, hdrBoost = false)
+        assertEquals("the reported format preserves the request", ExportFormat.ULTRA_HDR_JPEG, run.result.format)
+        assertEquals("the gain-map encoder receives the requested export", 95, encoder.quality)
+        assertFile(run, "image/jpeg", "ULTRA_HDR_JPEG", "jpg", 1080, 1920)
     }
 
     @Test
@@ -173,17 +284,17 @@ class ExportProcessorTest {
     }
 
     /**
-     * F-10: the low-headroom fallback encodes the render itself, not the gain map's tone-mapped base, so at UHD_4K
+     * F-10/M1: the unit-gain fallback uses the same SDR rendition as explicit Social, so at UHD_4K
      * (both formats render 2160x3840) it is the explicit Social Story JPEG byte for byte.
      */
     @Test
-    fun ultraHdrFallbackWithImperceptibleHeadroom_isByteIdenticalToTheSocialStoryJpeg() {
+    fun ultraHdrFallbackWithUnitGain_isByteIdenticalToTheSocialStoryJpeg() {
         val fallback = export(
-            ExportFormat.ULTRA_HDR_JPEG, renderer = FakeRenderer(peak = 1.08f), ultraHdr = FakeUltraHdrEncoder(),
+            ExportFormat.ULTRA_HDR_JPEG, renderer = FakeRenderer(peak = 1.003f), ultraHdr = FakeUltraHdrEncoder(),
             resolution = ExportResolution.UHD_4K,
         )
         assertEquals(ExportFormat.SOCIAL_STORY_JPEG, fallback.result.format)
-        val social = export(ExportFormat.SOCIAL_STORY_JPEG, renderer = FakeRenderer(peak = 1.08f), resolution = ExportResolution.UHD_4K)
+        val social = export(ExportFormat.SOCIAL_STORY_JPEG, renderer = FakeRenderer(peak = 1.003f), resolution = ExportResolution.UHD_4K)
         assertArrayEquals("the fallback must be the Social Story JPEG of the same render", social.bytes, fallback.bytes)
     }
 
@@ -203,9 +314,29 @@ class ExportProcessorTest {
         assertArrayEquals("the fallback encodes the unboosted render", social.bytes, fallback.bytes)
     }
 
+    /** The 0.01-stop numerical floor applies to every look, independently of an artistic headroom cutoff. */
     @Test
-    fun minHdrRatio_isAThirdOfAStop() {
-        assertEquals(1.2599f, ExportProcessor.MIN_HDR_RATIO, 1e-4f)
+    fun sdrPhotoGradesReportEitherUnitOrUsableGain() {
+        val photo = sdrPhoto()
+        val grades = MasterLook.entries.map { GradeParams(look = it) } +
+            GradeParams(look = MasterLook.MEDITERRANEAN_AZURE, contrast = 1f)
+        var usable = 0
+        for (grade in grades) {
+            val graded = CpuGradingPipeline.grade(photo, grade)
+            val image = HalfFloatImage(graded.width, graded.height, ShortArray(graded.rgba.size) { Half.fromFloat(graded.rgba[it]) })
+            val ratioMax = GainMapMath.ratioMax(image, gainDownscale = ExportProcessor.GAIN_DOWNSCALE)
+            assertTrue("$grade: ratioMax $ratioMax", ratioMax == 1f || ratioMax > 2f.pow(0.01f))
+            assertEquals(GainMapMath.compute(image, gainDownscale = ExportProcessor.GAIN_DOWNSCALE).ratioMax, ratioMax, 0f)
+            if (ratioMax > 1f) usable++
+        }
+        assertTrue("the fixture still exercises graded SDR with usable gain", usable > 0)
+    }
+
+    @Test
+    fun explicitUltraHdrUsesTheSameUsableGainPolicyWithOrWithoutBoost() {
+        assertEquals(1.001f, ExportProcessor.MIN_HDR_RATIO, 0f)
+        assertEquals(ExportProcessor.MIN_BOOSTED_HDR_RATIO, ExportProcessor.MIN_HDR_RATIO, 0f)
+        assertTrue("the policy admits every nonunit ratio produced above the numerical floor", ExportProcessor.MIN_HDR_RATIO < 2f.pow(0.01f))
     }
 
     @Test
@@ -413,13 +544,89 @@ class ExportProcessorTest {
         return chunks
     }
 
+    /**
+     * Worst relative error, over gain cells, between [hdr]'s mean cell luminance and the mean luminance reconstructed
+     * from [base] after 8-bit encoding with [gain]'s codes: `(Y_base + e) * 2^g - e` (gamma 1, downscale 4).
+     */
+    private fun worstCellLuminanceError(hdr: HalfFloatImage, base: HalfFloatImage, gain: GainMapResult, cell: Int = 4): Float {
+        assertEquals(1f, gain.gamma, 0f)
+        val lo = log2(gain.ratioMin)
+        val hi = log2(gain.ratioMax)
+        val sumHdr = DoubleArray(gain.gainWidth * gain.gainHeight)
+        val sumRecon = DoubleArray(sumHdr.size)
+        val counts = IntArray(sumHdr.size)
+        val row = IntArray(base.width)
+        for (y in 0 until base.height) {
+            Dither.toSrgb8Row(base, y, row)
+            for (x in 0 until base.width) {
+                val i = (y / cell) * gain.gainWidth + x / cell
+                val boost = 2f.pow(lo + (gain.gain[i].toInt() and 0xFF) / 255f * (hi - lo))
+                val p = row[x]
+                val yBase = ColorMath.relativeLuminance(
+                    ColorMath.srgbToLinear((p shr 16 and 0xFF) / 255f),
+                    ColorMath.srgbToLinear((p shr 8 and 0xFF) / 255f),
+                    ColorMath.srgbToLinear((p and 0xFF) / 255f),
+                )
+                sumRecon[i] += ((yBase + gain.epsilonSdr) * boost - gain.epsilonHdr).toDouble()
+                val o = (y * hdr.width + x) * 4
+                sumHdr[i] += ColorMath.relativeLuminance(
+                    Half.toFloat(hdr.rgba[o]), Half.toFloat(hdr.rgba[o + 1]), Half.toFloat(hdr.rgba[o + 2]),
+                ).coerceAtLeast(0f).toDouble()
+                counts[i]++
+            }
+        }
+        var worst = 0.0
+        for (i in sumHdr.indices) {
+            val meanHdr = sumHdr[i] / counts[i]
+            val meanRecon = sumRecon[i] / counts[i]
+            worst = maxOf(worst, abs(meanRecon - meanHdr) / (meanHdr + gain.epsilonHdr))
+        }
+        return worst.toFloat()
+    }
+
+    private fun maxChannel(img: HalfFloatImage): Float {
+        var m = Float.NEGATIVE_INFINITY
+        for (i in img.rgba.indices) if (i % 4 != 3) m = maxOf(m, Half.toFloat(img.rgba[i]))
+        return m
+    }
+
+    /** SdrOnlyUltraHdrDeviceTest's SDR photo in linear light: a sky fading to white, saturated patches, a grey ramp. */
+    private fun sdrPhoto(): LinearImage {
+        val w = 270
+        val h = 480
+        val sky = intArrayOf(0xFFFFFF, 0x6FA8DC)
+        val patches = intArrayOf(0xE53935, 0xFDD835, 0x00ACC1, 0x43A047, 0xFFFFFF)
+        val rgba = FloatArray(w * h * 4)
+        for (y in 0 until h) for (x in 0 until w) {
+            val o = (y * w + x) * 4
+            for (c in 0 until 3) {
+                val shift = 16 - 8 * c
+                val code = when {
+                    y < h / 3 -> {
+                        val t = y / (h / 3f)
+                        ((sky[0] shr shift and 0xFF) * (1 - t) + (sky[1] shr shift and 0xFF) * t) / 255f
+                    }
+                    y < 2 * h / 3 -> (patches[x * patches.size / w] shr shift and 0xFF) / 255f
+                    else -> x / (w - 1f)
+                }
+                rgba[o + c] = ColorMath.srgbToLinear(code)
+            }
+            rgba[o + 3] = 1f
+        }
+        return LinearImage(w, h, rgba)
+    }
+
     // ---- fakes -------------------------------------------------------------------------------------------------
 
     /**
      * Returns an opaque gradient at the scene canvas size; the top eighth reaches [peak] (linear) for HDR headroom. RGB
      * is scaled by [exposure], so a low one leaves no highlight for hdrBoost to lift.
      */
-    private class FakeRenderer(private val peak: Float = 1f, private val exposure: Float = 1f) : StoryRenderer {
+    private class FakeRenderer(
+        private val peak: Float = 1f,
+        private val exposure: Float = 1f,
+        private val sparseHighlight: Boolean = false,
+    ) : StoryRenderer {
         @Volatile var calls = 0
         @Volatile var lastCanvas: Pair<Int, Int>? = null
 
@@ -434,6 +641,15 @@ class ExportProcessorTest {
                 val highlight = y < h / 8
                 for (x in 0 until w) {
                     val o = (y * w + x) * 4
+                    if (sparseHighlight) {
+                        val highlight = x == w / 2 && y == h / 2
+                        val background = if (x < 4 && y < 4) 0.5f else 0.1f
+                        data[o] = Half.fromFloat(if (highlight) 1.03125f else background)
+                        data[o + 1] = Half.fromFloat(if (highlight) 0f else background)
+                        data[o + 2] = data[o + 1]
+                        data[o + 3] = one
+                        continue
+                    }
                     val base = x.toFloat() / w
                     data[o] = Half.fromFloat(exposure * if (highlight) peak * base else base)
                     data[o + 1] = Half.fromFloat(exposure * if (highlight) peak else y.toFloat() / h)
@@ -531,12 +747,14 @@ class ExportProcessorTest {
     private class FakeUltraHdrEncoder : UltraHdrEncoder {
         @Volatile var quality = -1
         @Volatile var sdrSize: Pair<Int, Int>? = null
+        @Volatile var sdr: HalfFloatImage? = null
         @Volatile var gain: GainMapResult? = null
         @Volatile var exif: ByteArray? = null
 
         override fun encode(sdr: HalfFloatImage, gain: GainMapResult, out: OutputStream, quality: Int, exifTiff: ByteArray?) {
             this.quality = quality
             this.sdrSize = sdr.width to sdr.height
+            this.sdr = sdr
             this.gain = gain
             this.exif = exifTiff
             check(sdr === gain.sdr) { "the encoder receives the sharpened base as both arguments" }

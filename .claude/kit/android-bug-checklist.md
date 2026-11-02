@@ -1,4 +1,4 @@
-# Android bug checklist (review-audit tickets: bound reviews and /bug-hunt)
+# Android bug checklist (bounded reviews and /bug-hunt)
 
 Hunt for bugs a real user would hit, not style. Every finding needs a code path as evidence.
 

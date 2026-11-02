@@ -36,6 +36,7 @@ object GainMapMath {
 
     private const val EPSILON = 1f / 64f
     private const val GAMMA = 1f
+    private const val SHOULDER_KNEE = 0.6f
     /** At or below this maximum log2 gain the image has no usable headroom. */
     private const val MIN_HEADROOM_LOG2 = 0.01f
     /** Smallest log2 span kept between ratioMin and ratioMax so the code range never collapses. */
@@ -72,9 +73,13 @@ object GainMapMath {
     }
 
     /**
-     * Tone-maps [hdr] to an SDR base with extended Reinhard on luminance (`Y' = Y (1 + Y / Lw^2) / (1 + Y)`, Lw the
-     * peak luminance, at least 1) and encodes `g = log2((Y_hdr + eps) / (Y_sdr + eps))` on a grid downscaled by
-     * [gainDownscale] (box-averaged luminances per cell).
+     * Tone-maps [hdr] with a smooth shoulder on the maximum linear RGB channel. A frame with peak channel <= 1
+     * keeps its SDR base; in an HDR frame, pixels whose maximum channel <= 0.6 also keep their colour. Above that
+     * knee, the shoulder starts with slope 1 and maps the frame's peak channel to SDR white. The same factor scales
+     * all three channels, keeping their ratios and fitting the encoder's [0, 1] range before gain is measured.
+     *
+     * Encodes `g = log2((Y_hdr + eps) / (Y_sdr + eps))` on a grid downscaled by [gainDownscale], using box-averaged
+     * luminances per cell. This scalar gain with luminance epsilon retains the existing per-channel approximation.
      */
     fun compute(hdr: HalfFloatImage, gainDownscale: Int = 4): GainMapResult {
         require(gainDownscale >= 1) { "gainDownscale must be >= 1, was $gainDownscale" }
@@ -104,6 +109,13 @@ object GainMapMath {
         return result(sdr, gain, gainWidth, gainHeight, 2f.pow(logMin), 2f.pow(maxG))
     }
 
+    /** The same SDR rendition as [compute], without allocating gain codes or cell accumulators. */
+    fun sdrBase(hdr: HalfFloatImage): HalfFloatImage {
+        val rgba = ShortArray(hdr.rgba.size)
+        toneMap(hdr, cell = 1, gainWidth = 0, log2Gain = null, sdrOut = rgba)
+        return HalfFloatImage(hdr.width, hdr.height, rgba)
+    }
+
     /**
      * The [GainMapResult.ratioMax] that [compute] returns for [hdr] (1 when there is no usable headroom), without
      * allocating the SDR base, so a caller can decide on the headroom while still holding another full frame.
@@ -127,43 +139,50 @@ object GainMapMath {
             displayRatioSdr = 1f, displayRatioHdr = ratioMax,
         )
 
-    private fun peakLuminance(img: HalfFloatImage): Float {
+    private fun peakChannel(img: HalfFloatImage): Float {
         val row = FloatArray(img.width * 4)
         var peak = 0f
         for (y in 0 until img.height) {
             HalfRows.read(img, y, row)
-            for (x in 0 until img.width) peak = max(peak, luminance(row, x * 4))
+            for (x in 0 until img.width) for (c in 0..2) {
+                peak = max(peak, max(0f, HalfRows.finite(row[x * 4 + c])))
+            }
         }
         return peak
     }
 
     /**
-     * Tone-maps against [hdr]'s peak luminance, writes the SDR base into [sdrOut] (when given) and fills [log2Gain]
-     * cell by cell. Luminance sums for one band of [cell] rows are kept per gain column and flushed when the band (or
+     * Tone-maps against [hdr]'s peak channel (see [compute] for the per-pixel factor), writes the SDR base into
+     * [sdrOut] (when given) and fills [log2Gain] cell by cell. Luminance sums for one band of [cell] rows are kept per gain column and flushed when the band (or
      * the image) ends; edge cells average over the pixels they cover.
      */
-    private fun toneMap(hdr: HalfFloatImage, cell: Int, gainWidth: Int, log2Gain: FloatArray, sdrOut: ShortArray?) {
+    private fun toneMap(hdr: HalfFloatImage, cell: Int, gainWidth: Int, log2Gain: FloatArray?, sdrOut: ShortArray?) {
         val w = hdr.width
-        val peak = max(1f, peakLuminance(hdr))
-        val invPeak2 = 1f / (peak * peak)
+        val peak = peakChannel(hdr)
         val row = FloatArray(w * 4)
-        val sumHdr = DoubleArray(gainWidth)
-        val sumSdr = DoubleArray(gainWidth)
+        val sumHdr = log2Gain?.let { DoubleArray(gainWidth) }
+        val sumSdr = log2Gain?.let { DoubleArray(gainWidth) }
         for (y in 0 until hdr.height) {
             HalfRows.read(hdr, y, row)
             for (x in 0 until w) {
                 val p = x * 4
-                val yHdr = luminance(row, p)
-                val factor = (1f + yHdr * invPeak2) / (1f + yHdr)
-                row[p] = HalfRows.finite(row[p]) * factor
-                row[p + 1] = HalfRows.finite(row[p + 1]) * factor
-                row[p + 2] = HalfRows.finite(row[p + 2]) * factor
-                sumHdr[x / cell] += yHdr.toDouble()
-                sumSdr[x / cell] += (yHdr * factor).toDouble()
+                // Match the encoder's lower channel bound before measuring either rendition's luminance.
+                val r = max(0f, HalfRows.finite(row[p]))
+                val g = max(0f, HalfRows.finite(row[p + 1]))
+                val b = max(0f, HalfRows.finite(row[p + 2]))
+                val yHdr = max(0f, ColorMath.relativeLuminance(r, g, b))
+                val factor = shoulderFactor(max(r, max(g, b)), peak)
+                row[p] = r * factor
+                row[p + 1] = g * factor
+                row[p + 2] = b * factor
+                if (sumHdr != null && sumSdr != null) {
+                    sumHdr[x / cell] += yHdr.toDouble()
+                    sumSdr[x / cell] += (yHdr * factor).toDouble()
+                }
             }
             if (sdrOut != null) HalfRows.write(sdrOut, w, y, row)
             val bandEnds = (y + 1) % cell == 0 || y == hdr.height - 1
-            if (bandEnds) {
+            if (bandEnds && log2Gain != null && sumHdr != null && sumSdr != null) {
                 val bandRows = y % cell + 1
                 val gy = y / cell
                 for (gx in 0 until gainWidth) {
@@ -178,11 +197,14 @@ object GainMapMath {
         }
     }
 
-    /** Non-negative Rec.709 luminance of the sanitized pixel at [p]. */
-    private fun luminance(row: FloatArray, p: Int): Float = max(
-        0f,
-        ColorMath.relativeLuminance(HalfRows.finite(row[p]), HalfRows.finite(row[p + 1]), HalfRows.finite(row[p + 2])),
-    )
+    private fun shoulderFactor(maxChannel: Float, peak: Float): Float {
+        if (peak <= 1f || maxChannel <= SHOULDER_KNEE) return 1f
+        val t = maxChannel - SHOULDER_KNEE
+        val length = peak - SHOULDER_KNEE
+        val a = 1f - SHOULDER_KNEE
+        val mapped = SHOULDER_KNEE + a * t / (a + t * (1f - a / length))
+        return (mapped / maxChannel).coerceAtMost(1f)
+    }
 
     private fun smoothstep(edge0: Float, edge1: Float, x: Float): Float {
         val t = ((x - edge0) / (edge1 - edge0)).coerceIn(0f, 1f)

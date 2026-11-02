@@ -14,6 +14,7 @@ import com.akane.akastudio.core.ingestion.model.SkipReason
 import com.akane.akastudio.core.ingestion.picker.PickedItem
 import com.akane.akastudio.core.ingestion.zip.MIB
 import com.akane.akastudio.core.ingestion.zip.StreamingZipExtractor
+import com.akane.akastudio.core.ingestion.zip.compressibleBytes
 import com.akane.akastudio.core.ingestion.zip.plentyOfSpace
 import com.akane.akastudio.core.ingestion.zip.randomBytes
 import com.akane.akastudio.core.ingestion.zip.zipOf
@@ -72,6 +73,20 @@ class ArchiveRejectionTest {
         val events = session.ingest(listOf(IngestionRequest.ZipArchive(MANY, "many.zip"))).toList()
 
         assertTrue("${events.failures()}", events.failures().single().error is IngestionError.LimitExceeded)
+        assertWithdrawn(events, session, parser)
+    }
+
+    @Test
+    fun skippedBytesOverTheTotalLimitAfterGoodEntries_withdrawThem() = runTest {
+        // Moderately compressible non-image data: only the cumulative inflated-byte cap can reject this archive.
+        val notes = "trip/notes.txt" to compressibleBytes(3 * MIB / 2)
+        val skipped = zipOf(good, "trip/two.jpg" to randomBytes(900, 3), notes)
+        val (session, parser) = session(mapOf(SKIPPED to skipped), ZipLimits(maxTotalBytes = 1L * MIB))
+
+        val events = session.ingest(listOf(IngestionRequest.ZipArchive(SKIPPED, "skipped.zip"))).toList()
+
+        val error = events.failures().single().error
+        assertEquals(IngestionError.LimitExceeded("archive larger than ${1L * MIB} bytes"), error)
         assertWithdrawn(events, session, parser)
     }
 
@@ -158,6 +173,7 @@ class ArchiveRejectionTest {
         const val SLIP = "content://zip/slip"
         const val BOMB = "content://zip/bomb"
         const val MANY = "content://zip/many"
+        const val SKIPPED = "content://zip/skipped"
         const val GOOD = "content://zip/good"
         val PICKED = PickedItem(PhotoSource.ContentUri("content://m/picked", "picked"), ImageFormat.JPEG, 100L)
 

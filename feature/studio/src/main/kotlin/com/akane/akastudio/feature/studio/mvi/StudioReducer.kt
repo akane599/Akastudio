@@ -1,18 +1,24 @@
 package com.akane.akastudio.feature.studio.mvi
 
+import com.akane.akastudio.core.color.api.ImagePixels
+import com.akane.akastudio.core.color.api.RenderScene
 import com.akane.akastudio.core.composer.api.StoryTemplate
+import com.akane.akastudio.core.curator.api.CurationOption
 import com.akane.akastudio.core.curator.api.CurationProgress
 import com.akane.akastudio.core.curator.api.CurationResult
 import com.akane.akastudio.core.export.api.ExportProgress
+import com.akane.akastudio.core.export.api.ExportResult
 import com.akane.akastudio.core.ingestion.model.IngestionTelemetry
 import com.akane.akastudio.core.ingestion.model.PhotoCandidate
+import com.akane.akastudio.feature.studio.domain.StudioError
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.collections.immutable.toImmutableMap
 import kotlinx.collections.immutable.toPersistentMap
 
 /**
- * Pure state transitions. [reduce] handles every intent that needs no dependency; the view model handles the
- * rest and folds pipeline results in through the other functions.
+ * Pure state transitions. [reduce] handles every intent that needs no dependency. Every other function shapes one
+ * step of the pipeline's state machine; `StoryGeneration` only sequences them and never edits the state by hand, so
+ * each phase has exactly one place that defines what the screen shows in it.
  */
 internal object StudioReducer {
 
@@ -111,8 +117,9 @@ internal object StudioReducer {
     }
 
     /**
-     * Commits [result] with the story photos [photoIds] (slot order): selection, template (kept when its count
-     * still fits, else the first template for the count), telemetry and the HDR default. Leaves the phase alone.
+     * Commits [result] with the story photos [photoIds] (slot order) for the same story: the current template is kept
+     * when its count still fits (a photo swap never changes the layout), else [templateFor] picks one. Also sets the
+     * selection, telemetry and the HDR default. Leaves the phase alone.
      */
     fun withSelection(
         state: StudioState,
@@ -120,7 +127,46 @@ internal object StudioReducer {
         photoIds: List<String>,
         candidates: Map<String, PhotoCandidate>,
     ): StudioState {
+        val kept = state.template?.takeIf { it.photoCount == result.chosen.mode.photoCount }
+        return select(state, result, photoIds, candidates, kept ?: templateFor(result.chosen, current = null))
+    }
+
+    /**
+     * Commits [result] after the user forced its mode: the photo count changed, so the curator's layout for the
+     * offered option is adopted (see [templateFor]); the current template only survives when no layout is known and
+     * it still fits.
+     */
+    fun withForcedMode(
+        state: StudioState,
+        result: CurationResult,
+        candidates: Map<String, PhotoCandidate>,
+    ): StudioState =
+        select(state, result, result.chosen.photoIds, candidates, templateFor(result.chosen, current = state.template))
+
+    /**
+     * The template for [option]: the curator's [CurationOption.layoutId] when it names a [StoryTemplate] for the
+     * option's photo count, else [current] when it fits that count, else the first template for the count. An
+     * unknown or mismatched id is ignored rather than trusted, since the curator's catalogue is opaque to the studio.
+     */
+    fun templateFor(option: CurationOption, current: StoryTemplate?): StoryTemplate {
+        val count = option.mode.photoCount
+        return option.layoutId
+            ?.let { id -> StoryTemplate.entries.firstOrNull { it.name == id } }
+            ?.takeIf { it.photoCount == count }
+            ?: current?.takeIf { it.photoCount == count }
+            ?: StoryTemplate.forCount(count).firstOrNull()
+            ?: throw IllegalStateException("No template for $count photos")
+    }
+
+    private fun select(
+        state: StudioState,
+        result: CurationResult,
+        photoIds: List<String>,
+        candidates: Map<String, PhotoCandidate>,
+        template: StoryTemplate,
+    ): StudioState {
         val mode = result.chosen.mode
+        check(template.photoCount == mode.photoCount) { "$template does not fit ${mode.photoCount} photos" }
         val slots = photoIds.indices.associateWith { i ->
             checkNotNull(candidates[photoIds[i]]) { "Unknown candidate ${photoIds[i]}" }
         }
@@ -130,9 +176,6 @@ internal object StudioReducer {
             slots = slots.toImmutableMap(),
             alternatives = alternatives(result, photoIds, candidates.keys),
         )
-        val template = state.template?.takeIf { it.photoCount == mode.photoCount }
-            ?: StoryTemplate.forCount(mode.photoCount).firstOrNull()
-            ?: throw IllegalStateException("No template for ${mode.photoCount} photos")
         val hasGainMap = slots.values.any { it.metadata.hasUltraHdrGainMap }
         return state.copy(
             curation = result,
@@ -147,6 +190,98 @@ internal object StudioReducer {
     fun onExportStage(state: StudioState, stage: ExportProgress.Stage): StudioState = state.copy(
         export = state.export.copy(progress = ExportProgressUi(stage.name, stage.fraction.coerceIn(0f, 1f))),
     )
+
+    // region phase transitions
+
+    /** Sources are being read; a shown error is cleared by the new import. */
+    fun ingesting(state: StudioState): StudioState =
+        state.copy(
+            phase = StudioPhase.Ingesting,
+            error = null,
+            telemetry = state.telemetry.copy(step = TelemetryStep.READING),
+        )
+
+    /** The curator starts over [total] candidates. */
+    fun curating(state: StudioState, total: Int): StudioState = state.copy(
+        phase = StudioPhase.Curating,
+        telemetry = state.telemetry.copy(step = TelemetryStep.ANALYZING, analyzed = 0, analyzeTotal = total),
+    )
+
+    /**
+     * The curator decided a new story: [result]'s choice becomes the selection with the curator's layout (see
+     * [templateFor]; a template left in [state] belongs to no story yet and is never carried over), its look the
+     * grade, and preparation begins.
+     */
+    fun decided(state: StudioState, result: CurationResult, candidates: Map<String, PhotoCandidate>): StudioState =
+        select(state, result, result.chosen.photoIds, candidates, templateFor(result.chosen, current = null)).let {
+            it.copy(
+                phase = StudioPhase.Preparing,
+                grade = it.grade.copy(look = result.suggestedLook),
+                telemetry = it.telemetry.copy(step = TelemetryStep.PREPARING),
+            )
+        }
+
+    /** A Ready story leaves for re-preparation (mode or photo change, or a restore after one failed). */
+    fun preparing(state: StudioState): StudioState = state.copy(
+        phase = StudioPhase.Preparing,
+        modeDrawerOpen = false,
+        telemetry = state.telemetry.copy(step = TelemetryStep.PREPARING),
+    )
+
+    /** Preparation finished: [scene] goes on screen and the story is editable. */
+    fun ready(state: StudioState, scene: RenderScene): StudioState =
+        withScene(state, scene).copy(
+            phase = StudioPhase.Ready,
+            telemetry = state.telemetry.copy(step = TelemetryStep.DONE),
+        )
+
+    /** A rebuilt [scene] for the story on screen; bumps [StudioState.sceneRevision]. */
+    fun withScene(state: StudioState, scene: RenderScene): StudioState =
+        state.copy(scene = scene, sceneRevision = state.sceneRevision + 1)
+
+    /**
+     * [current] carrying [target]'s story again (the last Ready state) after a cancelled or failed re-preparation,
+     * showing [error]. Edits made since (grade, layout, export settings) are kept; the HDR default follows the story
+     * unless the user set it. The caller picks the phase: Ready when the photos are still prepared, else Preparing.
+     */
+    fun restored(current: StudioState, target: StudioState, error: StudioError?): StudioState = current.copy(
+        curation = target.curation,
+        aiRecommendedMode = target.aiRecommendedMode,
+        selection = target.selection,
+        template = target.template,
+        telemetry = target.telemetry,
+        export = if (current.export.hdrBoostUserSet) {
+            current.export
+        } else {
+            current.export.copy(hdrBoost = target.export.hdrBoost)
+        },
+        error = error,
+    )
+
+    /** An export starts; [share] opens the share sheet when it is done. */
+    fun exporting(state: StudioState, share: Boolean): StudioState =
+        state.copy(phase = StudioPhase.Exporting, export = state.export.copy(progress = null, sharing = share))
+
+    /** The export produced [result]. */
+    fun exportFinished(state: StudioState, result: ExportResult): StudioState =
+        exportEnded(state).let { it.copy(export = it.export.copy(lastResult = result)) }
+
+    /** The export was cancelled; the story is editable again and nothing is shown. */
+    fun exportCancelled(state: StudioState): StudioState = exportEnded(state)
+
+    /** The export failed with [error]; a failure the mapper has no variant for is shown as [StudioError.Export]. */
+    fun exportFailed(state: StudioState, error: StudioError): StudioState = exportEnded(state).copy(
+        error = if (error is StudioError.Unknown) StudioError.Export(error.message) else error,
+    )
+
+    private fun exportEnded(state: StudioState): StudioState =
+        state.copy(phase = StudioPhase.Ready, export = state.export.copy(progress = null, sharing = false))
+
+    /** A scope readback for [revision]; dropped when the scene moved on or the scope was turned off meanwhile. */
+    fun scopeRendered(state: StudioState, revision: Long, pixels: ImagePixels): StudioState =
+        if (state.sceneRevision == revision && state.scope != ScopeMode.OFF) state.copy(scopePixels = pixels) else state
+
+    // endregion
 
     private fun swapSlots(state: StudioState, from: Int, to: Int): StudioState {
         val ids = state.selection.photoIds

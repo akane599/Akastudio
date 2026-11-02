@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="440" viewBox="0 0 900 440">
+<rect width="900" height="440" fill="#f6f4ef"/>
+<g font-family="sans-serif" fill="#222">
+<text x="24" y="30" font-size="20">SDR appearance comparison — linear source swatches</text>
+<text x="24" y="56" font-size="13">Illustrative sRGB swatches; pre-JPEG. This cannot show HDR brightness or prove display quality.</text>
+<text x="330" y="90" font-size="16">Current Ultra HDR base</text>
+<text x="620" y="90" font-size="16">Clipped Social comparator</text>
+<text x="24" y="140" font-size="15">HDR red (4,0,0)</text>
+<rect x="330" y="110" width="240" height="54" fill="#ff0000"/>
+<rect x="620" y="110" width="240" height="54" fill="#ff0000"/>
+<text x="24" y="214" font-size="15">Boosted cyan</text>
+<rect x="330" y="184" width="240" height="54" fill="#00ffff"/>
+<rect x="620" y="184" width="240" height="54" fill="#00ffff"/>
+<text x="24" y="288" font-size="15">HDR (1.3,.5,.2)</text>
+<rect x="330" y="258" width="240" height="54" fill="#ffa76d"/>
+<rect x="620" y="258" width="240" height="54" fill="#ffbc7c"/>
+<text x="24" y="362" font-size="15">Normal SDR (.4,.3,.2)</text>
+<rect x="330" y="332" width="240" height="54" fill="#aa957c"/>
+<rect x="620" y="332" width="240" height="54" fill="#aa957c"/>
+<text x="24" y="423" font-size="13">A clipped base plus 3-channel gain is another possible design; it is not implemented or approved.</text>
+</g></svg>

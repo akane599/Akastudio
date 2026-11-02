@@ -21,7 +21,10 @@ def inventory(root):
   paths=p.rglob('*') if p.is_dir() else [p]
   for f in paths:
    plain(f)
-   if f.is_file() and '__pycache__' not in f.parts:result[str(f.relative_to(root))]=digest(f)
+   rel_f=f.relative_to(root)
+   # Git-ignored Gradle logs written by the mandated gradle-check.sh are runtime output, not kit content.
+   if rel_f.parts[:3]==('.claude','kit','logs'):continue
+   if f.is_file() and '__pycache__' not in f.parts:result[str(rel_f)]=digest(f)
  return result
 
 def base(root):

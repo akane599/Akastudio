@@ -1,6 +1,7 @@
 package com.akane.akastudio.core.color.device
 
 import android.graphics.RectF
+import android.opengl.EGL14
 import android.opengl.GLES20
 import android.opengl.GLES30
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -42,6 +43,14 @@ class GlCapabilitiesDeviceTest {
         val coreFloatTargets = major > 3 || (major == 3 && minor >= 2)
         val probe = independentHalfFloatProbe()
         val caps = gl.capabilities
+        val display = EGL14.eglGetCurrentDisplay()
+        report(
+            "physical inventory: GL_VENDOR=${GLES20.glGetString(GLES20.GL_VENDOR)} " +
+                "GL_SHADING_LANGUAGE_VERSION=${GLES20.glGetString(GLES20.GL_SHADING_LANGUAGE_VERSION)} " +
+                "EGL_VENDOR=${EGL14.eglQueryString(display, EGL14.EGL_VENDOR)} " +
+                "EGL_VERSION=${EGL14.eglQueryString(display, EGL14.EGL_VERSION)} " +
+                "EGL_EXTENSIONS=${EGL14.eglQueryString(display, EGL14.EGL_EXTENSIONS)}",
+        )
         report(
             "capabilities: GL_VERSION='${GLES20.glGetString(GLES20.GL_VERSION)}' renderer='${GLES20.glGetString(GLES20.GL_RENDERER)}' " +
                 "ES $major.$minor EXT_color_buffer_half_float=$halfExt EXT_color_buffer_float=$floatExt " +

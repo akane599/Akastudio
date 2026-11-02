@@ -16,6 +16,7 @@ import com.akane.akastudio.core.curator.hash.PerceptualHash
 import com.akane.akastudio.core.curator.metrics.Composition
 import com.akane.akastudio.core.curator.metrics.Exposure
 import com.akane.akastudio.core.curator.metrics.Luma
+import com.akane.akastudio.core.curator.metrics.ScreenCaptureDetector
 import com.akane.akastudio.core.curator.metrics.Sharpness
 import com.akane.akastudio.core.curator.metrics.ShotScaleClassifier
 import com.akane.akastudio.core.curator.metrics.TechnicalGate
@@ -27,7 +28,7 @@ import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Analyzes one candidate end to end: pixels, faces, saliency, technical gate, hashes, embedding, colour, aesthetic,
- * quality, scene and shot scale. Cooperative: it checks for cancellation between stages.
+ * quality, scene, shot scale and the screen-capture flag. Cooperative: it checks for cancellation between stages.
  */
 internal class PhotoAnalyzer(private val pixels: PixelSource, private val models: AnalysisModels) {
 
@@ -110,6 +111,7 @@ internal class PhotoAnalyzer(private val pixels: PixelSource, private val models
             faces = faces,
             saliency = saliency,
             rejectReason = rejectReason,
+            screenCapture = ScreenCaptureDetector.detect(px, candidate.metadata),
         )
         return AnalyzedPhoto(analysis, nimaMissing = nimaMean == null || !nimaMean.isFinite())
     }

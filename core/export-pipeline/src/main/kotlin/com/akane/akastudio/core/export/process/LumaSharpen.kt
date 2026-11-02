@@ -24,7 +24,7 @@ object LumaSharpen {
     private const val HALO_MARGIN = 0.02f
     private const val STRIP_ROWS = 64
 
-    /** Returns a sharpened copy of [img] (linear light, straight alpha). */
+    /** Returns a sharpened copy of [img] (linear light; alpha is passed through untouched, so opaque frames only). */
     fun apply(img: HalfFloatImage, amount: Float = 0.35f, sigma: Float = 0.8f, threshold: Float = 0.004f): HalfFloatImage {
         require(amount.isFinite() && amount >= 0f) { "amount must be finite and >= 0, was $amount" }
         require(sigma.isFinite() && sigma > 0f) { "sigma must be finite and > 0, was $sigma" }

@@ -3,11 +3,9 @@ name: full-repo-audit
 description: Perform an exhaustive, staff-level architectural, security, concurrency, performance, and correctness audit across the entire repository (not a diff or PR). Uses shell execution, git forensics, static analyzers, ripgrep, and cross-file call-graph tracing to find real, systemic bugs.
 ---
 
-## Standalone review mode
+## Before starting
 
-Use this workflow with Sidequest disabled. If Sidequest is active, stop before audit dispatch and ask the user to enter review mode from an ordinary terminal, then fully restart Claude. Do not disable hooks inside an active run or dispatch Sidequest tickets for this workflow. `/bug-hunt` remains the Sidequest-native investigation command.
-
-Read `references/blind-audit.md` before project summaries, then `references/orchestration.md`. Use the current native session configuration; these skills do not pin models or require provider diversity. Keep any gateway needed by the chosen kit enabled. Treat domain checklists as investigation prompts, confirm each claim against actual code/API versions, and redact credentials.
+Read `references/blind-audit.md` before project summaries, then `references/orchestration.md`. Use the current session's model configuration; these skills do not pin models. Treat domain checklists as investigation prompts, confirm each claim against actual code/API versions, and redact credentials.
 
 # Whole-Repository Principal Audit Protocol
 
@@ -15,8 +13,8 @@ You are conducting a **complete, ground-up audit of the entire repository**—no
 Use tools permitted by the user, project policy and current environment: shell execution, compilers, typecheckers, linters, `rg` (ripgrep), `fd`/`find`, `git` history analysis, AST search, and parallel sub-agents.
 
 ## Core Anti-Slop Rules (Read First)
-1. **No Lazy Skimming:** Never read 3 files and guess how the rest of the app works. Map the full repository topology first, then audit every subsystem systematically.
-2. **Never Act Like a Human Linter:** Do not report formatting, naming nitpicks, or missing comments. Run actual static analysis tools for syntax/style, and spend 100% of your reasoning budget on **logic bugs, broken invariants, race conditions, resource leaks, architectural coupling, and security flaws**.
+1. **Map before judging:** Map the full repository topology first, then audit every subsystem; record what you did not read instead of inferring it.
+2. **Logic over lint:** Leave formatting, naming and comment style to the static analysis tools, and spend the review on **logic bugs, broken invariants, race conditions, resource leaks, architectural coupling, and security flaws**.
 3. **Verify Before Reporting (Zero Hallucinations):** Never report a "potential" issue without tracing its callers and callees across the codebase using `rg` or LSP/AST tools. If a function looks unsafe, check whether upstream callers already sanitize input or hold a lock.
 4. **Prove Every Finding:** Every reported issue MUST include:
    - Exact `path/to/file.ext:line_start-line_end`
@@ -50,7 +48,7 @@ Capture any real errors or critical warnings from these tools to correlate with 
 ## Phase 3: Deep-Dive Subsystem Audit (Vertical Slices)
 
 - If `build.gradle*` or `AndroidManifest.xml` is present, instruct every subsystem sub-agent (especially IPC, app, and feature agents) to also enforce `references/android-kotlin-shizuku.md`.
-- Coordinate one shared baseline in Phase 2 and pass its outcomes to subsystem workers. Workers must not duplicate it. Any additional verification needed to confirm a finding follows the standalone orchestration protocol’s two-active-Gradle-invocation policy; queue only that verification step, never independent audit dispatch. Required device checks without a connected test device remain explicitly unverified.
+- Coordinate one shared baseline in Phase 2 and pass its outcomes to subsystem workers. Workers must not duplicate it. Any additional verification needed to confirm a finding follows the audit coordination protocol’s two-active-Gradle-invocation policy; queue only that verification step, never independent audit dispatch. Required device checks without a connected test device remain explicitly unverified.
 
 Divide the codebase into logical subsystems (e.g., Entry/UI layer, Domain/State Engine, Persistence/IPC/Network, Background Workers/Services, Native/Shell bridges). If your environment supports **sub-agents**, dispatch parallel sub-agents per subsystem or per audit dimension below. Otherwise, iterate through every subsystem sequentially across these **6 Failure Domains**:
 

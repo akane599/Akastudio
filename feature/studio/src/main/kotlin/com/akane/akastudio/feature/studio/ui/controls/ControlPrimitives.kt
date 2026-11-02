@@ -33,6 +33,7 @@ import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -339,12 +340,20 @@ internal fun SwitchRow(
     }
 }
 
+/**
+ * The [ValueReadout] text style. A signed readout such as `+50` has no strong-direction character, so under an RTL
+ * layout it would inherit an RTL paragraph and draw as `50+`. Its paragraph direction comes from its own content,
+ * falling back to LTR: numbers and signs keep their order, a translated pattern led by an RTL letter still reads
+ * right to left, and the surrounding row mirrors as usual.
+ */
+internal val ValueReadoutStyle: TextStyle = DarkroomTextStyles.tabular.copy(textDirection = TextDirection.ContentOrLtr)
+
 /** A tabular-figure value readout. */
 @Composable
 internal fun ValueReadout(text: String, modifier: Modifier = Modifier) {
     Text(
         text = text,
-        style = DarkroomTextStyles.tabular,
+        style = ValueReadoutStyle,
         color = MaterialTheme.colorScheme.onSurface,
         maxLines = 1,
         modifier = modifier,

@@ -16,3 +16,8 @@ build/
 /captures
 .externalNativeBuild/
 .cxx/
+
+# --- local QA evidence (1.5 GB of captures/archives; kept on disk, referenced from docs/stabilization)
+docs/stabilization/evidence/
+/transport/
+__pycache__/

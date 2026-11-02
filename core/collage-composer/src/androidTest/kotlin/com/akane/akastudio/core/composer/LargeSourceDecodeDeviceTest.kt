@@ -31,9 +31,11 @@ import org.junit.runner.RunWith
  * The composer's inputs come from two decodes of each chosen photo: the subsampled analysis decode that feeds the
  * horizon detector (1024 px) and the bounded full-resolution decode the renderer draws (up to the 3072 px collage
  * budget). On a 6000×4000 JPEG written on the device, a decode whose target is at most half the source must sample
- * instead of materialising the full-resolution image, with the Java heap untouched by pixels. A heap sampler records
- * the peaks; its negative controls are an unsampled BitmapFactory decode (96 MB) and the full-resolution RGBA_F16
- * decode (183 MiB) that sampling avoids.
+ * instead of materialising the full-resolution image, with the Java heap untouched by pixels. The full-resolution
+ * decoder lets the codec subsample by a power of two in its native 8-bit config, then converts to linear RGBA_F16 in
+ * bands while doing the remaining (< 2:1) downscale on linear values, so no full-size F16 copy exists. A heap sampler
+ * records the peaks; its negative controls are an unsampled BitmapFactory decode (96 MB) and the full-resolution
+ * RGBA_F16 decode (183 MiB) that the codec's own F16 path would allocate.
  */
 @RunWith(AndroidJUnit4::class)
 class LargeSourceDecodeDeviceTest {
@@ -55,9 +57,10 @@ class LargeSourceDecodeDeviceTest {
         val (bitmap, peak) = fullResolutionDecode(2048)
         assertEquals(2048, bitmap.width)
         assertEquals(1365, bitmap.height)
-        // Factor 2.93: sample size 2 decodes 3000×2000 RGBA_F16 (45.8 MiB), then the exact downscale adds the
-        // 2048×1365 output (21.3 MiB): about 67 MiB, against 183 MiB for the full-resolution F16 decode.
-        val expected = 3000L * 2000 * F16_BYTES + 2048L * 1365 * F16_BYTES
+        // Factor 2.93: sample size 2 decodes 3000×2000 ARGB_8888 (22.9 MiB); the 1.46 linear downscale adds the
+        // 2048×1365 RGBA_F16 output (21.3 MiB) and one band of F16 source rows (≤ 194 rows × 3000 px, 4.4 MiB):
+        // about 49 MiB, against 183 MiB for the full-resolution F16 decode.
+        val expected = 3000L * 2000 * ARGB_BYTES + 2048L * 1365 * F16_BYTES + 194L * 3000 * F16_BYTES
         assertTrue(
             "2048 decode native peak ${peak.nativeMb} MiB is near the sampled ${expected / MB} MiB, not the full ${FULL_F16_BYTES / MB} MiB",
             peak.nativeBytes <= expected * 11 / 10,
@@ -73,11 +76,13 @@ class LargeSourceDecodeDeviceTest {
         assertEquals(2048, bitmap.height)
         // Factor 6000 / 3072 = 1.95 < 2, so no power-of-two sample size keeps the decode at least as large as the
         // target, and anything smaller would have to be upscaled, which the 16-bit pipeline never does. The full
-        // 6000×4000 RGBA_F16 decode (183 MiB) plus the 3072×2048 output (48 MiB) is therefore inherent: about 231 MiB,
-        // asserted against a documented 250 MiB bound rather than a tight one.
+        // 6000×4000 ARGB_8888 decode (91.6 MiB) is therefore inherent; the linear downscale adds the 3072×2048 RGBA_F16
+        // output (48 MiB) and one band of F16 source rows (≤ 256 rows × 6000 px, 11.7 MiB): about 151 MiB (151.3 MiB
+        // measured on SM-S938B, API 37), asserted with 10% headroom. The codec's own full-size F16 intermediate
+        // (183 MiB + output) would exceed it.
         assertTrue(
-            "3072 decode native peak ${peak.nativeMb} MiB stays within full-res F16 + output (${FULL_RES_PLUS_OUTPUT_BOUND / MB} MiB)",
-            peak.nativeBytes <= FULL_RES_PLUS_OUTPUT_BOUND,
+            "3072 decode native peak ${peak.nativeMb} MiB stays within full-res 8888 + output + one band (${COLLAGE_EDGE_BOUND / MB} MiB)",
+            peak.nativeBytes <= COLLAGE_EDGE_BOUND,
         )
         assertTrue("3072 decode Java heap peak ${peak.javaMb} MiB stays bounded", peak.javaBytes < JAVA_BOUND_BYTES)
         bitmap.recycle()
@@ -165,8 +170,9 @@ class LargeSourceDecodeDeviceTest {
         private const val FULL_8888_BYTES = 6000L * 4000L * 4L
         private const val FULL_8888_MB = FULL_8888_BYTES / MB
         private const val F16_BYTES = 8L
+        private const val ARGB_BYTES = 4L
         private const val FULL_F16_BYTES = 6000L * 4000L * F16_BYTES
-        private const val FULL_RES_PLUS_OUTPUT_BOUND = 250 * MB
+        private const val COLLAGE_EDGE_BOUND = (FULL_8888_BYTES + 3072L * 2048 * F16_BYTES + 256L * 6000 * F16_BYTES) * 11 / 10
         private const val JAVA_BOUND_BYTES = 16 * MB
 
         private val resolver get() = DeviceRender.context.contentResolver

@@ -6,6 +6,7 @@ import com.akane.akastudio.core.composer.api.ComposerPhoto
 import com.akane.akastudio.core.composer.horizon.HorizonDetector
 import com.akane.akastudio.core.curator.api.PhotoAnalysis
 import com.akane.akastudio.core.ingestion.model.PhotoCandidate
+import com.akane.akastudio.feature.studio.domain.PhotoOwner
 import com.akane.akastudio.feature.studio.domain.PhotoPreparer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
@@ -71,6 +72,13 @@ class PhotoDecodeException(val displayName: String, cause: Throwable) :
  * flight. Every registered image stays tracked from the moment it is registered, so releasing the ids of a failed or
  * cancelled batch frees what that batch had already registered. An image is freed only once its unregister succeeds:
  * one whose unregister failed stays tracked, and every later [release] retries it.
+ *
+ * Ownership: a photo is registered under a renderer key made of the [PhotoOwner] in the context of the [prepare]
+ * that made it and the candidate id (see [imageKey]), and [release] resolves ids the same way, under the calling
+ * owner. The preparer is process-wide while candidate ids repeat across imports, so a retired story's late
+ * registration or release and a newer story's (or a second live studio's) preparation of the same photo never meet
+ * on one key. Preparing an id again under the same owner replaces that owner's registration. Calls without an owner
+ * use the bare candidate id as the key.
  */
 internal class DefaultPhotoPreparer(
     private val backend: PreparerBackend,
@@ -79,11 +87,14 @@ internal class DefaultPhotoPreparer(
 
     private val mutex = Mutex()
 
-    /** Registered images by candidate id. Guarded by [mutex]. */
+    /** Registered images by renderer key. Guarded by [mutex]. */
     private val registered = HashMap<String, FullResolutionImage>()
 
-    /** Ids still in [registered] whose unregister failed, retried by every [release]. Guarded by [mutex]. */
+    /** Keys still in [registered] whose unregister failed, retried by every [release]. Guarded by [mutex]. */
     private val unregisterFailed = LinkedHashSet<String>()
+
+    /** The renderer key of [owner]'s registration of candidate [id]. */
+    private fun imageKey(owner: PhotoOwner?, id: String): String = if (owner == null) id else "${owner.id}/$id"
 
     override suspend fun prepare(
         candidates: List<PhotoCandidate>,
@@ -91,33 +102,36 @@ internal class DefaultPhotoPreparer(
         hero: Boolean,
     ): List<ComposerPhoto> = mutex.withLock {
         if (candidates.isEmpty()) return@withLock emptyList()
+        val owner = currentCoroutineContext()[PhotoOwner]
         val edge = decodeEdge(backend.maxTextureSize(), hero)
         val prepared = LinkedHashMap<String, ComposerPhoto>()
         candidates.map { candidate ->
-            prepared.getOrPut(candidate.id) { prepareOne(candidate, analyses, edge) }
+            prepared.getOrPut(candidate.id) { prepareOne(candidate, analyses, edge, owner) }
         }
     }
 
     override suspend fun release(ids: Collection<String>) = mutex.withLock {
-        val requested = ids.toSet()
+        val owner = currentCoroutineContext()[PhotoOwner]
+        val requested = ids.mapTo(LinkedHashSet()) { imageKey(owner, it) }
         var failure: Throwable? = null
-        for (id in requested + unregisterFailed) {
-            val image = registered[id] ?: continue
+        // A failed unregister is retried by whoever releases next, as its owner may be gone.
+        for (key in requested + unregisterFailed) {
+            val image = registered[key] ?: continue
             try {
-                backend.unregister(id)
+                backend.unregister(key)
             } catch (t: Throwable) {
                 // The renderer may still hold the pixels, so they stay ours to retry. A retry nobody asked for here
                 // was already reported to its caller when it first failed, so it is only logged.
-                unregisterFailed += id
-                if (id in requested) {
+                unregisterFailed += key
+                if (key in requested) {
                     if (failure == null) failure = t else failure.addSuppressed(t)
                 } else {
-                    Log.w(TAG, "Retried unregister of '$id' failed again; its pixels stay held", t)
+                    Log.w(TAG, "Retried unregister of '$key' failed again; its pixels stay held", t)
                 }
                 continue
             }
-            registered.remove(id)
-            unregisterFailed -= id
+            registered.remove(key)
+            unregisterFailed -= key
             image.free()
         }
         failure?.let { throw it }
@@ -128,8 +142,10 @@ internal class DefaultPhotoPreparer(
         candidate: PhotoCandidate,
         analyses: Map<String, PhotoAnalysis>,
         edge: Int,
+        owner: PhotoOwner?,
     ): ComposerPhoto {
         val analysis = checkNotNull(analyses[candidate.id]) { "No curator analysis for photo ${candidate.id}" }
+        val key = imageKey(owner, candidate.id)
         val image = try {
             decodeOwned(candidate, edge)
         } catch (e: CancellationException) {
@@ -140,21 +156,21 @@ internal class DefaultPhotoPreparer(
         try {
             // Not cancellable: a cancelled caller would otherwise get CancellationException after the GL thread had
             // already registered the image, then free pixels the renderer holds and never unregister the texture.
-            withContext(NonCancellable) { backend.register(candidate.id, image) }
+            withContext(NonCancellable) { backend.register(key, image) }
         } catch (t: Throwable) {
-            // The renderer keeps its earlier registration of this id (if any); only the new decode is ours to free.
+            // The renderer keeps its earlier registration of this key (if any); only the new decode is ours to free.
             image.free()
             throw t
         }
         // A replaced registration no longer references the older pixels, so they can go now, and an unregister of
         // them that failed must not be retried against the new registration.
-        unregisterFailed -= candidate.id
-        registered.put(candidate.id, image)?.takeIf { it !== image }?.free()
+        unregisterFailed -= key
+        registered.put(key, image)?.takeIf { it !== image }?.free()
         // Tracked before the cancellation check, so releasing this batch's ids unregisters it, then frees it.
         currentCoroutineContext().ensureActive()
         return ComposerPhoto(
             id = candidate.id,
-            imageKey = candidate.id,
+            imageKey = key,
             widthPx = uprightDimension(candidate.widthPx, image.sourceWidth),
             heightPx = uprightDimension(candidate.heightPx, image.sourceHeight),
             saliency = analysis.saliency,

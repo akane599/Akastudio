@@ -153,6 +153,9 @@ class FakeIngestionSession(private val scripts: ArrayDeque<Flow<IngestionEvent>>
     var closeCount = 0
         private set
 
+    /** Thrown by [close] after it is counted. */
+    var closeFailWith: Exception? = null
+
     override fun ingest(requests: List<IngestionRequest>): Flow<IngestionEvent> {
         this.requests += requests
         return scripts.removeFirstOrNull() ?: throw IllegalStateException("No ingestion script for $requests")
@@ -160,6 +163,7 @@ class FakeIngestionSession(private val scripts: ArrayDeque<Flow<IngestionEvent>>
 
     override fun close() {
         closeCount++
+        closeFailWith?.let { throw it }
     }
 }
 

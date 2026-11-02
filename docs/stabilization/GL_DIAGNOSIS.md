@@ -1,0 +1,83 @@
+# Bounded API 36 GL diagnosis
+
+Status: bounded investigation complete. The tested legacy direct SwiftShader 4 emulator backend has a reproducible 3D texture-path compatibility limitation. The same diagnostic APK passes all four variants through ANGLE/SwiftShader 5, and that configuration also passes the bounded production RGB checks. The storage-error fixture is separately corrected and passes on ANGLE. No application workaround or production code defect is established; the direct-backend red results and unknown physical-GPU behavior remain recorded.
+
+## Fixed inputs and ownership
+
+The original tested source fingerprint for the backend comparison is `81698a5b518e83fd8013fe13e128d6c1c24d287a6999f6b4942ba225f399bb6b`; original/new artifact identities and source snapshots are maintained by the coordinator in [source-manifest.json](evidence/source-manifest.json) and [artifacts.json](evidence/artifacts.json). The remote QA owner holds the device lock and executes all device commands. This source reviewer ran no devices, builds or production edits; the later, independently reviewed correction below changes only one device-test trigger. The same original APKs passed the API 35 color suite, 25/25, according to the coordinator's retained evidence.
+
+Failing configuration reported by the remote owner: owned `pixel-api36`, Android API 36 x86_64, emulator 37.2.12, KVM/CPU acceleration, `-gpu swiftshader`. Actual GL strings identify OpenGL ES 3.0, SwiftShader 4.0.0.1, Android Emulator OpenGL ES Translator / Google SwiftShader. Software rendering is not physical GPU evidence.
+
+## Unchanged tests and observed results
+
+| Probe | Result on direct SwiftShader | What it establishes |
+|---|---|---|
+| Selected `GlCapabilitiesDeviceTest` (2), `GlTextureStaleErrorDeviceTest` (2), `StoryRendererDeviceTest` (4) | 8 tests: 5 passed, 3 failed | A bounded baseline, not a passing color suite. |
+| `allocateStillReportsAnErrorRaisedByItsOwnStorageCall` | Failed: expected `GlException` was not thrown for width 8193 when reported maximum was 8192. Reproduced in a fresh instrumentation process. | Its test expectation fails. This test does not inject a fake GL error; the spec qualification below prevents treating this alone as a proven GL error-contract violation. |
+| `allocateSucceedsWhenAnEarlierCallLeftAnInvalidOperationPending` | Passed | Its deliberate 2D/cube-map invalid bind is independently asserted to raise the expected error; stale-error handling works on this backend for that injection. |
+| `smoothRampReadsBackWithMoreThan256Levels` | Failed: one distinct level, range 0..0, worst dip 0. Reproduced in a fresh process. | Absolute rendered RGB is wrong, rather than merely below the precision target. |
+| `fourKNineBySixteenRenderSucceedsWithinTheContextLimits` | Failed: worst RGB error 222.35326/255. Limits all 8192; 2160×3840 planned one tile. Reproduced in a fresh process. | A target within the reported limits renders incorrect content. Tiling is not needed to trigger this case. |
+| `eightBitSourceRampIsCountedAsQuantized` | Passed with one distinct level | Its upper bound of 256 also accepts a black image; this pass cannot establish correct 8-bit rendered content. |
+| Context recreation comparison | Passed | Equality before/after recreation does not establish correct RGB. Its nonblank check includes alpha, so opaque black can satisfy it. |
+| `OffscreenReadbackDeviceTest` (3) | 3/3 passed | The two direct upload tests compare exact expected F16 halves/RGBA8 bytes through readback. Generic 2D upload transport, FLOAT readback and strip/tile decoding work for those fixtures. The renderer equality test's nonblank assertion also includes alpha and cannot certify absolute RGB. |
+| `GradingParityDeviceTest.everyLookNeutralAndIdentityMatchTheCpuWithinTwoCodes` | Failed overall; identity passed at max 0.001/255, neutral failed at max 255/255 (mean 96.6299), other looks/fixtures failed at maxima 156.541..255/255. | Identity through the same quad, source copy, 2D F16 sampling and grading program works. The enabled-look path is implicated; generic geometry failure is contradicted. |
+
+The independent raw F16 target probe reports complete=true and storedRed=2.5 after a clear and FLOAT readback. Both float-buffer extensions are advertised, `floatColorBuffer=true`, working format RGBA16F, preferred half-float readback=false. Those observations contradict a generic lack of F16 renderability, accidental RGBA8 fallback or universally unsupported FLOAT readback as the explanation.
+
+## Source trace and ranked hypotheses
+
+`GlTexture.allocate` drains old errors before allocation, then calls `glTexStorage2D`, sets texture parameters and checks its own error queue. It does not intentionally discard an error raised by that storage call. The invalid-size failure is therefore not explained by the stale-error fix swallowing its own error. Its allocation contract and shader-output problem may have separate causes.
+
+The strong grading comparison uploads raw, non-mipmapped F16 data directly, bypassing `BitmapUpload` and `SceneCompositor`. Its identity case sets look intensity to zero. In `grade_pixel.frag.glsl`, that bypasses the enabled-look block: skin weighting, encoded-domain conversion, the two 3D LUT samples and conversion back to linear light. `LookLutTextures` uploads RGB16F 3D lattices through `glTexStorage3D`/`glTexSubImage3D`; `sampleLut` uses `texelFetch` with tetrahedral interpolation. The final shader already declares high-precision sampler3D uniforms and parameters.
+
+**Storage-error oracle qualification.** The [Khronos OpenGL ES 3.0.6 specification](https://registry.khronos.org/OpenGL/specs/es/3.0/es_spec_3.0.pdf), §§3.8.3–3.8.4, printed pages 133–137 (PDF pages 145–149), defines implementation-dependent actual texture dimensions with a minimum guarantee derived from `MAX_TEXTURE_SIZE`; immutable storage inherits the corresponding image specification errors. The queried value plus one is therefore not a portable way to guarantee an allocation error. The observed assertion failure remains recorded, but it does not establish that `GlTexture` lost an error. The independently reviewed correction uses `GlTexture.allocate(1, 1, RGBA8, levels = 2)`: the wrapper accepts these positive arguments, while §3.8.4 explicitly rejects a level count exceeding `floor(log2(max(width,height))) + 1`. Method name, exception/message/error-queue assertions and original red logs are retained. The corrected artifact passes the selected eight GL tests and the strong parity method on the same API 36 ANGLE guest, as reported by the remote owner. Follow-up source snapshot: `96b2920a33d5773faf1e5eb34413b2ae9bc605bb095ad8c669ec2d9020fd6f2d`; color test APK SHA-256: `3098729e9194625546713f6ca9ebbafb8fdb6e3e55877cd6fba5418a9a0c2ee8` ([follow-up artifacts](evidence/test-followup-artifacts.json)). This fixes the test trigger; it does not fix or erase the direct-backend RGB failure.
+
+1. **Direct backend behavior in the enabled-look path.** Prediction: the same API 36 image/APKs with only the GPU backend changed to `swangle` pass absolute parity/ramp/4K assertions. **Observed:** those assertions pass on swangle. This localizes the observed failure to the direct-backend configuration, without identifying which GL operation or proving a source fix.
+2. **An interaction in the shared 3D texture path.** Prediction: fixed-node probes remove the full enabled-look math, and direct/function-parameter comparisons isolate whether sampler arguments are required. **Observed below:** both fixed-node forms fail on direct SwiftShader and pass on ANGLE; changing filters to NEAREST and padding to RGBA16F do not fix the direct backend. A sampler-parameter-only explanation, LINEAR-filter-only explanation and RGB-three-component-only explanation are unsupported. Upload versus fetch/transport remains ambiguous at the operation level.
+3. **A separate, nonportable storage-error trigger.** Prediction: the 8193-wide storage-call error assertion can remain red even when the alternative backend fixes shader output; a guaranteed invalid level count should produce the original intended storage-call error. **Observed:** the width assertion remains red in the original swangle run while shader output passes; the rebuilt deterministic level-count correction passes on that ANGLE guest. Production bitmap upload checks the reported maximum before allocation. Preserve the original raw red result and corrected artifact identity separately.
+
+Downgraded by the unchanged probes: generic quad setup/vertex geometry and 2D sampling (identity passes), bitmap-specific upload/mipmaps/compositor behavior (not required by failing raw-source parity), target-size/4K-only behavior (small parity fails), missing F16 extensions/fallback and generic readback packing (raw/direct probes pass). No passing equality-only or alpha-inclusive test overrules the failing absolute RGB comparisons.
+
+## Controlled backend comparison and classification
+
+The remote owner cold-relaunched only the owned API 36 emulator, preserving image, port, APKs and selected tests while changing `-gpu swiftshader` to `-gpu swangle`. Emulator help describes swangle as ANGLE with SwiftShader GLES/Vulkan. Actual replacement GL reports GLES 3.1, ANGLE 2.1.17841, Vulkan SwiftShader driver 5. The F16 probe still stores 2.5, `floatColorBuffer=true`, preferred half-float readback=false, maximum 2D texture size 8192; maximum 3D texture size changes from 8192 to 2048, both above the 33-node LUT lattice.
+
+| Same assertion | Direct SwiftShader | swangle / ANGLE + SwiftShader |
+|---|---|---|
+| Selected GL baseline | 5/8 pass | 7/8 pass |
+| Smooth F16 ramp | 1 level, RGB 0..0 | 1009 levels, 0..1 |
+| 8-bit control | 1 level | 256 levels |
+| 4K absolute RGB error | 222.35326/255 | 0.065/255 |
+| Strong all-look GPU parity | Fails (neutral max 255/255; identity passes) | Passes, worst ≤0.378/255 (neutral 0.086; identity 0.000) |
+| Width 8193 allocation must throw | Fails: no exception | Fails: no exception |
+
+Classification: backend-dependent enabled-look rendering compatibility failure on direct SwiftShader, with passing absolute RGB evidence for the tested ANGLE configuration. The A/B does not prove which source/driver operation is responsible. The separate storage-error assertion remains red, with a nonportable trigger identified from the primary specification. Switching emulator backends is not an application code fix, a blanket API 36 pass or physical-device verification. No tests were skipped or tolerances changed for this comparison.
+
+Exact A/B commands and per-case outputs are retained in [REMOTE_QA.md](REMOTE_QA.md), the [direct diagnostics](evidence/remote-qa/api36-color-diagnostics.log), [swangle selected GL results](evidence/remote-qa/api36-swangle-gl.log), [swangle strong parity result](evidence/remote-qa/api36-swangle-grade.log), [swangle diagnostic measurements](evidence/remote-qa/api36-swangle-color-diagnostics.log) and [run summary](evidence/remote-qa/api36-swangle-summary.json). This reviewer read the local raw results and numeric measurement lines after the remote owner copied them. Artifact transfer verification is owned by that remote QA workflow.
+
+## Reviewed diagnostic probes
+
+`LutSamplerDiagnosticDeviceTest` is a new diagnostic-only class with no production/assets changes. Its first two methods upload the same known 2×2×2 RGB16F lattice through the production storage/FLOAT-upload/LINEAR-filter path, then render all eight nodes into a 2×4 RGBA16F target. Both use the existing quad/vertex shader and differ only in direct uniform `texelFetch` versus the equivalent fetch through a sampler3D function parameter. State, viewport, sampler unit, uniforms and an alpha≠1 clear sentinel are explicit. All eight readback RGBA values are logged before exact, nonzero/distinct RGB and alpha=1 assertions; resources are cleaned up on failures.
+
+The known-node values are exactly representable in half floats. FLOAT readback is already validated by the earlier raw probes, so no precision tolerance change is needed. The first probe artifact, source snapshot `479b94137de5c1c5db9d5dff16283f8a0822af86e9e0b72114782763182b428a`, APK SHA-256 `6ae50474236556fe489d890e3a9c753dc6dc83e4d354302a75a38984b11691e2` ([metadata](evidence/remote-qa/lut-probe-artifacts.json)), passes both methods on ANGLE and fails both on direct SwiftShader. Direct returns `[0,0,0,1]` at every node; ANGLE returns all eight exact expected RGBA values ([direct measurements](evidence/remote-qa/api36-lut-direct-color-diagnostics.log), [ANGLE measurements](evidence/remote-qa/api36-lut-swangle-color-diagnostics.log)). This rules out a sampler-parameter-only explanation. It leaves RGB16F upload/format/filter/sampling behavior shared by both fetch forms as the bounded cause region; neither the 33-node production dimension nor tetrahedral interpolation is needed to reproduce it.
+
+The next independently reviewed split added only two direct-fetch cases to the same helper: RGB16F/FLOAT with both MIN and MAG changed to NEAREST, and RGBA16F/FLOAT with original LINEAR filtering and alpha=1-padded data. The [Khronos ES 3.0 format table](https://raw.githubusercontent.com/KhronosGroup/OpenGL-Refpages/main/es3.0/internalformattable.xml) marks RGB16F and RGBA16F texture-filterable, so the original LINEAR setting is legal. Both new methods retain the fixture, coordinate mapping, state, exact RGB/alpha assertions and full readback logs.
+
+Final diagnostic source snapshot: `90553a439a3d6f67cb09943adae61497e925cb0be2800bc6a3c55a2dccf50284`. The same APK SHA-256 `9aca6765f0f7f2d9a6a7a3f8bb18110363d324d11849c2ef638a44d771ae47a2` was run on both backends ([artifact identity](evidence/remote-qa/lut-variants-artifacts.json), [source manifest](evidence/remote-qa/lut-variants-source-manifest.json)).
+
+| Fixed-node variant | Legacy direct SwiftShader 4 | ANGLE / SwiftShader 5 |
+|---|---|---|
+| RGB16F/FLOAT, LINEAR, direct uniform | Fails: all eight `[0,0,0,1]` | Exact expected RGBA at all eight nodes |
+| RGB16F/FLOAT, LINEAR, sampler parameter | Fails: all eight `[0,0,0,1]` | Exact expected RGBA at all eight nodes |
+| RGB16F/FLOAT, NEAREST, direct uniform | Fails: all eight `[0,0,0,1]` | Exact expected RGBA at all eight nodes |
+| RGBA16F/RGBA FLOAT, LINEAR, direct uniform | Fails: RGB zero at all eight nodes; alpha 1 for the first four, 0 for the last four | Exact expected RGBA at all eight nodes |
+
+Raw test verdicts are [direct 0/4](evidence/remote-qa/api36-lut-variants-direct-lut-variants.log) and [ANGLE 4/4](evidence/remote-qa/api36-lut-variants-swangle-lut-variants.log), with full [direct node measurements](evidence/remote-qa/api36-lut-variants-direct-color-diagnostics.log) and [ANGLE node measurements](evidence/remote-qa/api36-lut-variants-swangle-color-diagnostics.log). This reviewer read the local raw verdicts and all four measured node arrays. Process exit status alone is not the verdict: both instrumentation commands exit 0, while the direct JUnit report records four failures.
+
+The matrix rejects the proposed simple filter-only and RGB-component-only workarounds; it does not distinguish every upload/transport/fetch operation. The legacy backend's failure on this minimal, valid ES texture path is verified, and the same artifact succeeds on ANGLE. It does not justify an application fallback or an unverified claim that a particular driver operation is broken. The coordinator and independent reviewer ended the investigation at this bounded matrix; no further probes or production changes were made.
+
+## Release implications
+
+Use the tested `-gpu swangle` ANGLE/SwiftShader 5 configuration for project emulator QA, verifying the actual GL identity after launch. Keep the direct SwiftShader 4 failures visible as an environment compatibility limitation; switching emulator backends is not a production code fix. The original width-based storage assertion remains in historical red logs, while the corrected guaranteed-error trigger passes on the follow-up ANGLE artifact.
+
+API 35 passing results cannot cancel the direct-backend failure, and the selected ANGLE probes do not establish a blanket API 36 or physical-device pass. Ordinary production rendering uses the enabled-look path, so the direct-backend symptom is real on that configuration. Operation-level upload/fetch attribution remains unproven; this evidence does not mandate an application workaround or establish a source bug. The release decision belongs to the coordinator and must name the tested configurations explicitly. Physical GPU precision and driver behavior remain unverified.

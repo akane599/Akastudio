@@ -20,7 +20,8 @@ import com.akane.akastudio.core.composer.layout.TemplateGeometry
  * [CollageComposer] for the editorial 9:16 templates.
  *
  * [layout] places each slot photo in its [TemplateGeometry] cell with a [SmartCropSolver] crop (rotated by the
- * photo's horizon tilt) adjusted by any per-photo [com.akane.akastudio.core.composer.api.CellOverride].
+ * photo's horizon tilt, reduced where straightening would cut a face: see [SmartCropSolver.faceSafeRotation])
+ * adjusted by any per-photo [com.akane.akastudio.core.composer.api.CellOverride].
  * [compose] turns that into a [RenderScene] with the style's background and, when enabled and known, the anchor
  * (slot 0) photo's EXIF caption in MONO type, always placed on or directly under that photo so it labels the photo it
  * sits on:
@@ -48,8 +49,10 @@ class DefaultCollageComposer internal constructor(solver: CropSolver) : CollageC
         val cells = cellsOf(request)
         return request.photos.mapIndexed { slot, photo ->
             val dst = cells[slot]
-            val rotation = photo.horizonTiltDegrees.takeIf { it.isFinite() } ?: 0f
-            val solved = crops.solve(photo, dst.width / dst.height, rotation)
+            val tilt = photo.horizonTiltDegrees.takeIf { it.isFinite() } ?: 0f
+            val aspect = dst.width / dst.height
+            val rotation = crops.rotation(photo, aspect, tilt)
+            val solved = crops.solve(photo, aspect, rotation)
             val crop = CropOverrides.apply(photo.widthPx, photo.heightPx, solved, request.overrides[photo.id], rotation)
             CellPlacement(photo.id, dst, crop, rotation)
         }
