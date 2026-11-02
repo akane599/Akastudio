@@ -5,7 +5,7 @@ description: Run AkaStudio instrumented tests and device checks on the shared em
 
 # Device QA for AkaStudio
 
-The hard rules live in `.claude/rules/device-testing.md` and are enforced for raw commands by `.claude/hooks/guard-bash.py`. This skill covers the procedures.
+The hard rules live in `.claude/rules/device-testing.md`. This skill covers the procedures.
 
 ## Devices
 

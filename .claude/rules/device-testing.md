@@ -8,4 +8,4 @@
 - A device test that exposes a product bug stays failing and gets reported; never delete or `@Ignore` it to go green.
 - On an ADB-over-TCP serial (`host:port`, e.g. the phone), AGP 9.4.1's `connected*AndroidTest` fails even when every test passes; take the verdict from `TEST-*.xml` or a raw `am instrument -r -w` run, never from that Gradle exit code (`docs/stabilization/PHONE_QA_20261102.md`).
 - The user uses the phone live (Haven SSH terminal): check the focused window before any key event, and send none while a personal app is in front.
-- Procedures (lock-taking test runner and XML verdict, UiAutomation/mobilecli, focus check, peak RSS, thermal, HDR headroom) live in the `device-qa` skill; heavy device runs go to the `device-runner` agent. `.claude/hooks/guard-bash.py` blocks raw adb/connected commands that skip the lock, touch other packages or change global settings.
+- Procedures (lock-taking test runner and XML verdict, UiAutomation/mobilecli, focus check, peak RSS, thermal, HDR headroom) live in the `device-qa` skill; heavy device runs go to the `device-runner` agent.
