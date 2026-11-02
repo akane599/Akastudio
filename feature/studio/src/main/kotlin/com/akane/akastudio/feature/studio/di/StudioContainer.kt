@@ -8,9 +8,18 @@ import androidx.core.net.toUri
 import com.akane.akastudio.core.color.api.StoryRenderer
 import com.akane.akastudio.core.color.harmonize.Harmonizer
 import com.akane.akastudio.core.color.render.createStoryRenderer
+import com.akane.akastudio.core.composer.api.CanvasSize
 import com.akane.akastudio.core.composer.api.CollageComposer
+import com.akane.akastudio.core.composer.api.LayoutStyle
+import com.akane.akastudio.core.composer.api.StoryTemplate
 import com.akane.akastudio.core.composer.compose.DefaultCollageComposer
+import com.akane.akastudio.core.composer.layout.TemplateGeometry
 import com.akane.akastudio.core.curator.api.CurationEngine
+import com.akane.akastudio.core.curator.decision.CellFit
+import com.akane.akastudio.core.curator.decision.CellShape
+import com.akane.akastudio.core.curator.decision.DecisionConfig
+import com.akane.akastudio.core.curator.decision.LayoutCatalog
+import com.akane.akastudio.core.curator.decision.LayoutSpec
 import com.akane.akastudio.core.curator.engine.DefaultCurationEngine
 import com.akane.akastudio.core.curator.engine.asAnalysisModels
 import com.akane.akastudio.core.curator.engine.asPixelSource
@@ -28,6 +37,7 @@ import com.akane.akastudio.feature.studio.domain.PhotoPreparer
 import com.akane.akastudio.feature.studio.domain.StudioDependencies
 import com.akane.akastudio.feature.studio.domain.StudioDispatchers
 import com.akane.akastudio.feature.studio.domain.StudioErrorMapper
+import com.akane.akastudio.feature.studio.mvi.StudioReducer
 import kotlinx.coroutines.Dispatchers
 
 /**
@@ -59,6 +69,7 @@ class StudioContainer(context: Context) : StudioDependencies {
         DefaultCurationEngine(
             pixels = analysisDecoder.asPixelSource(),
             models = LazyAnalysisModels(Dispatchers.Default) { CuratorModelsFactory.create(app).asAnalysisModels() },
+            config = DecisionConfig(layoutCatalog = studioLayoutCatalog(), layoutFitter = CellFit()),
         )
     }
 
@@ -115,3 +126,35 @@ class StudioContainer(context: Context) : StudioDependencies {
         const val TAG = "StudioContainer"
     }
 }
+
+/**
+ * The curator's view of the studio templates: one [LayoutSpec] per [StoryTemplate] in declaration order, id =
+ * `template.name`, one cell per slot. A cell's aspect is its width/height on the 1080×1920 canvas at [style]'s gutter
+ * (default 12 px), with the range it spans over the gutters the user can pick (0..[StudioReducer.MAX_GUTTER_PX]); the
+ * curator requires a fit over that whole range. [StoryTemplate.HERO_GALLERY_MATTE] shows the photo whole, so its cell
+ * is [CellShape.Uncropped].
+ */
+internal fun studioLayoutCatalog(style: LayoutStyle = LayoutStyle()): LayoutCatalog = LayoutCatalog(
+    StoryTemplate.entries.map { template ->
+        val cells = if (template == StoryTemplate.HERO_GALLERY_MATTE) {
+            List(template.photoCount) { CellShape.Uncropped }
+        } else {
+            // Each cell's aspect is monotone in the gutter, so the range ends sit at the slider's ends.
+            val gutters = listOf(style.gutterPx, 0f, StudioReducer.MAX_GUTTER_PX)
+            val byGutter = gutters.map { gutter -> cellAspects(template, style.copy(gutterPx = gutter)) }
+            byGutter[0].indices.map { slot ->
+                val aspects = byGutter.map { it[slot] }
+                CellShape.Aspect(
+                    widthOverHeight = aspects[0],
+                    minWidthOverHeight = aspects.min(),
+                    maxWidthOverHeight = aspects.max(),
+                )
+            }
+        }
+        LayoutSpec(id = template.name, cells = cells)
+    },
+)
+
+/** Width/height of each cell of [template]; photo aspects are read only by HERO_GALLERY_MATTE, so any value works. */
+private fun cellAspects(template: StoryTemplate, style: LayoutStyle): List<Float> =
+    TemplateGeometry.cells(template, CanvasSize.STORY_1080, style, List(template.photoCount) { 1f }).map { it.width / it.height }

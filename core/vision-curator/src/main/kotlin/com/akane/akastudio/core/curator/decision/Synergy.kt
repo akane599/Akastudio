@@ -11,7 +11,9 @@ import kotlin.math.sqrt
  * Collage synergy Ψ: how well a set of photos works together.
  *
  * `Ψ = 0.40 * H_color + 0.35 * H_rhythm + 0.25 * H_context` (see [PaletteHarmony.colorScore], [rhythm], [context]),
- * and `Score_Collage(S) = (0.5 * meanQ(S) + 0.5 * Ψ) * (1 - 0.03 * (m - 2))` for `m = |S|`.
+ * and `Score_Collage(S) = (0.5 * meanQ(S) + 0.5 * Ψ) * (1 - 0.03 * (m - 2))` for `m = |S|`. [DecisionEngine] ranks
+ * sets with the mean unique quality (each member's Q discounted by its [Redundancy] to earlier members) in place of
+ * meanQ, so repeating a moment is never rewarded by its colour similarity.
  */
 object Synergy {
 
@@ -136,10 +138,5 @@ internal class GroupScorer(
         val rhythm = Synergy.rhythm(subset.map { members[it].shotScale })
         val context = Synergy.context(subset.map { captureTimes[it] }, subset.map { members[it].cctKelvin })
         return SynergyBreakdown(color = color, rhythm = rhythm, context = context, psi = Synergy.psi(color, rhythm, context))
-    }
-
-    fun score(subset: IntArray, synergy: SynergyBreakdown): Float {
-        val meanQuality = subset.sumOf { members[it].quality.toDouble() } / subset.size
-        return Synergy.combineScore(meanQuality, synergy.psi, subset.size)
     }
 }

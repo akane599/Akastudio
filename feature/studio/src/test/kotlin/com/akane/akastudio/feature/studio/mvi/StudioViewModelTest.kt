@@ -6,6 +6,7 @@ import com.akane.akastudio.core.color.api.MasterLook
 import com.akane.akastudio.core.composer.api.CanvasSize
 import com.akane.akastudio.core.composer.api.CellOverride
 import com.akane.akastudio.core.composer.api.StoryTemplate
+import com.akane.akastudio.core.curator.api.CurationResult
 import com.akane.akastudio.core.curator.api.SceneCluster
 import com.akane.akastudio.core.curator.api.StoryMode
 import com.akane.akastudio.core.export.api.ExportFormat
@@ -72,8 +73,11 @@ class StudioViewModelTest {
         val state: StudioState get() = vm.state.value
     }
 
-    private fun TestScope.harness(errors: StudioErrorMapper = DefaultStudioErrorMapper()): Harness {
-        val deps = FakeStudioDependencies(studioTestDispatchers(testScheduler), FakeCurationEngine(result), errors)
+    private fun TestScope.harness(
+        errors: StudioErrorMapper = DefaultStudioErrorMapper(),
+        curation: CurationResult = result,
+    ): Harness {
+        val deps = FakeStudioDependencies(studioTestDispatchers(testScheduler), FakeCurationEngine(curation), errors)
         deps.ingestScripts += TestData.ingestion(listOf(a, b, c), skipped = 1)
         val vm = StudioViewModel(
             deps,
@@ -321,6 +325,60 @@ class StudioViewModelTest {
         assertEquals(listOf(0.5f, 0.3f), h.deps.harmonizer.calls.last().first.map { it.meanL })
         assertEquals(revision + 1, h.state.sceneRevision)
         assertEquals(1, h.deps.preparer.prepareCalls.size)
+    }
+
+    /** [result] with the curator's layout per offered mode, as the engine reports it with a layout catalogue. */
+    private val laidOut: CurationResult = result.alternatives
+        .mapValues { (mode, option) ->
+            val id = when (mode) {
+                StoryMode.HERO -> StoryTemplate.HERO_GALLERY_MATTE.name
+                StoryMode.COLLAGE_2 -> StoryTemplate.DUO_ASYMMETRIC_EDITORIAL.name
+                StoryMode.COLLAGE_3 -> StoryTemplate.TRIO_MAGAZINE.name
+                StoryMode.COLLAGE_4 -> StoryTemplate.QUAD_MOSAIC.name
+            }
+            option.copy(layoutId = id)
+        }
+        .let { result.copy(chosen = it.getValue(result.chosen.mode), alternatives = it) }
+
+    @Test
+    fun a_decided_story_adopts_the_curators_layout() = runTest {
+        val h = harness(curation = laidOut)
+        ready(h)
+
+        assertEquals(StoryTemplate.DUO_ASYMMETRIC_EDITORIAL, h.state.template)
+        assertEquals(StoryTemplate.DUO_ASYMMETRIC_EDITORIAL, h.deps.composer.requests.last().template)
+    }
+
+    @Test
+    fun force_mode_adopts_the_curators_layout_for_that_mode() = runTest {
+        val h = harness(curation = laidOut)
+        ready(h)
+        h.vm.onIntent(StudioIntent.SelectTemplate(StoryTemplate.DUO_FLOATING_GALLERY))
+
+        h.vm.onIntent(StudioIntent.ForceMode(StoryMode.COLLAGE_3))
+        advanceUntilIdle()
+        assertEquals(StoryTemplate.TRIO_MAGAZINE, h.state.template)
+        assertEquals(StoryTemplate.TRIO_MAGAZINE, h.deps.composer.requests.last().template)
+
+        h.vm.onIntent(StudioIntent.ForceMode(StoryMode.HERO))
+        advanceUntilIdle()
+        assertEquals(StoryTemplate.HERO_GALLERY_MATTE, h.state.template)
+        assertEquals(StudioPhase.Ready, h.state.phase)
+    }
+
+    @Test
+    fun swap_candidate_keeps_the_template_on_screen() = runTest {
+        val h = harness(curation = laidOut)
+        ready(h)
+        h.vm.onIntent(StudioIntent.SelectTemplate(StoryTemplate.DUO_FLOATING_GALLERY))
+
+        h.vm.onIntent(StudioIntent.SwapCandidate(0, "c"))
+        advanceUntilIdle()
+
+        assertEquals(listOf("c", "b"), h.state.selection.photoIds)
+        assertEquals(StoryTemplate.DUO_FLOATING_GALLERY, h.state.template)
+        assertEquals(StoryTemplate.DUO_FLOATING_GALLERY, h.deps.composer.requests.last().template)
+        assertEquals(StudioPhase.Ready, h.state.phase)
     }
 
     @Test

@@ -2,6 +2,7 @@ package com.akane.akastudio.core.composer.crop
 
 import com.akane.akastudio.core.color.api.NormRect
 import com.akane.akastudio.core.composer.api.ComposerPhoto
+import com.akane.akastudio.core.curator.api.CropContract
 import com.akane.akastudio.core.curator.api.FaceObservation
 import kotlin.math.abs
 import kotlin.math.max
@@ -18,12 +19,14 @@ import kotlin.math.min
  * image-centred and face-centred positions, then two 3×3 refinements at half the previous step.
  */
 object SmartCropSolver {
-    internal const val FACE_EXPANSION = 1.15
+    /** Shared with the curator's layout check through [CropContract], so its face feasibility matches this solver. */
+    internal const val FACE_EXPANSION = CropContract.FACE_EXPANSION
     private const val SCALE_STEPS = 6
     private const val MIN_SCALE = 0.70
     private const val GRID_STEPS = 24
     private const val SIZE_WEIGHT = 0.15
     private const val REFINE_PASSES = 2
+    private const val TILT_BISECTIONS = 10
 
     /**
      * Returns the normalized crop of [photo] for a slot of [slotAspect] (width/height) when the source is rotated by
@@ -43,6 +46,36 @@ object SmartCropSolver {
         )
         val best = search.run()
         return frame.toNorm(best.cx, best.cy, best.cw, best.ch)
+    }
+
+    /**
+     * The rotation to render [photo] with in a slot of [slotAspect]: faces beat the horizon. Returns [tiltDegrees]
+     * when the crop solved at that tilt keeps every expanded face (or the photo has none, or a face is cut even
+     * upright, where straightening cannot help); otherwise a face-keeping tilt of the same sign found by bisection
+     * to `|tiltDegrees| / 2^10` (the returned angle was verified to keep every face; it is the largest such angle
+     * only where face-keeping is monotone in the tilt, which the discrete crop search does not guarantee). A
+     * non-finite tilt counts as 0.
+     *
+     * @throws IllegalArgumentException as [solve].
+     */
+    fun faceSafeRotation(photo: ComposerPhoto, slotAspect: Float, tiltDegrees: Float): Float {
+        require(slotAspect.isFinite() && slotAspect > 0f) { "slot aspect must be positive and finite, got $slotAspect" }
+        require(photo.widthPx > 0 && photo.heightPx > 0) { "photo ${photo.id} has no pixels" }
+        if (!tiltDegrees.isFinite()) return 0f
+        if (tiltDegrees == 0f || photo.faces.isEmpty()) return tiltDegrees
+        val saliency = SaliencyIntegral.of(photo.saliency, photo.widthPx, photo.heightPx)
+        fun keepsFaces(degrees: Float): Boolean {
+            val frame = CropFrame(photo.widthPx.toDouble(), photo.heightPx.toDouble(), degrees)
+            return CropSearch(frame, slotAspect.toDouble(), saliency, faceBoxes(photo.faces, frame)).run().facesInside
+        }
+        if (keepsFaces(tiltDegrees) || !keepsFaces(0f)) return tiltDegrees
+        var kept = 0f
+        var cut = tiltDegrees
+        repeat(TILT_BISECTIONS) {
+            val mid = (kept + cut) / 2
+            if (keepsFaces(mid)) kept = mid else cut = mid
+        }
+        return kept
     }
 
     /** Face boxes in source pixels, expanded by [FACE_EXPANSION] about their centre and clamped to the image. */

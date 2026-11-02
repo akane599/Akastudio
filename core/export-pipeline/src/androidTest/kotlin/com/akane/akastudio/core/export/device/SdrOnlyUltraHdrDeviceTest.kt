@@ -239,7 +239,12 @@ class SdrOnlyUltraHdrDeviceTest {
         return out.toByteArray()
     }
 
-    /** FullResolutionDecoder's decode: software RGBA_F16 in linear extended sRGB; asserts the source has no gain map. */
+    /**
+     * A full-size software RGBA_F16 decode in linear extended sRGB, the working space FullResolutionDecoder hands the
+     * renderer; asserts the source has no gain map. It asks the JPEG codec for the linear F16 target directly, which
+     * is correct for JPEG (FullResolutionDecoder instead decodes natively and converts through Canvas, because the HEIF
+     * codec's F16 target is not linear).
+     */
     private fun decodeLikeTheApp(jpeg: ByteArray): LinearImage {
         val linear = ColorSpace.get(ColorSpace.Named.LINEAR_EXTENDED_SRGB)
         val bitmap = ImageDecoder.decodeBitmap(ImageDecoder.createSource(ByteBuffer.wrap(jpeg))) { decoder, _, _ ->

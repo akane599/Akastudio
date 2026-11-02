@@ -298,7 +298,10 @@ internal class StoryGeneration(private val host: StoryHost, parent: CoroutineSco
         stable = ready
     }
 
-    /** Re-decides the story for [mode] and prepares it; the same mode just closes the drawer. */
+    /**
+     * Re-decides the story for [mode] and prepares it with the curator's layout for that mode; the same mode just
+     * closes the drawer.
+     */
     fun forceMode(mode: StoryMode) {
         val s = state.value
         val result = s.curation ?: return
@@ -309,13 +312,16 @@ internal class StoryGeneration(private val host: StoryHost, parent: CoroutineSco
         reprepare {
             val decided = withContext(deps.dispatchers.default) { deps.curation.decide(result, mode) }
             val transition: (StudioState) -> StudioState = { current ->
-                StudioReducer.withSelection(current, decided, decided.chosen.photoIds, candidates)
+                StudioReducer.withForcedMode(current, decided, candidates)
             }
             transition
         }
     }
 
-    /** Puts [candidateId] in [slot]: a reorder when it is already in the story, else a prepare of the alternative. */
+    /**
+     * Puts [candidateId] in [slot]: a reorder when it is already in the story, else a prepare of the alternative. The
+     * mode and the template stay as they are.
+     */
     fun swapCandidate(slot: Int, candidateId: String) {
         val s = state.value
         val ids = s.selection.photoIds

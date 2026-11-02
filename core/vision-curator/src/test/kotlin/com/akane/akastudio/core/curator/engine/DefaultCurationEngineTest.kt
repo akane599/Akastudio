@@ -254,7 +254,10 @@ class DefaultCurationEngineTest {
         assertEquals(listOf(ShotScale.WIDE), result.note.scales)
         assertEquals(SceneType.GENERAL, result.note.dominantScene)
         assertEquals(MasterLook.PURE_NATURAL_PRO, result.suggestedLook)
-        assertTrue(result.analyses.getValue("medium").quality < 0.62f)
+        // The weak frames bring less than the pair bar (admitPair * Q1) of new content.
+        val bar = DecisionConfig().admitPair * q1
+        assertTrue(result.analyses.getValue("medium").quality < bar)
+        assertTrue(result.analyses.getValue("detail").quality < bar)
     }
 
     @Test
@@ -393,9 +396,9 @@ class DefaultCurationEngineTest {
 
     @Test
     fun decide_reDecidesWithTheResultsOwnCaptureTimes_notThoseOfALaterRunWithTheSameIds() = runBlocking {
-        // Three weak frames (NIMA 1), so no collage is offered and a forced COLLAGE_2 searches every champion pair
-        // with the capture-time term. Run A shoots x and y together; run B, same ids and pixels, shoots x and z
-        // together.
+        // Three unrelated frames. Run A shoots x and y together; run B, same ids and pixels, shoots x and z together.
+        // Each run's own drawer reflects its times, and a forced COLLAGE_2 on a result that does not offer it
+        // searches every champion pair with that result's capture-time term.
         val world = FakeWorld(
             linkedMapOf(
                 "x" to Shot(noise(81), nima = 1f),
@@ -416,14 +419,20 @@ class DefaultCurationEngineTest {
 
         assertEquals(timesA, a.captureTimes)
         assertEquals(timesB, b.captureTimes)
-        assertEquals(setOf(StoryMode.HERO), a.alternatives.keys)
-        val previous = CurationResults.decisionOf(a)
-        val analyses = a.analyses.values.toList()
+        // z is a day away in run A (x and y a day away in run B): beyond the event span, so only the pair is offered.
+        assertEquals(setOf("x", "y"), a.alternatives.getValue(StoryMode.COLLAGE_2).photoIds.toSet())
+        assertEquals(setOf("x", "z"), b.alternatives.getValue(StoryMode.COLLAGE_2).photoIds.toSet())
+
+        // A hero-only drawer, so COLLAGE_2 is not offered and the forced switch has to search.
+        val hero = a.alternatives.getValue(StoryMode.HERO)
+        val heroOnly = a.copy(chosen = hero, alternatives = mapOf(StoryMode.HERO to hero))
+        val previous = CurationResults.decisionOf(heroOnly)
+        val analyses = heroOnly.analyses.values.toList()
         val withA = DecisionEngine.redecide(previous, analyses, timesA, StoryMode.COLLAGE_2).chosen
         val withB = DecisionEngine.redecide(previous, analyses, timesB, StoryMode.COLLAGE_2).chosen
         assertNotEquals("the capture-time term must decide the pair in this setup", withA, withB)
 
-        val forced = engine.decide(a, StoryMode.COLLAGE_2)
+        val forced = engine.decide(heroOnly, StoryMode.COLLAGE_2)
 
         assertEquals(withA, forced.chosen)
         assertEquals(timesA, forced.captureTimes)

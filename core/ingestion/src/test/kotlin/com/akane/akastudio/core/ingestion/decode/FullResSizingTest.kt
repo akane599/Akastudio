@@ -72,4 +72,52 @@ class FullResSizingTest {
         assertThrows(IllegalArgumentException::class.java) { FullResSizing.targetSize(4000, -1, 2048) }
         assertThrows(IllegalArgumentException::class.java) { FullResSizing.targetSize(4000, 3000, 0) }
     }
+
+    @Test
+    fun sampleSize_isTheLargestPowerOfTwoThatStaysAtOrAboveTheTarget() {
+        // 4000x3000 -> 3072x2304: 1.30, so no subsampling; the remainder is resampled on linear values.
+        assertEquals(1, FullResSizing.sampleSize(4000, 3000, 3072, 2304))
+        // 6000x4000 -> 3072x2048: 1.95 < 2.
+        assertEquals(1, FullResSizing.sampleSize(6000, 4000, 3072, 2048))
+        // 6000x4000 -> 2048x1365: 2.93 -> 2 (3000x2000), then 1.46 on linear values.
+        assertEquals(2, FullResSizing.sampleSize(6000, 4000, 2048, 1365))
+        // Exactly 2:1 and 4:1 are taken whole by the codec.
+        assertEquals(2, FullResSizing.sampleSize(448, 128, 224, 64))
+        assertEquals(4, FullResSizing.sampleSize(8000, 6000, 2000, 1500))
+        // 50 MP 8160x6120 -> 3072x2304: 2.66 -> 2 (4080x3060).
+        assertEquals(2, FullResSizing.sampleSize(8160, 6120, 3072, 2304))
+    }
+
+    @Test
+    fun sampleSize_neverDropsBelowTheTargetUnderIntegerDivision() {
+        // 4001 / 2 = 2000 < 2001, so 2 would undershoot by a pixel.
+        assertEquals(1, FullResSizing.sampleSize(4001, 3000, 2001, 1500))
+        // Either side can be the limiting one.
+        assertEquals(1, FullResSizing.sampleSize(4000, 3001, 2000, 1501))
+        assertEquals(2, FullResSizing.sampleSize(4000, 3000, 2000, 1500))
+    }
+
+    @Test
+    fun sampleSize_isOneWhenNoDownscaleIsNeeded() {
+        assertEquals(1, FullResSizing.sampleSize(4000, 3000, 4000, 3000))
+        assertEquals(1, FullResSizing.sampleSize(1, 1, 1, 1))
+    }
+
+    @Test
+    fun sampleSize_matchesTargetSizeForPortraitAndPanoramas() {
+        listOf(3000 to 4000, 12000 to 2000, 2000 to 12000, 345 to 9000).forEach { (w, h) ->
+            listOf(256, 1024, 3072, 4096).forEach { edge ->
+                val (tw, th) = FullResSizing.targetSize(w, h, edge)
+                val sample = FullResSizing.sampleSize(w, h, tw, th)
+                assertTrue("${w}x$h at $edge: sample $sample undershoots", w / sample >= tw && h / sample >= th)
+                assertTrue("${w}x$h at $edge: sample $sample leaves a 2:1 remainder", w / (sample * 2) < tw || h / (sample * 2) < th)
+            }
+        }
+    }
+
+    @Test
+    fun sampleSize_rejectsNonPositiveSizes() {
+        assertThrows(IllegalArgumentException::class.java) { FullResSizing.sampleSize(0, 10, 1, 1) }
+        assertThrows(IllegalArgumentException::class.java) { FullResSizing.sampleSize(10, 10, 1, 0) }
+    }
 }

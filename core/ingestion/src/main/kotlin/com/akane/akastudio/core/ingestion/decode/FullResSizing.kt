@@ -15,4 +15,19 @@ object FullResSizing {
         if (maxOf(width, height) <= maxLongEdge) return width to height
         return ScaleMath.fitLongEdge(width, height, maxLongEdge)
     }
+
+    /**
+     * Largest power-of-two subsample factor whose sampled size (integer division, the smallest a codec rounds to)
+     * stays at least [targetWidth] x [targetHeight], so the codec never decodes below the target and the remaining
+     * downscale is at most 2:1. Returns 1 when the target is the source size or larger.
+     *
+     * @throws IllegalArgumentException when any argument is not positive.
+     */
+    fun sampleSize(width: Int, height: Int, targetWidth: Int, targetHeight: Int): Int {
+        require(width > 0 && height > 0) { "image size must be positive: ${width}x$height" }
+        require(targetWidth > 0 && targetHeight > 0) { "target size must be positive: ${targetWidth}x$targetHeight" }
+        var sample = 1
+        while (width / (sample * 2) >= targetWidth && height / (sample * 2) >= targetHeight) sample *= 2
+        return sample
+    }
 }

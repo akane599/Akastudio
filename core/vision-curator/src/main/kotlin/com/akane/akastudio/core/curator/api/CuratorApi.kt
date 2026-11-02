@@ -47,6 +47,8 @@ data class PhotoAnalysis(
     val faces: List<FaceObservation>,
     val saliency: SaliencyMap,
     val rejectReason: RejectReason?,         // non-null = eliminated at the technical gate
+    /** True when the frame looks like a screen capture (flat UI blocks, no camera EXIF); kept out of automatic picks only. */
+    val screenCapture: Boolean = false,
 )
 
 data class SceneCluster(val id: Int, val memberIds: List<String>, val championId: String)
@@ -55,9 +57,15 @@ data class SynergyBreakdown(val color: Float, val rhythm: Float, val context: Fl
 
 data class CurationOption(
     val mode: StoryMode,
-    val photoIds: List<String>,              // ordered: hero/anchor first
+    val photoIds: List<String>,              // anchor (colour anchor) first; then the layoutId's slot order, if set
     val score: Float,                        // HERO: Q_1; collage: Score_Collage(S_m)
     val synergy: SynergyBreakdown?,          // null for HERO
+    /**
+     * Opaque id of the layout (from the [com.akane.akastudio.core.curator.decision.LayoutCatalog] the engine was
+     * configured with) whose cells were verified to fit [photoIds] in this order; null when no catalogue was given or
+     * no layout for this count was checked. The studio maps it to its own template and falls back when unknown.
+     */
+    val layoutId: String? = null,
 )
 
 /** Structured note; the UI formats it into one localized sentence. */

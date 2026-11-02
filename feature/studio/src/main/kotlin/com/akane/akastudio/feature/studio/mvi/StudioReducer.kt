@@ -3,6 +3,7 @@ package com.akane.akastudio.feature.studio.mvi
 import com.akane.akastudio.core.color.api.ImagePixels
 import com.akane.akastudio.core.color.api.RenderScene
 import com.akane.akastudio.core.composer.api.StoryTemplate
+import com.akane.akastudio.core.curator.api.CurationOption
 import com.akane.akastudio.core.curator.api.CurationProgress
 import com.akane.akastudio.core.curator.api.CurationResult
 import com.akane.akastudio.core.export.api.ExportProgress
@@ -116,8 +117,9 @@ internal object StudioReducer {
     }
 
     /**
-     * Commits [result] with the story photos [photoIds] (slot order): selection, template (kept when its count
-     * still fits, else the first template for the count), telemetry and the HDR default. Leaves the phase alone.
+     * Commits [result] with the story photos [photoIds] (slot order) for the same story: the current template is kept
+     * when its count still fits (a photo swap never changes the layout), else [templateFor] picks one. Also sets the
+     * selection, telemetry and the HDR default. Leaves the phase alone.
      */
     fun withSelection(
         state: StudioState,
@@ -125,7 +127,46 @@ internal object StudioReducer {
         photoIds: List<String>,
         candidates: Map<String, PhotoCandidate>,
     ): StudioState {
+        val kept = state.template?.takeIf { it.photoCount == result.chosen.mode.photoCount }
+        return select(state, result, photoIds, candidates, kept ?: templateFor(result.chosen, current = null))
+    }
+
+    /**
+     * Commits [result] after the user forced its mode: the photo count changed, so the curator's layout for the
+     * offered option is adopted (see [templateFor]); the current template only survives when no layout is known and
+     * it still fits.
+     */
+    fun withForcedMode(
+        state: StudioState,
+        result: CurationResult,
+        candidates: Map<String, PhotoCandidate>,
+    ): StudioState =
+        select(state, result, result.chosen.photoIds, candidates, templateFor(result.chosen, current = state.template))
+
+    /**
+     * The template for [option]: the curator's [CurationOption.layoutId] when it names a [StoryTemplate] for the
+     * option's photo count, else [current] when it fits that count, else the first template for the count. An
+     * unknown or mismatched id is ignored rather than trusted, since the curator's catalogue is opaque to the studio.
+     */
+    fun templateFor(option: CurationOption, current: StoryTemplate?): StoryTemplate {
+        val count = option.mode.photoCount
+        return option.layoutId
+            ?.let { id -> StoryTemplate.entries.firstOrNull { it.name == id } }
+            ?.takeIf { it.photoCount == count }
+            ?: current?.takeIf { it.photoCount == count }
+            ?: StoryTemplate.forCount(count).firstOrNull()
+            ?: throw IllegalStateException("No template for $count photos")
+    }
+
+    private fun select(
+        state: StudioState,
+        result: CurationResult,
+        photoIds: List<String>,
+        candidates: Map<String, PhotoCandidate>,
+        template: StoryTemplate,
+    ): StudioState {
         val mode = result.chosen.mode
+        check(template.photoCount == mode.photoCount) { "$template does not fit ${mode.photoCount} photos" }
         val slots = photoIds.indices.associateWith { i ->
             checkNotNull(candidates[photoIds[i]]) { "Unknown candidate ${photoIds[i]}" }
         }
@@ -135,9 +176,6 @@ internal object StudioReducer {
             slots = slots.toImmutableMap(),
             alternatives = alternatives(result, photoIds, candidates.keys),
         )
-        val template = state.template?.takeIf { it.photoCount == mode.photoCount }
-            ?: StoryTemplate.forCount(mode.photoCount).firstOrNull()
-            ?: throw IllegalStateException("No template for ${mode.photoCount} photos")
         val hasGainMap = slots.values.any { it.metadata.hasUltraHdrGainMap }
         return state.copy(
             curation = result,
@@ -169,9 +207,13 @@ internal object StudioReducer {
         telemetry = state.telemetry.copy(step = TelemetryStep.ANALYZING, analyzed = 0, analyzeTotal = total),
     )
 
-    /** The curator decided: [result]'s choice becomes the selection, its look the grade, and preparation begins. */
+    /**
+     * The curator decided a new story: [result]'s choice becomes the selection with the curator's layout (see
+     * [templateFor]; a template left in [state] belongs to no story yet and is never carried over), its look the
+     * grade, and preparation begins.
+     */
     fun decided(state: StudioState, result: CurationResult, candidates: Map<String, PhotoCandidate>): StudioState =
-        withSelection(state, result, result.chosen.photoIds, candidates).let {
+        select(state, result, result.chosen.photoIds, candidates, templateFor(result.chosen, current = null)).let {
             it.copy(
                 phase = StudioPhase.Preparing,
                 grade = it.grade.copy(look = result.suggestedLook),
