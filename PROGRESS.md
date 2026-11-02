@@ -2,6 +2,12 @@
 
 _This file keeps decisions, audit status and open issues that outlive a single change._
 
+## Current effort: curation selection + HEIC colour (2026-11-02)
+- **State:** done and pushed on `fix/curation-selection-and-heic-colour` (1c03e9b docs/QA harness, 8d2d4cd fix); [PR #2](https://github.com/akane599/Akastudio/pull/2) open, CI green, awaiting the user's review/merge. Commit, push and PR were made at the user's explicit request after the task's original "no commit" constraint.
+- **What changed:** selection rule (decision 2026-11-02 below), layout fit inside the curator, screen-capture flag, face-safe rotation, HEIC linear decode. Evidence (gitignored): `docs/stabilization/evidence/curation-20261102/accept_20261102_102515_final/` and `decoder_20261102_103832_final/`.
+- **Next (only if the user asks):** crop saliency (open issue below) is the remaining visible defect; then the unknown-time tables-only limit, the face-threshold flicker and `ShotScaleClassifier` order, each as its own change.
+- Personal acceptance photos stay local and out of Git; never hardcode their names or results in production code.
+
 ## Open issues
 Device QA scope is API 36–37 (personal use; see the 2026-11-02 decision). Emulators: akane-linux `pixel-api36` / `pixel-api37` (`REMOTE_QA.md`); the phone is API 37.
 - Physical evidence still missing on the phone: emitted (calibrated) luminance (no meter; not planned) and share-target re-encoding after upload (needs the user's permission for social/messaging apps). Gallery display, Instagram Story preview and memory/thermal were measured on 2026-11-02 (`docs/stabilization/PHONE_QA_20261102.md`).
@@ -79,6 +85,8 @@ Device QA scope is API 36–37 (personal use; see the 2026-11-02 decision). Emul
 | Audit fixes (2nd) | 2026-10-21 @ ae48ee2 | AUD-01..AUD-08 fixed (ownership contract: PhotoOwner / StoryGeneration, owner-qualified renderer keys); review on Opus/xhigh only, no GPT | `/audit-remediate` (standalone, Sidequest off) |
 | UI / design | — | — | `/ui-overhaul` phase review |
 | Lint | 2026-10-21 @ ae48ee2 | 0 errors, all modules (944 JVM unit tests green in the same gate) | `lintDebug` (in the full gate) |
+| Curation fix gate | 2026-11-02 @ 8d2d4cd | Full gate PASS exit 0 (all module unit tests, screenshot validation, lint 0 errors); vision-curator 281/0 with the real trace enabled (`AKASTUDIO_SELECTION_TRACE`); GitHub CI on PR #2 green (build/unit/screenshots/lint, release R8) | `gradle-check.sh` full gate, Opus/xhigh-requested code review 3 rounds (approve), color-pipeline-reviewer 2 rounds (approve) |
+| Device QA (curation fix) | 2026-11-02 @ 8d2d4cd tree | Phone SM-S938B/API 37: acceptance 8/8 sets; CurationEndToEndDeviceTest 3/0; ingestion device suite 35/0 (old decoder 4/15 red); LargeSourceDecodeDeviceTest 5/0; full-zip timings ingest 4.5 s / curate 5.7 s / prepare 6.2 s / export 4.9 s, VmHWM 751 MB | XML verdicts under the akadroid lock; evidence `docs/stabilization/evidence/curation-20261102/` (gitignored) |
 | Device QA | 2026-11-02 @ 508b691 | API 35 (akane-linux, ANGLE/SwiftShader): 142/142 across all 7 suites. API 37: 5 core suites 109/109; app 6 pass / 14 fail and studio 0 / 12, every failure the Espresso `InputManager.getInstance` lookup. Release APK (throwaway signature) on API 37: import, curation, Social + Ultra HDR export (gain map present), trim memory, process death; no crash or ANR. Alpha device tests 4/4 on the phone (SM-S938B) | instrument runs on akane-linux emulators under owner-host locks; evidence `docs/stabilization/evidence/remote-qa-20261102/` (gitignored) |
 | Device QA (previous) | 2026-10-21 @ ae48ee2 | 117/117 pass (app 15, studio 12, ingestion 19, color 25, composer 14, export 19, curator 13); software renderer only, no physical GPU | `connectedDebugAndroidTest` per module on emulator-5554 (SwiftShader) under the flock lock |
 
