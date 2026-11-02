@@ -35,7 +35,7 @@ Write these as `ui/theme/{Color,Type,Shape,Spacing,Theme}.kt`. Every screen uses
 1. **Brief** (5 lines): subject, audience, situation, the one memorable element, what stays quiet.
 2. **Token plan:** palette hexes with roles, type pairing and scale, shape radii, spacing, motion durations. Write it into the approved brief (see `/ui-overhaul`) and paste it verbatim into every worker brief, so it survives compaction and reaches every worker.
 3. **Review the plan against the tells** in §3 and the calibration list below. If any part is what you'd produce for *any* app of this kind, change it and say why.
-4. **Build theme files first**, then screens: one ticket per screen with a strict file scope, `depends-on` the theme ticket. Screens consume tokens only.
+4. **Build theme files first**, then screens: one worker per screen with a strict file scope, started after the theme is committed. Screens consume tokens only.
 5. **Screenshot** (see §5). Read the PNGs. Critique in the mirror: remove one accessory. Check dark, large-font, and a small-width device.
 6. Record what was tried and rejected in `PROGRESS.md` decision log — future passes shouldn't rediscover it.
 
@@ -43,7 +43,7 @@ Calibration — current generated-Compose defaults to avoid unless the brief ask
 
 ## 5. Seeing the result (Ubuntu, no Android Studio)
 Pick the first available:
-- **Compose Preview Screenshot Testing** (AGP ≥ 8.5, JVM, no emulator): plugin `com.android.compose.screenshot`; previews in `src/screenshotTest/` (or existing `@Preview`s). `./gradlew :app:updateDebugScreenshotTest -q` writes PNGs under `app/src/debug/screenshotTest/reference/`; `validateDebugScreenshotTest` diffs against them — a free visual regression suite for the overhaul. Add previews per screen for: light, dark (`uiMode = UI_MODE_NIGHT_YES`), `fontScale = 1.5f`, and `widthDp = 360` / `840`.
+- **Compose Preview Screenshot Testing** (AGP ≥ 8.5, JVM, no emulator): plugin `com.android.compose.screenshot`; previews in `src/screenshotTest/` (or existing `@Preview`s). `./gradlew :app:updateDebugScreenshotTest -q` writes reference PNGs under `<module>/src/screenshotTestDebug/` (e.g. `app/src/screenshotTestDebug/`); `validateDebugScreenshotTest` diffs against them — a free visual regression suite for the overhaul. Add previews per screen for: light, dark (`uiMode = UI_MODE_NIGHT_YES`), `fontScale = 1.5f`, and `widthDp = 360` / `840`.
 - **Emulator:** boot headless, `installDebug`, then the Mobile MCP screenshot tool when configured, otherwise the `android-emulator-qa` fallback screenshot step (`adb exec-out screencap -p > shot.png`) per screen. Slower, but exercises real navigation/insets.
 Read the PNGs with the Read tool and critique them concretely (spacing rhythm, hierarchy, contrast, alignment to the grid, what dominates the eye first). A screenshot is worth more than another paragraph of reasoning.
 

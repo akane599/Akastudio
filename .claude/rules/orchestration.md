@@ -1,7 +1,7 @@
-# Orchestration and review (native Claude Code, no Sidequest, no Model Gateway)
+# Orchestration and review
 
 - The main session may implement directly. Delegate to subagents when it buys real parallelism, keeps large search/log output out of the main context, or gives an unanchored review — following the global `orchestration` skill. Brief each worker with goal, exact scope, what's ruled out, constraints and return format.
-- Every route is a Claude model: Sonnet for search, mapping and mechanical edits; Opus/high for implementation, debugging and test design; Opus/xhigh for plan review and independent code review; Fable/high only as escalation after two failed approaches with materially different plans; Haiku for exact run-only checks. Say which model actually ran; never describe a review as cross-provider.
+- Model routes: Sonnet for search, mapping and mechanical edits; Opus/high for implementation, debugging and test design; Opus/xhigh for plan review and independent code review; Fable/high only as escalation after two failed approaches with materially different plans; Haiku for exact run-only checks. Say which model actually ran.
 - Workers that edit code get `isolation: "worktree"` or a disjoint set of files — one owner per file. The main session integrates, then runs the relevant gate on the integrated tree; a worker's summary is a claim until the diff and evidence are checked.
 - Before committing a meaningful behavior change, get an independent review in a fresh context (a reviewer subagent or the `code-audit` skill), given the diff, acceptance criteria and `.claude/kit/android-bug-checklist.md` — not your conclusion. Mechanical-only edits with adequate checks need no extra pass. Unresolved correctness findings block that change, not unrelated work.
 - Bug fixes start from a test that reproduces the bug and fails before the fix. Never delete, weaken or `@Ignore` a failing test to go green; report pending verification as pending.

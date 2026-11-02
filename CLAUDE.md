@@ -9,11 +9,11 @@ Android, developed on Ubuntu from the CLI.
 - JDK target 17 · Gradle 9.8.2 · AGP 9.4.1 · Kotlin 2.4.21 (built-in) · compileSdk 37 · minSdk 31
 - Modules: :app, :core:ingestion, :core:vision-curator, :core:color-engine, :core:collage-composer, :core:export-pipeline, :feature:studio · Architecture: Clean Architecture + MVI · DI/DB/Net: none (StudioContainer, constructor injection) / none / none
 - App id: com.akane.akastudio · Launcher: .MainActivity
-- Baseline: full JVM gate (960 tests, screenshots) + lintDebug 0 errors + debug/release APK/AAB green, and device suites 118/118 on emulator-5554 (API 35), for the 2026-10-26 stabilization source and tests committed through f9f4e13; details in `docs/stabilization/HANDOVER.md` and `M1_COMPLETION.md`
+- Baseline: the latest gate and device-suite results, each with the commit it ran at, are in PROGRESS.md's "Audit status" table; the 2026-10-26 stabilization evidence is in `docs/stabilization/HANDOVER.md` and `docs/stabilization/M1_COMPLETION.md`
 <!-- STACK:END -->
 
 ## How work flows here
-- **Native Claude Code orchestration.** Sidequest and Model Gateway are gone (2026-11-01); the main Opus/high session plans, implements or delegates to subagents per `.claude/rules/orchestration.md` and the global `orchestration` skill, then integrates and verifies. All routes are Claude models; there is no cross-provider review.
+- **Orchestration.** The main Opus/high session plans, implements or delegates to subagents per `.claude/rules/orchestration.md` and the global `orchestration` skill, then integrates and verifies.
 - **Big or multi-step changes:** plan mode → Opus/xhigh plan review for architecture/contract/export-format changes → parallel workers in worktrees or on disjoint files → integrate → gate → independent fresh-context review before commit.
 - **UI overhaul:** `/ui-overhaul <scope>`.
 - **Bugs:** `/bug-hunt <scope>` for a targeted hunt (Android checklist, fix from a reproducing test); `diagnosing-bugs` for a known symptom. Whole-repo: `/full-repo-audit`, then `/audit-remediate` for the fixes you pick.

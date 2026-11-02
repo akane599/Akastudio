@@ -139,8 +139,7 @@
     "security-sweep@android-hybrid": false,
     "security-sweep@android-local": false,
     "security-sweep@android-stock": false,
-    "security-sweep@claude-plugins-official": false,
-    "sidequest@eigenwise-toolshed": false
+    "security-sweep@claude-plugins-official": false
   },
   "effortLevel": "high"
 }

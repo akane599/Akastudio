@@ -6,7 +6,7 @@ Read [the project map](.claude/.codebase-info/INDEX.md) for architecture and ent
 
 ## Working agreements
 
-- Sidequest and Model Gateway are not installed for this project. The main session may implement directly. Use GPT-6.1 Sol/high for the main session, implementers and reviewers; report the actual route and unavailable capabilities. Use xhigh only for a critical unresolved question, stating the question and concrete evidence before escalation. Instructions express policy; they do not change runtime model settings.
+- The main session may implement directly. Report the actual model route and any unavailable capabilities. Use xhigh only for a critical unresolved question, stating the question and concrete evidence before escalation. Instructions express policy; they do not change runtime model settings.
 - Preserve existing user edits and untracked files. Do not automatically pull, reset, clean, stash, or create/switch branches. Do not stop processes or interfere with another session's applications.
 - Keep changes scoped. Do not install tools, add dependencies, change toolchain/SDK/JDK versions, or alter machine settings unless the task explicitly includes it. `ANDROID_HOME` supplies the SDK; do not create/edit `local.properties`.
 - Keep `.claude/`, `CLAUDE.md`, shared kit/installer and global configuration intact unless the task explicitly targets them. They contain preserved source material; their routing, hooks and command conventions are not Codex instructions.

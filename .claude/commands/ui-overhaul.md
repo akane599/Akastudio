@@ -9,7 +9,7 @@ Load the `compose-design` skill. You decide the design direction and own the the
 ## 1. Inventory and baseline
 - A read-only Sonnet `Explore` subagent returns, without dumping files: the screen-level composables with paths; the theme files and whether tokens are real or defaults; counts of `Color(0x…)` and raw `.dp`/`.sp` outside `ui/theme`; existing `@PreviewTest`s.
 - Baseline: `bash .claude/kit/gradle-check.sh :app:updateDebugScreenshotTest :feature:studio:updateDebugScreenshotTest`, then copy the reference PNGs to `design/before/` and restore the references with git.
-- Read 3–4 baseline images and write a 5-line honest critique.
+- Read 3–4 baseline images and write a short, honest critique.
 
 ## 2. Brief and tokens: STOP for approval
 Following compose-design §4 steps 1–3: palette hexes with roles, type pairing and scale, shapes, spacing, motion, the one memorable element, and a one-line intent per screen in scope. **Wait for the user's approval.** Nothing is implemented before it.
@@ -29,4 +29,4 @@ Following compose-design §4 steps 1–3: palette hexes with roles, type pairing
 - `rg -n "Color\(0x|[0-9]+\.(dp|sp)\b" <ui dir> --glob '!**/theme/**'` → near-empty; justify survivors.
 - `rg -n "List<|Map<|Set<" <ui dir> --glob '*.kt' | rg -v "Immutable|Persistent"` in composable params and state → empty.
 - `bash .claude/kit/gradle-check.sh :app:assembleDebug :app:validateDebugScreenshotTest :feature:studio:validateDebugScreenshotTest` on the integrated tree. Copy the refs to `design/after/`.
-- PROGRESS.md: decision-log lines (tokens chosen, ideas rejected) and the audit-table UI row. Summary in ≤10 lines: what changed visually, screenshot paths, open issues.
+- PROGRESS.md: decision-log lines (tokens chosen, ideas rejected) and the audit-table UI row. Summary: what changed visually, screenshot paths, open issues, short enough to scan.

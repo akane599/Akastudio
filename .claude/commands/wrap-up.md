@@ -4,7 +4,7 @@ description: End of a session or story. Turns what was corrected and decided int
 
 Wrap up this session. Nothing is written without the user's yes.
 
-1. **Collect** from this session only (the conversation, and `.claude/compact-checkpoint.md` if it was compacted):
+1. **Collect** from this session only (the conversation, and this session's file under `.claude/compact-checkpoints/` if it was compacted):
    - corrections the user gave you or a worker, and anything they had to say twice;
    - build, SDK or tooling quirks you hit, and what fixed them;
    - decisions with a reason (why X over Y);
@@ -19,8 +19,8 @@ Wrap up this session. Nothing is written without the user's yes.
    - a one-off → drop it.
    Skip anything the code, git history or an existing rule already says.
 
-3. **Propose** a numbered list of at most 10 items: where it goes, then the exact line. Wait for the user to pick.
+3. **Propose** a numbered list, most valuable first: where it goes, then the exact line. Wait for the user to pick.
 
 4. **Apply** only the picked items. If integrated code changed module structure, entry points or patterns this session, update the affected pages under `.claude/.codebase-info/` (a Sonnet subagent can do it from the diff).
 
-5. **Report** what changed in up to 3 lines. If CLAUDE.md or the rules haven't been audited in a few weeks, suggest a prompt audit for stale or contradicting instructions.
+5. **Report** what changed, briefly. If CLAUDE.md or the rules haven't been audited in a few weeks, suggest a prompt audit for stale or contradicting instructions.

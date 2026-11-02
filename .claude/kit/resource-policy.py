@@ -122,7 +122,7 @@ def policy(spec):
                 defer_new_heavy_build=pressure,
                 emulator='Check emulator acceleration explicitly before use.' if spec['kvm_access'] else 'No usable /dev/kvm detected; use JVM checks or a remote/physical device.',
                 warnings=warnings,
-                scope='Machine-wide active Gradle commands across projects/worktrees; NOT ticket dispatch or idle daemon count.',
+                scope='Machine-wide active Gradle commands across projects/worktrees; NOT agent dispatch or idle daemon count.',
                 enforcement='Advisory coordination only, not a semaphore. Apply --max-workers to each Gradle invocation; do not rewrite JVM heap settings automatically.')
 
 
